@@ -47,9 +47,12 @@ func TestOracleProgramsAreContained(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The kernel may let the write that reaches the limit finish, so the
-	// file can pass it by less than one write of the stand-in (1 MiB).
-	if info.Size() > maxOutputBytes+1<<20 {
+	// What matters is that the file stops growing near the limit. How
+	// exactly the limit is enforced differs by system: macOS has let a
+	// file pass it by a little under 2 MiB. The slack allows for that and
+	// still fails on a file that keeps growing.
+	const slack = 16 << 20
+	if info.Size() > maxOutputBytes+slack {
 		t.Errorf("the program wrote %d bytes; the limit is %d", info.Size(), maxOutputBytes)
 	}
 	if info.Size() < maxOutputBytes/4 {
