@@ -43,6 +43,9 @@ func render(doc *gofastcore.Document) []string {
 		if b.Text != "" {
 			fmt.Fprintf(&sb, " %q", b.Text)
 		}
+		if b.Loc.Anchor != "" {
+			fmt.Fprintf(&sb, " anchor=%s", b.Loc.Anchor)
+		}
 		keys := make([]string, 0, len(b.Attrs))
 		for k := range b.Attrs {
 			keys = append(keys, k)
@@ -122,6 +125,9 @@ func TestWordHeadingsAndStyles(t *testing.T) {
 		ooxmltest.StyledPara("Missing", "An unknown style") +
 		ooxmltest.Para("Plain") + `<w:p/>` + para(run(text("   ")))
 	doc := word(t, ooxmltest.Docx(body).WithStyles(wordStyles), nil)
+	if !partWarned(doc, gofastcore.WarnHeadingLevelClamped) {
+		t.Error("a heading deeper than six levels was not reported")
+	}
 	expectBlocks(t, doc,
 		`heading[1] "The Title" style=title`,
 		`heading[2] "A subtitle" style=subtitle`,
@@ -247,7 +253,7 @@ func TestWordRunContent(t *testing.T) {
 		`paragraph "smart control"`,
 		`paragraph "A paragraph inside a content control"`,
 		`paragraph "Energy: E=mc2"`,
-		`paragraph "Anchored" para_id=1A2B3C4D`,
+		`paragraph "Anchored" anchor=1A2B3C4D`,
 	)
 	if !partWarned(doc, gofastcore.WarnTextUnmappedGlyphs) {
 		t.Error("a symbol that could not be translated was not reported")
@@ -344,10 +350,10 @@ func TestWordTrackedChanges(t *testing.T) {
 		`paragraph "moved text"`,
 		`table header=0 [["kept row"]]`,
 	)
-	if !partWarned(doc, gofastooxml.WarnTrackedChanges) {
+	if !partWarned(doc, gofastcore.WarnTextTrackedChanges) {
 		t.Errorf("tracked changes were not reported: %+v", doc.Parts[0].Warnings)
 	}
-	if clean := word(t, ooxmltest.Docx(ooxmltest.Para("x")), nil); partWarned(clean, gofastooxml.WarnTrackedChanges) {
+	if clean := word(t, ooxmltest.Docx(ooxmltest.Para("x")), nil); partWarned(clean, gofastcore.WarnTextTrackedChanges) {
 		t.Error("tracked changes reported for a document without any")
 	}
 }
@@ -435,7 +441,7 @@ func TestWordImages(t *testing.T) {
 		`image "Legacy picture" image(word/media/image1.png image/png 40x20 0 bytes)`,
 		`image "A picture that is not in the file" href=https://example.org/logo.png image(  0x0 0 bytes)`,
 	)
-	if !warned(doc, gofastooxml.WarnExternalReference) {
+	if !warned(doc, gofastcore.WarnInputExternalReference) {
 		t.Error("a linked picture was not reported as an external reference")
 	}
 
@@ -477,7 +483,7 @@ func TestWordEmbeddedFilesAndReferences(t *testing.T) {
 		doc.Children[0].Warnings[0].Code != gofastcore.WarnChildNotExtracted || doc.Children[0].Source.Size == 0 {
 		t.Errorf("children = %+v", doc.Children)
 	}
-	if !warned(doc, gofastooxml.WarnExternalReference) {
+	if !warned(doc, gofastcore.WarnInputExternalReference) {
 		t.Error("an attached remote template was not reported")
 	}
 	if !warned(doc, gofastooxml.WarnUnreadContent) {
@@ -649,10 +655,10 @@ func TestAmbiguousArchiveIsReported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := doc.Text(); got != "first\n" || !warned(doc, gofastooxml.WarnAmbiguousArchive) {
+	if got := doc.Text(); got != "first\n" || !warned(doc, gofastcore.WarnInputAmbiguous) {
 		t.Errorf("text %q, warnings %+v", got, doc.Warnings)
 	}
-	if clean := word(t, ooxmltest.Docx(ooxmltest.Para("x")), nil); warned(clean, gofastooxml.WarnAmbiguousArchive) {
+	if clean := word(t, ooxmltest.Docx(ooxmltest.Para("x")), nil); warned(clean, gofastcore.WarnInputAmbiguous) {
 		t.Error("an ordinary archive was reported as ambiguous")
 	}
 }
