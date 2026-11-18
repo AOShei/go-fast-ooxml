@@ -23,15 +23,9 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
-// Warning codes raised by this package. Each states a fact.
+// Warning codes raised by this package beyond the shared ones in
+// gofastcore. Each states a fact.
 const (
-	// WarnTrackedChanges: the document has tracked changes. Text is given
-	// as if all were accepted; each deletion is kept as a note block.
-	WarnTrackedChanges = "ooxml.tracked_changes"
-	// WarnExternalReference: the document links to a file or address
-	// outside itself other than by an ordinary hyperlink: a remote
-	// template, a linked image, a linked object. Nothing is fetched.
-	WarnExternalReference = "ooxml.external_reference"
 	// WarnUnreadContent: the document holds content of a kind this version
 	// does not read: a chart, a diagram.
 	WarnUnreadContent = "ooxml.unread_content"
@@ -82,6 +76,7 @@ type reader struct {
 	removed           int  // control characters removed
 	unmapped          int  // symbol-font characters with no known Unicode equivalent
 	flattened         int  // tables written as text
+	clamped           int  // headings deeper than six levels
 	sawImage          bool // the body has a picture, whether or not pictures are extracted
 	unread            map[string]int
 	external          int
@@ -464,7 +459,7 @@ func (r *reader) finish() {
 		}
 	}
 	if r.inserted+r.deleted > 0 {
-		part.Warn(gofastcore.SeverityInfo, WarnTrackedChanges,
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextTrackedChanges,
 			strconv.Itoa(r.inserted)+" insertions, "+strconv.Itoa(r.deleted)+" deletions; text is given with all changes accepted")
 	}
 	if r.removed > 0 {
@@ -474,11 +469,14 @@ func (r *reader) finish() {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs,
 			strconv.Itoa(r.unmapped)+" characters of a symbol font this version cannot translate appear as U+FFFD")
 	}
+	if r.clamped > 0 {
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, strconv.Itoa(r.clamped)+" headings deeper than level 6")
+	}
 	if r.flattened > 0 {
 		part.Warn(gofastcore.SeverityWarning, WarnTableFlattened, strconv.Itoa(r.flattened))
 	}
 	if r.external > 0 {
-		r.doc.Warn(gofastcore.SeverityWarning, WarnExternalReference, fmt.Sprintf("%d, not counting hyperlinks; nothing was fetched", r.external))
+		r.doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputExternalReference, fmt.Sprintf("%d, not counting hyperlinks; nothing was fetched", r.external))
 	}
 	if len(r.unread) > 0 {
 		var kinds []string

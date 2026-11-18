@@ -356,9 +356,9 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 	if !ok {
 		return
 	}
-	if paraID != "" {
-		b.Attrs = map[string]string{"para_id": paraID}
-	}
+	// Word's own id for the paragraph: what a citation can point at in a
+	// format with no pages.
+	b.Loc.Anchor = paraID
 	p.produced++
 	emit(b)
 }
@@ -416,7 +416,8 @@ func (p *parser) block(pp *paraProps, raw []byte) (gofastcore.Block, bool) {
 		b.Kind, b.Level = gofastcore.KindHeading, uint8(outline)+1
 		if b.Level > 6 {
 			// The model has six heading levels; Word has nine.
-			b.Attrs = map[string]string{"level": strconv.Itoa(int(b.Level))}
+			b.Attrs = map[string]string{gofastcore.AttrLevel: strconv.Itoa(int(b.Level))}
+			p.r.clamped++
 			b.Level = 6
 		}
 		b.Marker = marker // a numbered heading keeps its number
@@ -653,12 +654,12 @@ func (p *parser) commentRef() {
 		return
 	}
 	p.r.usedNotes[key] = true
-	attrs := map[string]string{"type": "comment"}
+	attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteComment}
 	if n.author != "" {
-		attrs["author"] = n.author
+		attrs[gofastcore.AttrAuthor] = n.author
 	}
 	if n.date != "" {
-		attrs["date"] = n.date
+		attrs[gofastcore.AttrDate] = n.date
 	}
 	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: n.text, Attrs: attrs})
 }
@@ -669,12 +670,12 @@ func (p *parser) deletion() {
 	s := &p.s
 	author, _ := s.Attr(ns.Word, "author")
 	date, _ := s.Attr(ns.Word, "date")
-	attrs := map[string]string{"type": "deletion"}
+	attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteDeletion}
 	if a := p.clean(author, clean.Trim); a != "" {
-		attrs["author"] = a
+		attrs[gofastcore.AttrAuthor] = a
 	}
 	if d := p.clean(date, clean.Trim); d != "" {
-		attrs["date"] = d
+		attrs[gofastcore.AttrDate] = d
 	}
 	p.r.deleted++
 	start := len(p.text)

@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml"
 
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
@@ -103,7 +102,7 @@ func TestWordCorpus(t *testing.T) {
 			t.Errorf("%s: %v", f.Name, err)
 			continue
 		}
-		if warned(doc, gofastooxml.WarnAmbiguousArchive) {
+		if warned(doc, gofastcore.WarnInputAmbiguous) {
 			continue // programs read different content from such a file by design
 		}
 		if doc.Parts[0].Has(gofastcore.WarnLimitExceeded) {

@@ -131,7 +131,7 @@ func TestExtractProperties(t *testing.T) {
 	if err := doc.Validate(); err != nil {
 		t.Error(err)
 	}
-	if warned(doc, gofastcore.WarnTextHidden) || warned(doc, gofastooxml.WarnHasMacros) || warned(doc, gofastooxml.WarnPropertiesDamaged) {
+	if warned(doc, gofastcore.WarnTextHidden) || warned(doc, gofastcore.WarnInputActiveContent) || warned(doc, gofastooxml.WarnPropertiesDamaged) {
 		t.Errorf("unexpected warnings: %+v", doc.Warnings)
 	}
 
@@ -159,7 +159,7 @@ func TestExtractReportsFactsAboutTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !warned(doc, gofastooxml.WarnHasMacros) {
+	if !warned(doc, gofastcore.WarnInputActiveContent) {
 		t.Error("a VBA project was not reported")
 	}
 	// Invisible characters in a property are kept and flagged, not dropped.

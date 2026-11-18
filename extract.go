@@ -29,11 +29,20 @@ const (
 )
 
 // Warning codes specific to this library. Each states a fact about the
-// file. The codes shared by all go-fast libraries are in gofastcore.
+// file. The codes shared by all go-fast libraries are in gofastcore, and
+// this library raises these of them besides the ones about parts, limits
+// and embedded documents:
+//
+//	input.active_content      the package contains a VBA project
+//	input.external_reference  a remote template, a linked picture or object
+//	input.ambiguous           the archive names a member twice, in two ways,
+//	                          or has two members with one name; each member
+//	                          is read under the name in its header, and the
+//	                          first of two with one name is taken
+//	text.tracked_changes      a Word document has tracked changes
+//	text.hidden               text a reader cannot see
+//	structure.heading_level_clamped
 const (
-	// WarnHasMacros: the package contains a VBA project. It is not read
-	// and never run.
-	WarnHasMacros = "ooxml.has_macros"
 	// WarnPropertiesDamaged: a document-properties part could not be read
 	// to its end; the properties read before the damage are kept.
 	WarnPropertiesDamaged = "ooxml.properties_damaged"
@@ -44,25 +53,12 @@ const (
 	// WarnControlCharsRemoved: control characters with no meaning as text
 	// were removed from extracted strings.
 	WarnControlCharsRemoved = "ooxml.control_characters_removed"
-	// WarnAmbiguousArchive: the zip archive names a member twice, in two
-	// ways, or has two members with one name. Programs differ in which
-	// they read, so the file shows one document to one program and another
-	// to the next. This library reads each member under the name in its
-	// header and takes the first of two with one name.
-	WarnAmbiguousArchive = "ooxml.ambiguous_archive"
 	// WarnNotImplemented: content extraction for this format is not
 	// implemented in this version; only properties were read.
 	WarnNotImplemented = "ooxml.not_implemented"
 
 	// The codes below are raised while a Word document is read.
 
-	// WarnTrackedChanges: the document has tracked changes. Text is given
-	// as if all were accepted; each deletion is kept as a note block.
-	WarnTrackedChanges = wml.WarnTrackedChanges
-	// WarnExternalReference: the document links to a file or address
-	// outside itself other than by an ordinary hyperlink: a remote
-	// template, a linked image, a linked object. Nothing is fetched.
-	WarnExternalReference = wml.WarnExternalReference
 	// WarnUnreadContent: the document holds content of a kind this version
 	// does not read: a chart, a diagram.
 	WarnUnreadContent = wml.WarnUnreadContent
@@ -188,10 +184,11 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextHidden, "document properties contain invisible characters")
 	}
 	if n := pkg.Ambiguous(); n > 0 {
-		doc.Warn(gofastcore.SeverityWarning, WarnAmbiguousArchive, fmt.Sprintf("%d members", n))
+		doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous,
+			fmt.Sprintf("%d archive members are named twice or share a name; programs differ in which they read", n))
 	}
 	if pkg.HasContentType(vbaContentType) {
-		doc.Warn(gofastcore.SeverityInfo, WarnHasMacros, "")
+		doc.Warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "a VBA project (macros); it is not read")
 	}
 	if errors.Is(err, opc.ErrBudget) {
 		doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading document properties")
