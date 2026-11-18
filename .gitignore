@@ -1,1 +1,44 @@
+# Planning notes kept local
 IMPLEMENTATION_PLAN.md
+
+# Agent instructions kept local
+CLAUDE.md
+.claude/
+
+# Build output
+/bin/
+/dist/
+/gofastooxml
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test, coverage and profiling output
+*.test
+*.out
+*.prof
+coverage.*
+
+# Go workspace files: the workspace links local checkouts and is not part of the module
+go.work
+go.work.sum
+
+# Downloaded corpus files. Only the manifest (testdata/corpus.json) is tracked.
+/testdata/corpus/
+
+# Scratch output of the generators and the baseline runner
+/testdata/gen/__pycache__/
+/bench/out/
+__pycache__/
+*.pyc
+
+# LibreOffice lock files
+.~lock.*
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

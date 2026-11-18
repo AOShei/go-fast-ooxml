@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ['1.25', 'stable']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Format
+        if: matrix.os == 'ubuntu-latest'
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Vet
+        run: go vet ./...
+
+      # Tests that need LibreOffice, pandoc, the Python tools or the
+      # downloaded corpus skip themselves when those are absent, as here.
+      - name: Test
+        run: go test -race ./...
+
+      - name: Fuzz smoke
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -run '^$' -fuzz '^FuzzOpen$' -fuzztime 30s .
+
+  dependencies:
+    # The series rule: the standard library and go-fast modules only.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Only go-fast-core may be required
+        run: |
+          extra=$(go list -m all | awk 'NR>1 {print $1}' | grep -v '^github.com/AOShei/go-fast-core$' || true)
+          if [ -n "$extra" ]; then echo "unexpected modules:"; echo "$extra"; exit 1; fi
+      - name: Only standard library and go-fast packages may be imported
+        run: |
+          extra=$(go list -deps -test -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/AOShei/go-fast-' || true)
+          if [ -n "$extra" ]; then echo "unexpected packages:"; echo "$extra"; exit 1; fi

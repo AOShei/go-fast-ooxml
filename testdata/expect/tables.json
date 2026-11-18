@@ -1,0 +1,64 @@
+{
+ "schema_version": "0.1",
+ "source": {
+  "format": "docx"
+ },
+ "parts": [
+  {
+   "kind": "body",
+   "number": 1,
+   "blocks": [
+    {
+     "kind": "paragraph",
+     "text": "Sales by region:"
+    },
+    {
+     "kind": "table",
+     "table": {
+      "header_rows": 1,
+      "rows": [
+       [
+        "Region",
+        "Q1",
+        "Q2"
+       ],
+       [
+        "North",
+        "10",
+        "12\nestimated"
+       ],
+       [
+        "",
+        "11",
+        "13"
+       ],
+       [
+        "Total",
+        "21",
+        ""
+       ]
+      ],
+      "merges": [
+       {
+        "row": 1,
+        "col": 0,
+        "row_span": 2,
+        "col_span": 1
+       },
+       {
+        "row": 3,
+        "col": 1,
+        "row_span": 1,
+        "col_span": 2
+       }
+      ]
+     }
+    },
+    {
+     "kind": "paragraph",
+     "text": "End of table."
+    }
+   ]
+  }
+ ]
+}

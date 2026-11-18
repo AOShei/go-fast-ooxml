@@ -1,0 +1,66 @@
+{
+ "schema_version": "0.1",
+ "source": {
+  "format": "docx"
+ },
+ "parts": [
+  {
+   "kind": "body",
+   "number": 1,
+   "blocks": [
+    {
+     "kind": "paragraph",
+     "text": "Shopping:"
+    },
+    {
+     "kind": "list_item",
+     "text": "Apples",
+     "level": 1
+    },
+    {
+     "kind": "list_item",
+     "text": "Pears",
+     "level": 1
+    },
+    {
+     "kind": "list_item",
+     "text": "Conference pears",
+     "level": 2
+    },
+    {
+     "kind": "list_item",
+     "text": "Plums",
+     "level": 1
+    },
+    {
+     "kind": "list_item",
+     "text": "Open the box",
+     "level": 1,
+     "ordered": true
+    },
+    {
+     "kind": "list_item",
+     "text": "Remove the packaging",
+     "level": 1,
+     "ordered": true
+    },
+    {
+     "kind": "list_item",
+     "text": "Keep the receipt",
+     "level": 2,
+     "ordered": true
+    },
+    {
+     "kind": "list_item",
+     "text": "Plug it in",
+     "level": 1,
+     "ordered": true
+    },
+    {
+     "kind": "paragraph",
+     "text": "That is all."
+    }
+   ]
+  }
+ ]
+}

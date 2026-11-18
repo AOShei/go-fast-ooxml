@@ -1,0 +1,132 @@
+{
+ "schema_version": "0.1",
+ "source": {
+  "format": "pptx"
+ },
+ "parts": [
+  {
+   "kind": "slide",
+   "number": 1,
+   "width": 720,
+   "height": 540,
+   "blocks": [
+    {
+     "kind": "heading",
+     "text": "Project Update",
+     "level": 1
+    },
+    {
+     "kind": "heading",
+     "text": "Autumn 2026",
+     "level": 2
+    }
+   ],
+   "name": "Project Update"
+  },
+  {
+   "kind": "slide",
+   "number": 2,
+   "width": 720,
+   "height": 540,
+   "blocks": [
+    {
+     "kind": "heading",
+     "text": "Agenda",
+     "level": 1
+    },
+    {
+     "kind": "list_item",
+     "text": "Status",
+     "level": 1
+    },
+    {
+     "kind": "list_item",
+     "text": "Milestones reached",
+     "level": 2
+    },
+    {
+     "kind": "list_item",
+     "text": "Risks",
+     "level": 1
+    },
+    {
+     "kind": "note",
+     "text": "Remember to mention the budget."
+    }
+   ],
+   "name": "Agenda"
+  },
+  {
+   "kind": "slide",
+   "number": 3,
+   "width": 720,
+   "height": 540,
+   "blocks": [
+    {
+     "kind": "heading",
+     "text": "Figures",
+     "level": 1
+    },
+    {
+     "kind": "table",
+     "table": {
+      "header_rows": 1,
+      "rows": [
+       [
+        "Region",
+        "Q1",
+        "Q2"
+       ],
+       [
+        "North",
+        "10",
+        "12"
+       ],
+       [
+        "South",
+        "7",
+        "9"
+       ]
+      ]
+     }
+    },
+    {
+     "kind": "paragraph",
+     "text": "Source: internal data"
+    }
+   ],
+   "name": "Figures"
+  },
+  {
+   "kind": "slide",
+   "number": 4,
+   "width": 720,
+   "height": 540,
+   "blocks": [
+    {
+     "kind": "paragraph",
+     "text": "Backup slide content",
+     "hidden": "invisible"
+    }
+   ],
+   "hidden": "invisible"
+  },
+  {
+   "kind": "slide",
+   "number": 5,
+   "width": 720,
+   "height": 540,
+   "blocks": [
+    {
+     "kind": "paragraph",
+     "text": "Visible text"
+    },
+    {
+     "kind": "paragraph",
+     "text": "Text placed beside the slide",
+     "hidden": "off_page"
+    }
+   ]
+  }
+ ]
+}
