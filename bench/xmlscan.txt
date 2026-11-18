@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+cpu: AMD Ryzen 9 9900X 12-Core Processor            
+BenchmarkScan/large.docx-24         	     285	   4173127 ns/op	2912.15 MB/s	      20 B/op	       0 allocs/op
+BenchmarkScan/large.docx-24         	     284	   4197932 ns/op	2894.94 MB/s	      21 B/op	       0 allocs/op
+BenchmarkScan/large.docx-24         	     285	   4234708 ns/op	2869.80 MB/s	      20 B/op	       0 allocs/op
+BenchmarkScan/large.xlsx-24         	       6	 174361220 ns/op	 578.11 MB/s	     560 B/op	       5 allocs/op
+BenchmarkScan/large.xlsx-24         	       6	 175877448 ns/op	 573.12 MB/s	     560 B/op	       5 allocs/op
+BenchmarkScan/large.xlsx-24         	       6	 175420226 ns/op	 574.62 MB/s	     560 B/op	       5 allocs/op
+BenchmarkScan/large.pptx-24         	     164	   7255862 ns/op	 962.26 MB/s	      23 B/op	       0 allocs/op
+BenchmarkScan/large.pptx-24         	     164	   7253976 ns/op	 962.51 MB/s	      23 B/op	       0 allocs/op
+BenchmarkScan/large.pptx-24         	     164	   7244351 ns/op	 963.79 MB/s	      23 B/op	       0 allocs/op
+BenchmarkScanReader/large.docx-24   	     292	   4080920 ns/op	2977.95 MB/s	     244 B/op	       0 allocs/op
+BenchmarkScanReader/large.docx-24   	     292	   4078738 ns/op	2979.54 MB/s	     244 B/op	       0 allocs/op
+BenchmarkScanReader/large.docx-24   	     294	   4064280 ns/op	2990.14 MB/s	     243 B/op	       0 allocs/op
+BenchmarkScanReader/large.xlsx-24   	       7	 158407105 ns/op	 636.33 MB/s	    9842 B/op	       4 allocs/op
+BenchmarkScanReader/large.xlsx-24   	       7	 157984899 ns/op	 638.03 MB/s	    9842 B/op	       4 allocs/op
+BenchmarkScanReader/large.xlsx-24   	       7	 157957917 ns/op	 638.14 MB/s	    9842 B/op	       4 allocs/op
+BenchmarkScanReader/large.pptx-24   	     178	   6716857 ns/op	1039.48 MB/s	     389 B/op	       0 allocs/op
+BenchmarkScanReader/large.pptx-24   	     178	   6714011 ns/op	1039.92 MB/s	     389 B/op	       0 allocs/op
+BenchmarkScanReader/large.pptx-24   	     178	   6702132 ns/op	1041.76 MB/s	     389 B/op	       0 allocs/op
+BenchmarkEncodingXML/large.docx-24  	      15	  76837298 ns/op	 158.16 MB/s	18750499 B/op	  653312 allocs/op
+BenchmarkEncodingXML/large.docx-24  	      15	  76827098 ns/op	 158.18 MB/s	18750500 B/op	  653312 allocs/op
+BenchmarkEncodingXML/large.docx-24  	      15	  76680723 ns/op	 158.49 MB/s	18750496 B/op	  653312 allocs/op
+BenchmarkEncodingXML/large.xlsx-24  	       1	1003813484 ns/op	 100.42 MB/s	869876256 B/op	20403509 allocs/op
+BenchmarkEncodingXML/large.xlsx-24  	       1	1001323952 ns/op	 100.67 MB/s	869876256 B/op	20403509 allocs/op
+BenchmarkEncodingXML/large.xlsx-24  	       1	1014823873 ns/op	  99.33 MB/s	869876400 B/op	20403510 allocs/op
+BenchmarkEncodingXML/large.pptx-24  	      18	  61453944 ns/op	 113.61 MB/s	37651674 B/op	 1033356 allocs/op
+BenchmarkEncodingXML/large.pptx-24  	      19	  61372452 ns/op	 113.76 MB/s	37651673 B/op	 1033356 allocs/op
+BenchmarkEncodingXML/large.pptx-24  	      19	  61178186 ns/op	 114.13 MB/s	37651669 B/op	 1033356 allocs/op

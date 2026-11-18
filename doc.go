@@ -4,6 +4,7 @@
 //
 // It uses the standard library and go-fast-core only.
 //
-// The package is under construction. Phase 0 provides the test harness and
-// baselines; there is no extraction code yet.
+// The package is under construction. It identifies a file, enforces the
+// limits, and reads the document properties; the content of the document
+// is not extracted yet, and Extract says so with a part.failed warning.
 package gofastooxml

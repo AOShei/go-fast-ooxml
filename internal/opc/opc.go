@@ -1,0 +1,466 @@
+// Package opc reads the container of an Office Open XML file: a zip
+// archive holding parts, a table of their content types, and relationship
+// parts that link them.
+//
+// It is the only place the library touches the archive, so it is where the
+// limits on decompression are enforced.
+package opc
+
+import (
+	"archive/zip"
+	"errors"
+	"fmt"
+	"io"
+	"path"
+	"strings"
+	"sync/atomic"
+
+	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+)
+
+// Errors returned by this package. The extractor maps them to the shared
+// gofastcore errors.
+var (
+	// ErrNotZip: the input is not a zip archive.
+	ErrNotZip = errors.New("opc: not a zip archive")
+	// ErrNotPackage: a zip archive with no content-types table, so some
+	// other zip-based format.
+	ErrNotPackage = errors.New("opc: zip archive is not an Office Open XML package")
+	// ErrDamaged: a package whose own structure cannot be read.
+	ErrDamaged = errors.New("opc: damaged package")
+	// ErrNoMainPart: a package with no Word, Excel or PowerPoint main part.
+	ErrNoMainPart = errors.New("opc: package holds no Word, Excel or PowerPoint document")
+	// ErrNotFound: the named part is not in the package.
+	ErrNotFound = errors.New("opc: no such part")
+	// ErrBudget: reading went over Limits.MaxDecodedBytes.
+	ErrBudget = errors.New("opc: decompressed size limit reached")
+	// ErrTooManyParts: the archive has more members than Limits.MaxMembers.
+	ErrTooManyParts = errors.New("opc: too many parts")
+	// ErrEncryptedMember: a zip member is encrypted with zip encryption.
+	ErrEncryptedMember = errors.New("opc: zip member is encrypted")
+)
+
+// Limits bounds what a package may cost. Values are final: the caller has
+// already applied its defaults.
+type Limits struct {
+	// MaxDecodedBytes is the total number of decompressed bytes that may
+	// be read from the package, over all parts.
+	MaxDecodedBytes int64
+	// MaxMembers is the largest number of zip members accepted.
+	MaxMembers int
+}
+
+// Rel is one relationship of a part or of the package.
+type Rel struct {
+	ID   string
+	Type string
+	// Target is a part name in canonical form, or, when External is set,
+	// the URL or path exactly as written.
+	Target   string
+	External bool
+}
+
+// Package is an opened Office Open XML package. It is safe for concurrent
+// use.
+type Package struct {
+	files     map[string]*zip.File // by canonical part name
+	names     []string             // canonical names, in archive order
+	defaults  map[string]string    // lower-case extension -> content type
+	overrides map[string]string    // canonical part name -> content type
+	budget    atomic.Int64         // decompressed bytes still allowed
+}
+
+// Open reads the archive's directory and the content-types table.
+func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
+	}
+	if lim.MaxMembers > 0 && len(zr.File) > lim.MaxMembers {
+		return nil, fmt.Errorf("%w: %d, limit %d", ErrTooManyParts, len(zr.File), lim.MaxMembers)
+	}
+	p := &Package{
+		files:     make(map[string]*zip.File, len(zr.File)),
+		names:     make([]string, 0, len(zr.File)),
+		defaults:  map[string]string{},
+		overrides: map[string]string{},
+	}
+	p.budget.Store(lim.MaxDecodedBytes)
+	for _, f := range zr.File {
+		if strings.HasSuffix(f.Name, "/") {
+			continue // a directory entry
+		}
+		name := Canonical(f.Name)
+		if _, dup := p.files[name]; dup {
+			continue // the first of two members with one name is the part
+		}
+		p.files[name] = f
+		p.names = append(p.names, name)
+	}
+	if _, ok := p.files[contentTypesName]; !ok {
+		return nil, ErrNotPackage
+	}
+	if err := p.readContentTypes(); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+const contentTypesName = "[content_types].xml"
+
+// Canonical returns the form of a part name used as a key: no leading
+// slash, forward slashes, percent-escapes decoded, ASCII letters in lower
+// case. Part names are case-insensitive, and producers disagree on the
+// rest.
+func Canonical(name string) string {
+	plain := true
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c == '\\' || c == '%' || (c >= 'A' && c <= 'Z') || (i == 0 && c == '/') {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		return name
+	}
+	b := make([]byte, 0, len(name))
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c == '\\':
+			c = '/'
+		case c == '%' && i+2 < len(name) && isHex(name[i+1]) && isHex(name[i+2]):
+			c = unhex(name[i+1])<<4 | unhex(name[i+2])
+			i += 2
+		}
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b = append(b, c)
+	}
+	for len(b) > 0 && b[0] == '/' {
+		b = b[1:]
+	}
+	return string(b)
+}
+
+func isHex(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c >= 'a':
+		return c - 'a' + 10
+	case c >= 'A':
+		return c - 'A' + 10
+	}
+	return c - '0'
+}
+
+// Resolve returns the canonical name of the part that target refers to
+// when written in a relationship of the part named source ("" for the
+// package). A target that starts with a slash is relative to the package
+// root; any other is relative to the directory of source.
+func Resolve(source, target string) string {
+	if i := strings.IndexByte(target, '#'); i >= 0 {
+		target = target[:i] // a fragment addresses a place inside the part
+	}
+	if strings.HasPrefix(target, "/") || strings.HasPrefix(target, "\\") {
+		return Canonical(path.Clean(strings.ReplaceAll(target, "\\", "/")))
+	}
+	dir := path.Dir(source)
+	if source == "" || dir == "." {
+		dir = ""
+	}
+	joined := path.Clean(path.Join(dir, strings.ReplaceAll(target, "\\", "/")))
+	// A target that climbs out of the package stays at its root.
+	for strings.HasPrefix(joined, "../") {
+		joined = joined[3:]
+	}
+	if joined == ".." || joined == "." {
+		joined = ""
+	}
+	return Canonical(joined)
+}
+
+// Has reports whether the package has the named part.
+func (p *Package) Has(name string) bool {
+	_, ok := p.files[Canonical(name)]
+	return ok
+}
+
+// Names returns the canonical names of all parts, in archive order. The
+// slice must not be modified.
+func (p *Package) Names() []string { return p.names }
+
+// Size returns the uncompressed size the archive declares for a part, or
+// -1 if there is no such part. A hostile archive can declare anything.
+func (p *Package) Size(name string) int64 {
+	f, ok := p.files[Canonical(name)]
+	if !ok {
+		return -1
+	}
+	return int64(f.UncompressedSize64)
+}
+
+// ContentType returns the content type of a part: its override if it has
+// one, else the default for its extension, else "".
+func (p *Package) ContentType(name string) string {
+	name = Canonical(name)
+	if ct, ok := p.overrides[name]; ok {
+		return ct
+	}
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		return p.defaults[name[i+1:]]
+	}
+	return ""
+}
+
+// HasContentType reports whether any part is declared with the given
+// content type.
+func (p *Package) HasContentType(ct string) bool {
+	for _, v := range p.overrides {
+		if v == ct {
+			return true
+		}
+	}
+	for ext, v := range p.defaults {
+		if v != ct {
+			continue
+		}
+		for _, n := range p.names {
+			if strings.HasSuffix(n, "."+ext) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Remaining returns how many decompressed bytes may still be read.
+func (p *Package) Remaining() int64 { return max(p.budget.Load(), 0) }
+
+// Open returns a reader for a part's decompressed content. Every byte read
+// is charged to the package's budget, and a read that goes over it fails
+// with ErrBudget, so no part can expand without bound however small it is
+// in the archive.
+func (p *Package) Open(name string) (io.ReadCloser, error) {
+	f, ok := p.files[Canonical(name)]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
+	}
+	if f.Flags&1 != 0 {
+		return nil, fmt.Errorf("%w: %s", ErrEncryptedMember, name)
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, name, err)
+	}
+	return &budgetReader{rc: rc, p: p}, nil
+}
+
+type budgetReader struct {
+	rc io.ReadCloser
+	p  *Package
+}
+
+func (b *budgetReader) Read(buf []byte) (int, error) {
+	n, err := b.rc.Read(buf)
+	if n > 0 && b.p.budget.Add(-int64(n)) < 0 {
+		return 0, ErrBudget
+	}
+	return n, err
+}
+
+func (b *budgetReader) Close() error { return b.rc.Close() }
+
+// Scan opens a part and returns a scanner over it. The caller closes the
+// returned closer when done.
+func (p *Package) Scan(name string, s *xmlscan.Scanner, opts *xmlscan.Options) (io.Closer, error) {
+	rc, err := p.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	s.Reset(rc, opts)
+	return rc, nil
+}
+
+var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
+
+func (p *Package) readContentTypes() error {
+	var s xmlscan.Scanner
+	c, err := p.Scan(contentTypesName, &s, scanOptions)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	for {
+		switch s.Next() {
+		case xmlscan.Start:
+			switch {
+			case s.Is(ns.ContentTypes, "Default"):
+				ext, _ := s.Attr(xmlscan.NoSpace, "Extension")
+				ct, _ := s.Attr(xmlscan.NoSpace, "ContentType")
+				if len(ext) > 0 {
+					p.defaults[strings.ToLower(string(ext))] = string(ct)
+				}
+			case s.Is(ns.ContentTypes, "Override"):
+				part, _ := s.Attr(xmlscan.NoSpace, "PartName")
+				ct, _ := s.Attr(xmlscan.NoSpace, "ContentType")
+				if len(part) > 0 {
+					p.overrides[Canonical(string(part))] = string(ct)
+				}
+			}
+		case xmlscan.EOF:
+			if err := s.Err(); err != nil {
+				if errors.Is(err, ErrBudget) {
+					return err
+				}
+				return fmt.Errorf("%w: content types: %v", ErrDamaged, err)
+			}
+			return nil
+		}
+	}
+}
+
+// RelsName returns the name of the relationships part of source ("" for
+// the package).
+func RelsName(source string) string {
+	if source == "" {
+		return "_rels/.rels"
+	}
+	source = Canonical(source)
+	return path.Join(path.Dir(source), "_rels", path.Base(source)+".rels")
+}
+
+// Rels returns the relationships of the part named source, or of the
+// package when source is "". A part without a relationships part has none,
+// which is not an error.
+func (p *Package) Rels(source string) ([]Rel, error) {
+	name := RelsName(source)
+	if !p.Has(name) {
+		return nil, nil
+	}
+	var s xmlscan.Scanner
+	c, err := p.Scan(name, &s, scanOptions)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	var rels []Rel
+	for {
+		switch s.Next() {
+		case xmlscan.Start:
+			if !s.Is(ns.PackageRels, "Relationship") {
+				continue
+			}
+			id, _ := s.Attr(xmlscan.NoSpace, "Id")
+			typ, _ := s.Attr(xmlscan.NoSpace, "Type")
+			target, _ := s.Attr(xmlscan.NoSpace, "Target")
+			mode, _ := s.Attr(xmlscan.NoSpace, "TargetMode")
+			r := Rel{ID: string(id), Type: string(typ), External: string(mode) == "External"}
+			if r.External {
+				r.Target = string(target)
+			} else {
+				r.Target = Resolve(source, string(target))
+			}
+			rels = append(rels, r)
+		case xmlscan.EOF:
+			if err := s.Err(); err != nil {
+				if errors.Is(err, ErrBudget) {
+					return rels, err
+				}
+				return rels, fmt.Errorf("%w: %s: %v", ErrDamaged, name, err)
+			}
+			return rels, nil
+		}
+	}
+}
+
+// Format is one of the three document families.
+type Format string
+
+const (
+	Docx Format = "docx"
+	Xlsx Format = "xlsx"
+	Pptx Format = "pptx"
+)
+
+type kind struct {
+	format Format
+	mime   string
+}
+
+// mainKinds maps the content type of a main part to the family and to the
+// media type of a file of that kind.
+var mainKinds = map[string]kind{
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml":   {Docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml":   {Docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.template"},
+	"application/vnd.ms-word.document.macroEnabled.main+xml":                             {Docx, "application/vnd.ms-word.document.macroEnabled.12"},
+	"application/vnd.ms-word.template.macroEnabledTemplate.main+xml":                     {Docx, "application/vnd.ms-word.template.macroEnabled.12"},
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml":         {Xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml":      {Xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.template"},
+	"application/vnd.ms-excel.sheet.macroEnabled.main+xml":                               {Xlsx, "application/vnd.ms-excel.sheet.macroEnabled.12"},
+	"application/vnd.ms-excel.template.macroEnabled.main+xml":                            {Xlsx, "application/vnd.ms-excel.template.macroEnabled.12"},
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml": {Pptx, "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
+	"application/vnd.openxmlformats-officedocument.presentationml.slideshow.main+xml":    {Pptx, "application/vnd.openxmlformats-officedocument.presentationml.slideshow"},
+	"application/vnd.openxmlformats-officedocument.presentationml.template.main+xml":     {Pptx, "application/vnd.openxmlformats-officedocument.presentationml.template"},
+	"application/vnd.ms-powerpoint.presentation.macroEnabled.main+xml":                   {Pptx, "application/vnd.ms-powerpoint.presentation.macroEnabled.12"},
+	"application/vnd.ms-powerpoint.slideshow.macroEnabled.main+xml":                      {Pptx, "application/vnd.ms-powerpoint.slideshow.macroEnabled.12"},
+	"application/vnd.ms-powerpoint.template.macroEnabled.main+xml":                       {Pptx, "application/vnd.ms-powerpoint.template.macroEnabled.12"},
+}
+
+// conventional are the usual locations of the main part, used when a
+// package's content types or relationships do not identify it.
+var conventional = []struct {
+	name string
+	kind
+}{
+	{"word/document.xml", mainKinds["application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"]},
+	{"xl/workbook.xml", mainKinds["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"]},
+	{"ppt/presentation.xml", mainKinds["application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"]},
+}
+
+// Main finds the main part of the package and says what kind of document
+// it is.
+//
+// It follows the package's officeDocument relationship and reads the
+// target's content type, which is how Office itself decides. A package
+// whose relationship or content type is missing or wrong is still
+// identified when a main part sits in its conventional place.
+func (p *Package) Main() (part string, format Format, mime string, err error) {
+	rels, relErr := p.Rels("")
+	if errors.Is(relErr, ErrBudget) {
+		return "", "", "", relErr
+	}
+	for _, r := range rels {
+		if r.External || !ns.IsRel(r.Type, ns.RelOfficeDocument) || !p.Has(r.Target) {
+			continue
+		}
+		if k, ok := mainKinds[p.ContentType(r.Target)]; ok {
+			return r.Target, k.format, k.mime, nil
+		}
+		// The relationship is right and the content type is not one of
+		// ours: go by where the part is.
+		for _, c := range conventional {
+			if r.Target == c.name {
+				return r.Target, c.format, c.mime, nil
+			}
+		}
+	}
+	// No usable relationship. A declared main part still identifies the file.
+	for _, name := range p.names {
+		if k, ok := mainKinds[p.overrides[name]]; ok {
+			return name, k.format, k.mime, nil
+		}
+	}
+	for _, c := range conventional {
+		if p.Has(c.name) {
+			return c.name, c.format, c.mime, nil
+		}
+	}
+	return "", "", "", ErrNoMainPart
+}

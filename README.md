@@ -5,13 +5,19 @@ macro and template variants) into the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
-**Status: under construction.** The test harness, fixtures, corpus manifest and
-baselines exist. There is no extraction code yet, and nothing is released.
+**Status: under construction, nothing released.** The library identifies a
+file, enforces its limits and reads the document properties. It does not
+extract the content of the document yet, and `Extract` says so: the one part
+it returns carries a `part.failed` warning.
 
 ## Layout
 
 | Path | Content |
 |---|---|
+| `extract.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor` |
+| `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
+| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget |
+| `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |
 | `testdata/fixtures`, `testdata/expect`, `testdata/fixtures.json` | Small generated files with exactly known content, the expected result of each in the shared model's JSON form, and their manifest |
 | `testdata/gen` | The fixture generator and the adapters for the comparison tools |
