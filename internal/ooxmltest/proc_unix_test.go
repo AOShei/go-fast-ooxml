@@ -47,12 +47,11 @@ func TestOracleProgramsAreContained(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const limit = 256 << 20
-	if info.Size() > limit {
-		t.Errorf("the program wrote %d MiB; the limit is %d MiB", info.Size()>>20, limit>>20)
+	if info.Size() > maxOutputBytes {
+		t.Errorf("the program wrote %d MiB; the limit is %d MiB", info.Size()>>20, maxOutputBytes>>20)
 	}
-	if info.Size() < limit/2 {
-		t.Logf("the program wrote %d MiB in its time, under the %d MiB limit: the limit itself was not reached", info.Size()>>20, limit>>20)
+	if info.Size() < maxOutputBytes/4 {
+		t.Logf("the program wrote %d MiB in its time: the %d MiB limit itself was not reached", info.Size()>>20, maxOutputBytes>>20)
 	}
 	size := info.Size()
 	time.Sleep(300 * time.Millisecond)
