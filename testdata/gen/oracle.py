@@ -14,12 +14,13 @@ import tools  # noqa: E402
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in tools.TOOLS:
-        sys.exit(f"usage: oracle.py <{'|'.join(tools.TOOLS)}> <file>")
+    known = {**tools.TOOLS, **tools.ORACLES}
+    if len(sys.argv) != 3 or sys.argv[1] not in known:
+        sys.exit(f"usage: oracle.py <{'|'.join(known)}> <file>")
     tool, path = sys.argv[1], sys.argv[2]
     result = {"tool": tool, "version": tools.tool_version(tool), "text": ""}
     try:
-        result["text"] = tools.TOOLS[tool][1](path)
+        result["text"] = known[tool][1](path)
     except Exception as e:  # the tool's failure is the finding
         result["error"] = f"{type(e).__name__}: {e}"
     json.dump(result, sys.stdout, ensure_ascii=False)

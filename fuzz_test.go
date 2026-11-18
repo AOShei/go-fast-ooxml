@@ -102,3 +102,49 @@ func FuzzDocx(f *testing.F) {
 		checkOutcome(t, "fuzz input", doc, err)
 	})
 }
+
+// FuzzXlsx gives the Excel reader arbitrary worksheet, styles,
+// shared-strings and drawing parts inside a sound package. Whatever they
+// hold, the result is a valid document or one of the shared errors.
+func FuzzXlsx(f *testing.F) {
+	sheet := func(data, extra string) []byte {
+		return []byte(`<worksheet xmlns="` + ooxmltest.NSSheet + `" xmlns:r="` + ooxmltest.NSRel + `"><sheetData>` + data + `</sheetData>` + extra + `</worksheet>`)
+	}
+	styles := []byte(`<styleSheet xmlns="` + ooxmltest.NSSheet + `">` + xlStyles(map[int]string{164: "#,##0.00;(#,##0.00)", 165: ";;;", 166: `[h]:mm`, 167: "# ?/?"},
+		[]string{`<sz val="1"/><color rgb="FFFFFFFF"/>`, `<color theme="1" tint="0.5"/>`, `<color indexed="9"/>`},
+		[]string{solidFill("1F3864"), `<gradientFill/>`},
+		`numFmtId="0"`, `numFmtId="164" fontId="1" fillId="2"`, `numFmtId="165"`, `numFmtId="14" fontId="2"`, `numFmtId="166" fontId="3" fillId="3"`, `numFmtId="167"`, `numFmtId="49"`) +
+		`<colors><indexedColors><rgbColor rgb="00112233"/></indexedColors></colors></styleSheet>`)
+	strs := []byte(`<sst xmlns="` + ooxmltest.NSSheet + `"><si><t>one</t></si><si><r><t>two</t></r><rPh><t>x</t></rPh></si><si><t>a_x000D_b</t></si></sst>`)
+	drawing := []byte(drawingHeader + `<xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row></xdr:from><xdr:sp><xdr:nvSpPr><xdr:cNvPr id="1" name="s" descr="d" hidden="1"/></xdr:nvSpPr>` +
+		`<xdr:spPr><a:solidFill><a:srgbClr val="000000"/></a:solidFill></xdr:spPr><xdr:txBody><a:p><a:r><a:rPr sz="100"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:rPr><a:t>t</a:t></a:r><a:br/></a:p></xdr:txBody></xdr:sp>` +
+		`<xdr:pic><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic></xdr:twoCellAnchor></xdr:wsDr>`)
+	for _, s := range [][]byte{
+		sheet(xlRow(1, `<c r="A1" t="s"><v>0</v></c>`, xlStyled("B1", 1, "-1234.5"), xlStyled("C1", 3, "46085.5"), xlStr("D1", "x"), `<c r="E1" t="b"><v>1</v></c>`, `<c r="F1" t="e"><v>#N/A</v></c>`, `<c r="G1"><f>1+1</f></c>`)+
+			`<row hidden="1"><c s="2"><v>5</v></c><c s="4"><v>1.5</v></c><c s="5"><v>0.75</v></c><c s="6" t="str"><v>7</v></c></row>`,
+			`<cols><col min="2" max="3" hidden="1"/></cols><mergeCells><mergeCell ref="A1:B2"/></mergeCells><tableParts><tablePart r:id="rId1"/></tableParts><drawing r:id="rId3"/>`),
+		sheet(xlRow(5, xlNum("XFD5", "1"))+xlRow(1048576, xlNum("A1048576", "2"))+xlRow(3, xlNum("B3", "3"), xlNum("A3", "4"), xlNum("A3", "5")), ``),
+		sheet(xlRow(1, xlNum("A1", "1"), xlNum("C1", "2"), xlNum("E1", "3"))+xlRow(3, xlNum("B3", "4"))+xlRow(4, xlNum("D4", "1e308"), xlNum("E4", "-0"), xlNum("F4", "abc")), ``),
+	} {
+		f.Add(s, styles, strs, drawing)
+	}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1}
+	e := &gofastooxml.Extractor{MaxCells: 100_000}
+	f.Fuzz(func(t *testing.T, sheet, styles, strs, drawing []byte) {
+		pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S"}, ooxmltest.Sheet{Name: "T", State: "hidden", Data: xlRow(1, `<c r="A1" t="s"><v>1</v></c>`)})
+		pkg.AddBytes(firstSheet, ooxmltest.CTWorksheet, sheet)
+		pkg.Rel("xl/workbook.xml", ooxmltest.RelStyles, "styles.xml")
+		pkg.AddBytes("xl/styles.xml", ooxmltest.CTSheetStyles, styles)
+		pkg.Rel("xl/workbook.xml", ooxmltest.RelSharedStrings, "sharedStrings.xml")
+		pkg.AddBytes("xl/sharedStrings.xml", ooxmltest.CTSharedStrings, strs)
+		pkg.Rel(firstSheet, relBase+"table", "../tables/table1.xml")
+		pkg.Add("xl/tables/table1.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" ref="A1:C3"/>`)
+		pkg.Rel(firstSheet, relBase+"comments", "../comments1.xml")
+		pkg.AddBytes("xl/comments1.xml", ctComments, drawing)
+		pkg.Rel(firstSheet, relBase+"drawing", "../drawings/drawing1.xml")
+		pkg.AddBytes("xl/drawings/drawing1.xml", ctDrawing, drawing)
+		data := pkg.Bytes()
+		doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
+		checkOutcome(t, "fuzz input", doc, err)
+	})
+}

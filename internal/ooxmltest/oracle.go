@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -170,6 +169,133 @@ func WarmLibreOfficeText(t testing.TB, files [][]byte) {
 	if err != nil {
 		t.Skip("LibreOffice (soffice) is not installed")
 	}
+	Warm(files, func(data []byte) { convertText(bin, data, 40*time.Second) })
+}
+
+// csvFilter makes LibreOffice write every sheet of a workbook to a CSV
+// file of its own. The tokens, by position: 1 separator ",", 2 quote ",
+// 3 UTF-8, 4 from row 1, 5 no column formats, 6 default language, 7 quote
+// only where needed, 8 (import only), 9 cell content as shown, 10 values
+// not formulas, 11 keep spaces, 12 sheet -1: every sheet to its own file.
+// Token 9 is the one that matters: without it LibreOffice writes raw
+// numbers and the oracle says nothing about number formats.
+const csvFilter = "csv:Text - txt - csv (StarCalc):44,34,76,1,,0,false,true,true,false,false,-1"
+
+// LibreOfficeCSV returns the cells of every sheet of a workbook as
+// LibreOffice displays them, keyed by sheet name. Values are formatted, so
+// this is the oracle for number formats.
+func LibreOfficeCSV(t testing.TB, xlsx []byte) map[string][][]string {
+	t.Helper()
+	sheets, err := readCSVs(soffice(t, xlsx, "xlsx", csvFilter))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sheets) == 0 {
+		t.Fatal("LibreOffice produced no CSV")
+	}
+	return sheets
+}
+
+// readCSVs reads the CSV files LibreOffice wrote into a directory, one a
+// sheet, named input-<sheet>.csv.
+func readCSVs(dir string) (map[string][][]string, error) {
+	matches, _ := filepath.Glob(filepath.Join(dir, "input-*.csv"))
+	sort.Strings(matches)
+	sheets := map[string][][]string{}
+	for _, m := range matches {
+		data, err := os.ReadFile(m)
+		if err != nil {
+			return nil, err
+		}
+		rows := parseCSV(data)
+		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "input-"), ".csv")
+		sheets[name] = rows
+	}
+	return sheets, nil
+}
+
+// parseCSV reads CSV as LibreOffice writes it: fields separated by
+// commas, rows by line feeds, a field with either or a quote inside put in
+// quotes with its quotes doubled. Unlike encoding/csv it keeps empty
+// lines, which are the empty rows of a sheet one column wide: dropping
+// them would move every row below.
+func parseCSV(data []byte) [][]string {
+	var rows [][]string
+	var row []string
+	var field []byte
+	quoted := false
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		switch {
+		case quoted && c == '"' && i+1 < len(data) && data[i+1] == '"':
+			field = append(field, '"')
+			i++
+		case c == '"':
+			quoted = !quoted
+		case quoted:
+			field = append(field, c)
+		case c == ',':
+			row = append(row, string(field))
+			field = field[:0]
+		case c == '\n':
+			row = append(row, strings.TrimSuffix(string(field), "\r"))
+			rows = append(rows, row)
+			row, field = nil, field[:0]
+		default:
+			field = append(field, c)
+		}
+	}
+	if len(field) > 0 || len(row) > 0 {
+		rows = append(rows, append(row, string(field)))
+	}
+	return rows
+}
+
+// convertCSV converts a workbook to CSV files with LibreOffice into the
+// oracle cache and returns their directory. Like convertText it needs no
+// test and caches a failure.
+func convertCSV(bin string, xlsx []byte, timeout time.Duration) (dir string, ok bool) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	sum := sha256.Sum256(append([]byte("soffice:"+csvFilter+"\x00"), xlsx...))
+	dir = filepath.Join(base, "gofastooxml-oracle", hex.EncodeToString(sum[:16]))
+	if os.MkdirAll(dir, 0o755) != nil {
+		return "", false
+	}
+	if _, err := os.Stat(filepath.Join(dir, "done")); err != nil {
+		in := filepath.Join(dir, "input.xlsx")
+		if os.WriteFile(in, xlsx, 0o644) != nil {
+			return "", false
+		}
+		runContained(timeout, bin, "-env:UserInstallation=file://"+filepath.Join(dir, "profile"),
+			"--headless", "--norestore", "--convert-to", csvFilter, "--outdir", dir, in)
+		tidy(dir)
+		os.WriteFile(filepath.Join(dir, "done"), nil, 0o644)
+	}
+	return dir, true
+}
+
+// LibreOfficeCSVOK is LibreOfficeCSV for workbooks LibreOffice may not be
+// able to open: it reports false instead of failing the test.
+func LibreOfficeCSVOK(t testing.TB, xlsx []byte) (map[string][][]string, bool) {
+	t.Helper()
+	bin, err := exec.LookPath("soffice")
+	if err != nil {
+		t.Skip("LibreOffice (soffice) is not installed")
+	}
+	dir, ok := convertCSV(bin, xlsx, 90*time.Second)
+	if !ok {
+		return nil, false
+	}
+	sheets, err := readCSVs(dir)
+	return sheets, err == nil && len(sheets) > 0
+}
+
+// Warm runs fn on every file, several at a time, so that oracles which
+// cache their results have them ready when a test asks one by one.
+func Warm(files [][]byte, fn func(data []byte)) {
 	work := make(chan []byte)
 	var wg sync.WaitGroup
 	for range max(runtime.GOMAXPROCS(0)/3, 1) {
@@ -177,7 +303,7 @@ func WarmLibreOfficeText(t testing.TB, files [][]byte) {
 		go func() {
 			defer wg.Done()
 			for data := range work {
-				convertText(bin, data, 40*time.Second)
+				fn(data)
 			}
 		}()
 	}
@@ -188,41 +314,25 @@ func WarmLibreOfficeText(t testing.TB, files [][]byte) {
 	wg.Wait()
 }
 
-// LibreOfficeCSV returns the cells of every sheet of a workbook as
-// LibreOffice displays them, keyed by sheet name. Values are formatted, so
-// this is the oracle for number formats.
-func LibreOfficeCSV(t testing.TB, xlsx []byte) map[string][][]string {
+// WarmLibreOfficeCSV converts many workbooks at once into the cache.
+func WarmLibreOfficeCSV(t testing.TB, files [][]byte) {
 	t.Helper()
-	// Filter tokens, by position: 1 separator ",", 2 quote ", 3 UTF-8,
-	// 4 from row 1, 5 no column formats, 6 default language, 7 quote only
-	// where needed, 8 (import only), 9 cell content as shown, 10 values not
-	// formulas, 11 keep spaces, 12 sheet -1: every sheet to its own file.
-	// Token 9 is the one that matters: without it LibreOffice writes raw
-	// numbers and the oracle says nothing about number formats.
-	dir := soffice(t, xlsx, "xlsx", "csv:Text - txt - csv (StarCalc):44,34,76,1,,0,false,true,true,false,false,-1")
-	matches, _ := filepath.Glob(filepath.Join(dir, "input-*.csv"))
-	sort.Strings(matches)
-	sheets := map[string][][]string{}
-	for _, m := range matches {
-		f, err := os.Open(m)
-		if err != nil {
-			t.Fatal(err)
-		}
-		r := csv.NewReader(f)
-		r.FieldsPerRecord = -1
-		r.LazyQuotes = true
-		rows, err := r.ReadAll()
-		f.Close()
-		if err != nil {
-			t.Fatalf("%s: %v", m, err)
-		}
-		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "input-"), ".csv")
-		sheets[name] = rows
+	bin, err := exec.LookPath("soffice")
+	if err != nil {
+		t.Skip("LibreOffice (soffice) is not installed")
 	}
-	if len(sheets) == 0 {
-		t.Fatal("LibreOffice produced no CSV")
+	Warm(files, func(data []byte) { convertCSV(bin, data, 90*time.Second) })
+}
+
+// WarmPython runs a Python tool over many files at once into the cache.
+func WarmPython(t testing.TB, tool, ext string, files [][]byte) {
+	t.Helper()
+	bin, ok := PythonBin(t)
+	if !ok {
+		t.Skip("the Python comparison environment is not set up (see bench/README.md)")
 	}
-	return sheets
+	root := Root(t)
+	Warm(files, func(data []byte) { python(bin, root, tool, data, ext) })
 }
 
 // Pandoc converts a Word file with pandoc to the given output format
@@ -314,23 +424,42 @@ func Python(t testing.TB, tool string, data []byte, ext string) PythonResult {
 	if !ok {
 		t.Skip("the Python comparison environment is not set up (see bench/README.md)")
 	}
-	dir := oracleCache(t, data, "python:"+tool)
+	res, err := python(bin, Root(t), tool, data, ext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// python runs a tool on a file through testdata/gen/oracle.py, or returns
+// the cached result of an earlier run.
+func python(bin, root, tool string, data []byte, ext string) (PythonResult, error) {
+	var res PythonResult
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	sum := sha256.Sum256(append([]byte("python:"+tool+"\x00"), data...))
+	dir := filepath.Join(base, "gofastooxml-oracle", hex.EncodeToString(sum[:16]))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return res, err
+	}
 	cached := filepath.Join(dir, "out.json")
 	out, err := os.ReadFile(cached)
 	if err != nil {
 		in := filepath.Join(dir, "input."+ext)
 		if err := os.WriteFile(in, data, 0o644); err != nil {
-			t.Fatal(err)
+			return res, err
 		}
-		out, err = run(t, 2*time.Minute, bin, filepath.Join(Root(t), "testdata", "gen", "oracle.py"), tool, in)
+		var stderr []byte
+		out, stderr, err = runContained(2*time.Minute, bin, filepath.Join(root, "testdata", "gen", "oracle.py"), tool, in)
 		if err != nil {
-			t.Fatalf("oracle.py failed: %v", err)
+			return res, fmt.Errorf("oracle.py failed: %v: %s", err, clip(stderr))
 		}
 		os.WriteFile(cached, out, 0o644)
 	}
-	var res PythonResult
 	if err := json.Unmarshal(out, &res); err != nil {
-		t.Fatalf("oracle.py output: %v", err)
+		return res, fmt.Errorf("oracle.py output: %v", err)
 	}
-	return res
+	return res, nil
 }

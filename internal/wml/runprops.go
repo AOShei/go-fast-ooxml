@@ -5,6 +5,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -248,25 +249,8 @@ func readColor(s *xmlscan.Scanner, valueAttr, themeAttr string, theme map[string
 }
 
 func hexColor(v []byte) (color, bool) {
-	if len(v) != 6 {
-		return color{}, false
-	}
-	var n [3]uint8
-	for i, c := range v {
-		var d uint8
-		switch {
-		case c >= '0' && c <= '9':
-			d = c - '0'
-		case c >= 'a' && c <= 'f':
-			d = c - 'a' + 10
-		case c >= 'A' && c <= 'F':
-			d = c - 'A' + 10
-		default:
-			return color{}, false
-		}
-		n[i/2] = n[i/2]<<4 | d
-	}
-	return color{set: true, r: n[0], g: n[1], b: n[2]}, true
+	c, ok := theme.Hex(v)
+	return color{set: ok, r: c.R, g: c.G, b: c.B}, ok
 }
 
 // themeNames maps the names Word uses for theme colours in a document to
@@ -301,35 +285,11 @@ var highlights = map[string]color{
 
 // readTheme reads the colour scheme of a theme part.
 func readTheme(s *xmlscan.Scanner) map[string]color {
-	theme := map[string]color{}
-	for s.Next() != xmlscan.EOF {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Draw, "clrScheme") {
-			continue
-		}
-		depth := s.Depth()
-		name := ""
-		for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-			if s.Kind() != xmlscan.Start || s.Space() != ns.Draw {
-				continue
-			}
-			switch {
-			case s.Depth() == depth+1:
-				name = string(s.Local())
-			case s.Depth() == depth+2 && s.Is(ns.Draw, "srgbClr"):
-				v, _ := s.Attr(xmlscan.NoSpace, "val")
-				if c, ok := hexColor(v); ok {
-					theme[name] = c
-				}
-			case s.Depth() == depth+2 && s.Is(ns.Draw, "sysClr"):
-				v, _ := s.Attr(xmlscan.NoSpace, "lastClr")
-				if c, ok := hexColor(v); ok {
-					theme[name] = c
-				}
-			}
-		}
-		break
+	out := map[string]color{}
+	for name, c := range theme.Read(s).Colors() {
+		out[name] = color{set: true, r: c.R, g: c.G, b: c.B}
 	}
-	return theme
+	return out
 }
 
 // hiddenReasons says why text with the given formatting cannot be seen,

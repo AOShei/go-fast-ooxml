@@ -13,6 +13,8 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/props"
+	"github.com/AOShei/go-fast-ooxml/internal/sml"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/wml"
 )
 
@@ -26,6 +28,11 @@ const (
 	DefaultMaxDecodedBytes = 2 << 30
 	// DefaultMaxArchiveMembers bounds the number of files in the archive.
 	DefaultMaxArchiveMembers = 100_000
+	// DefaultMaxCells bounds the cells kept from a workbook, over all its
+	// sheets. Each cell kept costs memory in the result whatever the size
+	// of the file, so this is what bounds the memory a workbook can ask
+	// for.
+	DefaultMaxCells = 20_000_000
 )
 
 // Warning codes specific to this library. Each states a fact about the
@@ -70,6 +77,18 @@ const (
 	// the cells it holds was written as lines of text, cells separated by
 	// tabs, instead of as a table.
 	WarnTableFlattened = wml.WarnTableFlattened
+
+	// The codes below are raised while an Excel workbook is read.
+
+	// WarnFormulaNoValue: cells hold formulas with no stored result. A
+	// program that writes a workbook without calculating it leaves them
+	// so. The cells are empty; formulas are not evaluated.
+	WarnFormulaNoValue = warn.FormulaNoValue
+	// WarnRegionSplit: an area of a sheet whose cells are spread so
+	// thinly that the rectangle around them is mostly empty was not
+	// written as one table. Each run of cells side by side in a row is a
+	// table of one row instead.
+	WarnRegionSplit = warn.RegionSplit
 )
 
 // Extractor extracts Word, Excel and PowerPoint files. The zero value is
@@ -79,6 +98,11 @@ type Extractor struct {
 	// MaxArchiveMembers bounds the number of files in the zip archive.
 	// Zero means DefaultMaxArchiveMembers; negative means no limit.
 	MaxArchiveMembers int
+	// MaxCells bounds the cells kept from a workbook, over all its
+	// sheets. A sheet that reaches it is cut off there, with a
+	// limit.exceeded warning. Zero means DefaultMaxCells; negative means
+	// no limit.
+	MaxCells int64
 }
 
 var _ gofastcore.Extractor = (*Extractor)(nil)
@@ -167,8 +191,8 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	doc.Source.Name = opts.Name
 	doc.Source.Size = size
 	// Invisible characters are checked for in everything that is
-	// extracted. A format's reader adds the checks it makes: the Word
-	// reader's are listed at wml.HiddenChecked.
+	// extracted. A format's reader adds the checks it makes: see
+	// wml.HiddenChecked and sml.HiddenChecked.
 	doc.HiddenChecked = gofastcore.HiddenChars
 
 	meta, err := props.Read(pkg)
@@ -199,9 +223,20 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	switch format {
 	case opc.Docx:
 		wml.Extract(ctx, pkg, main, opts, doc)
+	case opc.Xlsx:
+		// The text of the cells is bounded by the same number as the
+		// decompressed size: a workbook cannot ask for more output than
+		// the largest input allowed.
+		err := sml.Extract(ctx, pkg, main, opts, doc, sml.Config{
+			MaxCells:     gofastcore.ResolveLimit(e.MaxCells, DefaultMaxCells),
+			MaxTextBytes: gofastcore.ResolveLimit(opts.Limits.MaxDecodedBytes, DefaultMaxDecodedBytes),
+		})
+		if err != nil {
+			return nil, err
+		}
 	default:
-		// Excel and PowerPoint: the container and the properties are read,
-		// the content is not yet. The one part says so, as a failed part,
+		// PowerPoint: the container and the properties are read, the
+		// content is not yet. The one part says so, as a failed part,
 		// so that no consumer takes an empty document for an empty file.
 		part := gofastcore.Part{Kind: partKinds[format], Number: 1}
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "content extraction is not implemented for this format in this version")
