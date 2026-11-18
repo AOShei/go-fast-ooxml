@@ -31,14 +31,44 @@ type style struct {
 	// Word's built-in "List Bullet 2" to "List Number 5" each use a list
 	// of their own at its first level and show the nesting by indent.
 	nested uint8
-	done   bool // inheritance has been resolved
+	// run is the character formatting the style gives its paragraphs'
+	// text, with everything it inherits and the document defaults folded
+	// in. shade is the shading behind its paragraphs.
+	run   runProps
+	shade color
+	// own is the on/off properties the style switches on itself or by
+	// inheritance from other styles, leaving out the document defaults.
+	own  uint8
+	done bool // inheritance has been resolved
 }
 
-// styles holds the paragraph styles of a document by style id.
+// charStyle is a character style: formatting for a run of text.
+type charStyle struct {
+	run   runProps
+	based string
+	done  bool
+}
+
+// styles holds the styles of a document by style id.
 type styles struct {
-	byID map[string]*style
+	byID   map[string]*style
+	chars  map[string]*charStyle
+	tables map[string]*tableStyle
 	// def is the default paragraph style, used by paragraphs that name none.
 	def *style
+	// defaults is the character formatting of text that no style formats.
+	defaults runProps
+}
+
+// char returns the formatting of a character style, or nil.
+func (st *styles) char(id string) *runProps {
+	if st == nil || id == "" {
+		return nil
+	}
+	if c := st.chars[id]; c != nil {
+		return &c.run
+	}
+	return nil
 }
 
 func (st *styles) get(id []byte) *style {
@@ -51,12 +81,23 @@ func (st *styles) get(id []byte) *style {
 	return st.byID[string(id)]
 }
 
-// readStyles reads the paragraph styles from a styles part. Character and
-// table styles are not needed for structure and are skipped.
-func readStyles(s *xmlscan.Scanner) *styles {
-	st := &styles{byID: map[string]*style{}}
+// readStyles reads the paragraph and character styles and the document
+// defaults from a styles part. Table styles are skipped: the formatting
+// they give the text of a table is not taken into account.
+func readStyles(s *xmlscan.Scanner, theme map[string]color) *styles {
+	st := &styles{byID: map[string]*style{}, chars: map[string]*charStyle{}, tables: map[string]*tableStyle{}}
 	for s.Next() != xmlscan.EOF {
 		if s.Kind() != xmlscan.Start || s.Depth() != 2 {
+			continue
+		}
+		if s.Is(ns.Word, "docDefaults") {
+			depth := s.Depth()
+			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+				// w:docDefaults / w:rPrDefault / w:rPr
+				if s.Kind() == xmlscan.Start && s.Depth() == depth+2 && s.Is(ns.Word, "rPr") {
+					readRunProps(s, &st.defaults, theme)
+				}
+			}
 			continue
 		}
 		if !s.Is(ns.Word, "style") {
@@ -64,7 +105,17 @@ func readStyles(s *xmlscan.Scanner) *styles {
 			continue
 		}
 		typ, _ := s.Attr(ns.Word, "type")
-		if string(typ) != "paragraph" {
+		paragraph, character := string(typ) == "paragraph", string(typ) == "character"
+		if string(typ) == "table" {
+			if id, ok := s.Attr(ns.Word, "styleId"); ok && len(id) > 0 {
+				name := string(id)
+				st.tables[name] = readTableStyle(s, theme)
+			} else {
+				s.Skip()
+			}
+			continue
+		}
+		if !paragraph && !character {
 			s.Skip()
 			continue
 		}
@@ -83,15 +134,21 @@ func readStyles(s *xmlscan.Scanner) *styles {
 			case s.Depth() == depth+1 && s.Is(ns.Word, "basedOn"):
 				v, _ := s.Attr(ns.Word, "val")
 				cur.based = string(v)
-			case s.Depth() == depth+1 && s.Is(ns.Word, "pPr"):
+			case s.Depth() == depth+1 && s.Is(ns.Word, "pPr") && paragraph:
 				var pp paraProps
-				readParaProps(s, &pp, nil)
-				cur.outline, cur.numID, cur.ilvl = pp.outline, pp.numID, pp.ilvl
+				readParaProps(s, &pp, nil, theme)
+				cur.outline, cur.numID, cur.ilvl, cur.shade = pp.outline, pp.numID, pp.ilvl, pp.shade
+			case s.Depth() == depth+1 && s.Is(ns.Word, "rPr"):
+				readRunProps(s, &cur.run, theme)
 			case s.Depth() == depth+1:
 				s.Skip()
 			}
 		}
 		if len(id) == 0 {
+			continue
+		}
+		if character {
+			st.chars[string(id)] = &charStyle{run: cur.run, based: cur.based}
 			continue
 		}
 		st.byID[string(id)] = cur
@@ -102,7 +159,109 @@ func readStyles(s *xmlscan.Scanner) *styles {
 	for _, cur := range st.byID {
 		st.resolve(cur, 0)
 	}
+	for _, cur := range st.chars {
+		st.resolveChar(cur, 0)
+	}
+	for _, cur := range st.tables {
+		st.resolveTable(cur, 0)
+	}
+	// What no style sets comes from the document defaults.
+	for _, cur := range st.byID {
+		cur.own = cur.run.on
+		cur.run.under(&st.defaults)
+	}
 	return st
+}
+
+// readTableStyle reads the shading of a table style: what it gives every
+// cell, and what it gives cells by their place in the table.
+func readTableStyle(s *xmlscan.Scanner, theme map[string]color) *tableStyle {
+	ts := &tableStyle{}
+	depth := s.Depth()
+	cond, cells := condWhole, false
+	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+		if s.Kind() != xmlscan.Start {
+			continue
+		}
+		switch d := s.Depth() - depth; {
+		case d == 1 && s.Is(ns.Word, "basedOn"):
+			v, _ := s.Attr(ns.Word, "val")
+			ts.based = string(v)
+		case d == 1 && s.Is(ns.Word, "tblStylePr"):
+			v, _ := s.Attr(ns.Word, "type")
+			if c, ok := condNames[string(v)]; ok {
+				cond = c
+			} else {
+				s.Skip()
+			}
+		case d == 1 && (s.Is(ns.Word, "tcPr") || s.Is(ns.Word, "tblPr")):
+			cond, cells = condWhole, s.Is(ns.Word, "tcPr")
+		case d == 1:
+			s.Skip() // the style's paragraph and character formatting
+		case d == 2 && s.Is(ns.Word, "tblStyleRowBandSize"):
+			if v, ok := intAttr(s, "val"); ok && v > 0 {
+				ts.rowBand = min(v, 1024)
+			}
+		case d == 2 && s.Is(ns.Word, "tblStyleColBandSize"):
+			if v, ok := intAttr(s, "val"); ok && v > 0 {
+				ts.colBand = min(v, 1024)
+			}
+		case d == 2 && s.Is(ns.Word, "shd"):
+			// Directly in w:tcPr or w:tblPr: shading of every cell. What
+			// is said of cells counts over what is said of the table.
+			if cells || !ts.shade[condWhole].set {
+				ts.shade[condWhole] = readShade(s, theme)
+			}
+		case d == 2 && !s.Is(ns.Word, "tcPr"):
+			s.Skip()
+		case d == 2:
+			// w:tblStylePr / w:tcPr: read on.
+		case d == 3 && s.Is(ns.Word, "shd"):
+			// In w:tblStylePr / w:tcPr: shading under one condition.
+			ts.shade[cond] = readShade(s, theme)
+		default:
+			s.Skip()
+		}
+	}
+	return ts
+}
+
+// resolveTable folds the shading a table style inherits into it.
+func (st *styles) resolveTable(cur *tableStyle, depth int) {
+	if cur.done {
+		return
+	}
+	cur.done = true
+	parent := st.tables[cur.based]
+	if parent == nil || depth > 32 {
+		return
+	}
+	st.resolveTable(parent, depth+1)
+	for i := range cur.shade {
+		if !cur.shade[i].set {
+			cur.shade[i] = parent.shade[i]
+		}
+	}
+	if cur.rowBand == 0 {
+		cur.rowBand = parent.rowBand
+	}
+	if cur.colBand == 0 {
+		cur.colBand = parent.colBand
+	}
+}
+
+// resolveChar folds the formatting a character style inherits into it.
+func (st *styles) resolveChar(cur *charStyle, depth int) {
+	if cur.done {
+		return
+	}
+	cur.done = true
+	parent := st.chars[cur.based]
+	if parent == nil || depth > 32 {
+		return
+	}
+	st.resolveChar(parent, depth+1)
+	cur.run.under(&parent.run)
 }
 
 // resolve folds the properties a style inherits into it. A style whose
@@ -132,6 +291,10 @@ func (st *styles) resolve(cur *style, depth int) {
 	if cur.role == roleNone {
 		cur.role = parent.role
 	}
+	if !cur.shade.set {
+		cur.shade = parent.shade
+	}
+	cur.run.under(&parent.run)
 }
 
 // classify reads what a style's name says. Word stores the names of its

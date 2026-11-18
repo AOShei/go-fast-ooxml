@@ -43,6 +43,22 @@ func render(doc *gofastcore.Document) []string {
 		if b.Text != "" {
 			fmt.Fprintf(&sb, " %q", b.Text)
 		}
+		if b.Hidden != 0 {
+			fmt.Fprintf(&sb, " hidden=%s", b.Hidden)
+		}
+		for _, sp := range b.Spans {
+			fmt.Fprintf(&sb, " [%q", b.Text[sp.Start:sp.End])
+			if sp.Hidden != 0 {
+				fmt.Fprintf(&sb, " %s", sp.Hidden)
+			}
+			if sp.Style != 0 {
+				fmt.Fprintf(&sb, " %s", sp.Style)
+			}
+			if sp.Href != "" {
+				fmt.Fprintf(&sb, " ->%s", sp.Href)
+			}
+			sb.WriteString("]")
+		}
 		if b.Loc.Anchor != "" {
 			fmt.Fprintf(&sb, " anchor=%s", b.Loc.Anchor)
 		}
@@ -58,6 +74,9 @@ func render(doc *gofastcore.Document) []string {
 			fmt.Fprintf(&sb, " header=%d %q", t.HeaderRows, t.Rows)
 			if len(t.Merges) > 0 {
 				fmt.Fprintf(&sb, " merges=%v", t.Merges)
+			}
+			for _, h := range t.Hidden {
+				fmt.Fprintf(&sb, " hidden_cell(%d,%d %s)", h.Row, h.Col, h.Hidden)
 			}
 		}
 		if img := b.Image; img != nil {
@@ -362,7 +381,7 @@ func TestWordHeadersAndFooters(t *testing.T) {
 	pkg := ooxmltest.DocxSection(
 		`<w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rId1"/><w:footerReference w:type="default" r:id="rId2"/></w:sectPr></w:pPr>`+run(text("End of section one."))+`</w:p>`+
 			ooxmltest.Para("Section two."),
-		`<w:headerReference w:type="default" r:id="rId1"/><w:headerReference w:type="first" r:id="rId3"/><w:footerReference w:type="default" r:id="rId2"/>`)
+		`<w:headerReference w:type="default" r:id="rId1"/><w:headerReference w:type="first" r:id="rId3"/><w:footerReference w:type="default" r:id="rId2"/><w:titlePg/>`)
 	pkg.WordPart("header1.xml", ooxmltest.CTHeader, ooxmltest.RelHeader, "hdr", ooxmltest.Para("ACME Confidential")+`<w:p/>`)
 	pkg.WordPart("footer1.xml", ooxmltest.CTFooter, ooxmltest.RelFooter, "ftr",
 		para(run(text("Page "))+`<w:fldSimple w:instr=" PAGE ">`+run(text("3"))+`</w:fldSimple>`))

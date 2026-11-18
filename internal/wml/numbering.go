@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -193,11 +194,13 @@ func readLevel(s *xmlscan.Scanner, l *level) {
 		case s.Is(ns.Word, "lvlText"):
 			// A label is a few characters. It is repeated on every item
 			// of the list, so a long one is bounded here.
-			if v, _ := s.Attr(ns.Word, "val"); len(v) <= maxLabelText {
-				l.text = string(v)
-			} else {
-				l.text = string(bytes.ToValidUTF8(v[:maxLabelText], nil))
+			// It becomes part of the output, so it is made valid text:
+			// an attribute's bytes are whatever the file holds.
+			v, _ := s.Attr(ns.Word, "val")
+			if len(v) > maxLabelText {
+				v = bytes.ToValidUTF8(v[:maxLabelText], nil)
 			}
+			l.text, _ = clean.String(v, clean.Verbatim)
 		case s.Is(ns.Word, "lvlRestart"):
 			if v, ok := intAttr(s, "val"); ok {
 				l.restart = v

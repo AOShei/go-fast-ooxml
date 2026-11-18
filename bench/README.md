@@ -57,7 +57,7 @@ what was measured:
 | Measure | Against | Measured | Floor |
 |---|---|---|---|
 | Words of the body found | python-docx | 0.995 mean over 174 files | 0.99 |
-| Words of the whole document found | LibreOffice text export | 236,658 of 237,399 (0.997) | 0.99 |
+| Words of the whole document found | LibreOffice text export | 236,681 of 237,399 (0.997) | 0.99 |
 | Computed list and heading labels agreeing | LibreOffice text export | 352 of 352 | 0.98 |
 | Headings found at the same level | pandoc | 75 of 75 | 0.98 |
 
@@ -76,3 +76,24 @@ Notes on reading these numbers:
   declared outline level, Word's own definition, and finds 269 more.
 - One file is cut off at the nesting limit on purpose and is not scored; one
   is an ambiguous archive that programs read differently and is not scored.
+
+## Hidden text on the corpus
+
+`HIDDEN_SURVEY=1 go test -run TestWordHiddenSurvey -v .` lists every piece of
+text flagged as hidden in the corpus's Word files. It is how false alarms are
+found: the first run flagged white text in coloured shapes and text boxes, in
+three files, which is why the fill of a shape is now read.
+
+As measured: 176 files read, 6 with flagged text, 10 blocks. Each was checked
+against the file by hand, and a separate search of the raw XML for hidden,
+tiny and white runs agrees:
+
+| What | Files | Flagged |
+|---|---|---|
+| Text formatted as hidden (form markers pasted from a web page) | 1 | yes |
+| White text on the white page (a banner pasted from a web page) | 1 | yes |
+| Footers that no page shows: one never named by a section, two even-page footers in documents without different odd and even pages | 3 | yes |
+| Bright yellow text on white, under the shared contrast threshold | 1 | yes |
+| White text on dark paragraph or cell shading | 2 | no |
+| White text on a dark highlight | 1 | no |
+| White text in a filled shape or text box | 3 | no |

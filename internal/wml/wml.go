@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
@@ -40,13 +41,34 @@ const (
 	WarnTableFlattened = "ooxml.table_flattened"
 )
 
+// HiddenChecked is the set of hidden-text reasons this reader checks
+// completely. Clipping (a text box or table row too small for its text)
+// and transparency are flagged where they are found, but only some forms
+// of them are looked for, so they are not listed. Text hidden by its place
+// on the page (off the page, under a shape) is not looked for at all: this
+// reader does no layout.
+const HiddenChecked = gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars
+
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 
 // note is a footnote, endnote or comment read ahead of the body.
 type note struct {
 	text   string
+	spans  []gofastcore.Span
+	hidden gofastcore.Hidden
 	author string
 	date   string
+}
+
+// furnitureRef is a header or footer named by a section.
+type furnitureRef struct {
+	name   string
+	header bool
+	// shown says some section displays it: it is the section's ordinary
+	// header, or its first-page header and the section has a different
+	// first page. even marks an even-page header, which is shown only if
+	// the document has different odd and even pages.
+	shown, even bool
 }
 
 // reader holds what is shared while one Word document is read.
@@ -66,7 +88,12 @@ type reader struct {
 
 	footnoteN, endnoteN int
 	usedNotes           map[string]bool // notes already emitted: each appears once
-	headers, footers    []string        // parts named by section properties, in order
+	furniture           []furnitureRef  // headers and footers named by sections, in order
+	firstPage           [2]int          // the latest first-page footer and header named: index in furniture, plus one
+	evenAndOdd          bool            // the document has different odd and even pages
+	showBackground      bool            // the page colour is displayed
+	theme               map[string]color
+	page                color // the page background
 	seenFurniture       map[string]bool
 	images              map[string]*gofastcore.Image // by part name, to share one read
 	delivered           map[string]bool              // image data already given once
@@ -99,10 +126,18 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		delivered:     map[string]bool{},
 		children:      map[string]bool{},
 		unread:        map[string]int{},
+		page:          white,
 	}
 	rels, err := pkg.Rels(main)
 	r.noteErr(opc.RelsName(main), err)
 	byID := make(map[string]opc.Rel, len(rels))
+	stylesPart := ""
+	// The theme first: styles name its colours.
+	for _, rel := range rels {
+		if !rel.External && ns.IsRel(rel.Type, ns.RelTheme) {
+			r.load(rel.Target, func(s *xmlscan.Scanner) { r.theme = readTheme(s) })
+		}
+	}
 	for _, rel := range rels {
 		byID[rel.ID] = rel
 		switch {
@@ -111,10 +146,13 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 				r.external++
 			}
 		case ns.IsRel(rel.Type, ns.RelStyles):
-			r.load(rel.Target, func(s *xmlscan.Scanner) { r.styles = readStyles(s) })
+			stylesPart = rel.Target
 		case ns.IsRel(rel.Type, ns.RelNumbering):
 			r.load(rel.Target, func(s *xmlscan.Scanner) { r.numbering = readNumbering(s) })
 		}
+	}
+	if stylesPart != "" {
+		r.load(stylesPart, func(s *xmlscan.Scanner) { r.styles = readStyles(s, r.theme) })
 	}
 	// Notes are read after styles and numbering, which their paragraphs use.
 	for _, rel := range rels {
@@ -127,6 +165,19 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		case ns.IsRel(rel.Type, ns.RelComments):
 			r.comments = r.readNotes(rel.Target, "comment")
 		case ns.IsRel(rel.Type, ns.RelSettings):
+			r.load(rel.Target, func(s *xmlscan.Scanner) {
+				for s.Next() != xmlscan.EOF {
+					if s.Kind() == xmlscan.Start && s.Depth() == 2 {
+						switch {
+						case s.Is(ns.Word, "evenAndOddHeaders"):
+							r.evenAndOdd = onOff(s)
+						case s.Is(ns.Word, "displayBackgroundShape"):
+							r.showBackground = onOff(s)
+						}
+						s.Skip()
+					}
+				}
+			})
 			// A template attached by address is the usual remote reference.
 			settings, err := pkg.Rels(rel.Target)
 			r.noteErr(opc.RelsName(rel.Target), err)
@@ -151,13 +202,33 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		}
 	}
 
+	// A header or footer part that no section names is in the file but
+	// never on a page. It is read all the same, and flagged.
+	for _, rel := range rels {
+		header := ns.IsRel(rel.Type, ns.RelHeader)
+		if rel.External || !header && !ns.IsRel(rel.Type, ns.RelFooter) {
+			continue
+		}
+		r.furniture = append(r.furniture, furnitureRef{name: rel.Target, header: header})
+	}
+	// A part is shown if any section shows it.
+	shown := map[string]bool{}
+	for _, f := range r.furniture {
+		if f.shown && (!f.even || r.evenAndOdd) {
+			shown[f.name] = true
+		}
+	}
 	// Running headers go first and footers last, each distinct one once.
-	for _, name := range r.headers {
-		r.part.Blocks = append(r.part.Blocks, r.furniture(name, gofastcore.KindHeader)...)
+	for _, f := range r.furniture {
+		if f.header {
+			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindHeader, shown[f.name])...)
+		}
 	}
 	r.part.Blocks = append(r.part.Blocks, body...)
-	for _, name := range r.footers {
-		r.part.Blocks = append(r.part.Blocks, r.furniture(name, gofastcore.KindFooter)...)
+	for _, f := range r.furniture {
+		if !f.header {
+			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindFooter, shown[f.name])...)
+		}
 	}
 	r.embedded(rels)
 	r.finish()
@@ -241,7 +312,7 @@ func (r *reader) readNotes(name, element string) map[int]note {
 			}
 			var blocks []gofastcore.Block
 			p.container(func(b gofastcore.Block) { blocks = append(blocks, b) })
-			n.text = flatten(blocks)
+			n.text, n.spans, n.hidden = join(blocks)
 			p.after = p.after[:0] // pictures and notes inside a note are not carried over
 			notes[id] = n
 		}
@@ -263,9 +334,10 @@ func (r *reader) loadWith(name string, s *xmlscan.Scanner, read func()) {
 	r.noteErr(name, s.Err())
 }
 
-// furniture reads a header or footer part into blocks of the given kind:
-// one per paragraph, with a table flattened to text.
-func (r *reader) furniture(name string, kind gofastcore.Kind) []gofastcore.Block {
+// readFurniture reads a header or footer part into blocks of the given
+// kind: one per paragraph, with a table flattened to text. One that no
+// page shows is flagged as invisible.
+func (r *reader) readFurniture(name string, kind gofastcore.Kind, shown bool) []gofastcore.Block {
 	if r.seenFurniture[name] {
 		return nil
 	}
@@ -278,6 +350,22 @@ func (r *reader) furniture(name string, kind gofastcore.Kind) []gofastcore.Block
 	}
 	p := r.newParser(name, byID)
 	var out []gofastcore.Block
+	add := func(b gofastcore.Block) {
+		if b.Kind == gofastcore.KindImage {
+			out = append(out, b)
+			return
+		}
+		text, spans, hidden := join([]gofastcore.Block{b})
+		if text == "" {
+			return
+		}
+		block := gofastcore.Block{Kind: kind, Text: text, Spans: spans, Hidden: hidden}
+		if !shown {
+			// The whole of it is unseen, whatever else is true of parts.
+			hideWhole(&block, gofastcore.HiddenInvisible)
+		}
+		out = append(out, block)
+	}
 	r.loadWith(name, &p.s, func() {
 		// Up to the root element; a line end after the XML declaration
 		// comes first as text.
@@ -286,25 +374,109 @@ func (r *reader) furniture(name string, kind gofastcore.Kind) []gofastcore.Block
 				return
 			}
 		}
-		p.container(func(b gofastcore.Block) {
-			switch b.Kind {
-			case gofastcore.KindImage:
-				out = append(out, b)
-			default:
-				if text := flatten([]gofastcore.Block{b}); text != "" {
-					out = append(out, gofastcore.Block{Kind: kind, Text: text})
-				}
-			}
-		})
+		p.container(add)
 		for _, b := range p.after {
-			if b.Kind == gofastcore.KindImage {
-				out = append(out, b)
-			} else if text := flatten([]gofastcore.Block{b}); text != "" {
-				out = append(out, gofastcore.Block{Kind: kind, Text: text})
-			}
+			add(b)
 		}
 	})
 	return out
+}
+
+// join gives the text of blocks as it is written into a note or a header,
+// as flatten does, and carries their formatting and hidden reasons along:
+// spans are moved to their place in the joined text, and a reason that
+// held for one whole block becomes a span over that block's text. A reason
+// that then covers all of the joined text is a reason of the whole.
+func join(blocks []gofastcore.Block) (string, []gofastcore.Span, gofastcore.Hidden) {
+	if len(blocks) == 1 && blocks[0].Table == nil && blocks[0].Marker == "" && blocks[0].Kind != gofastcore.KindImage {
+		return blocks[0].Text, blocks[0].Spans, blocks[0].Hidden
+	}
+	var sb strings.Builder
+	var spans []gofastcore.Span
+	for i := range blocks {
+		b := &blocks[i]
+		if b.Kind == gofastcore.KindImage {
+			continue
+		}
+		text := flatten(blocks[i : i+1])
+		if text == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteByte('\n')
+		}
+		at := sb.Len()
+		sb.WriteString(text)
+		if b.Table != nil {
+			// What is said of the table's cells is said of their text.
+			_, cells := tableText(b.Table)
+			if whole := b.HiddenWhole(); whole != 0 {
+				spans = append(spans, gofastcore.Span{Start: at, End: at + len(text), Hidden: whole})
+			}
+			for _, sp := range cells {
+				sp.Start, sp.End = sp.Start+at, sp.End+at
+				spans = append(spans, sp)
+			}
+			continue
+		}
+		// A label written in front of the text shifts its spans.
+		shift := at + len(text) - len(b.Text)
+		if whole := b.HiddenWhole(); whole != 0 {
+			spans = append(spans, gofastcore.Span{Start: shift, End: at + len(text), Hidden: whole})
+		}
+		for _, sp := range b.Spans {
+			sp.Start, sp.End = sp.Start+shift, sp.End+shift
+			spans = append(spans, sp)
+		}
+	}
+	text := sb.String()
+	settled, hidden := settle(spans, 0, len(text), []byte(text))
+	return text, settled, hidden
+}
+
+// tableText gives a table as text, rows on lines and cells separated by
+// tabs, and the parts of that text that are in cells marked as hidden.
+func tableText(t *gofastcore.Table) (string, []gofastcore.Span) {
+	var hidden map[[2]int]gofastcore.Hidden
+	for _, h := range t.Hidden {
+		if hidden == nil {
+			hidden = map[[2]int]gofastcore.Hidden{}
+		}
+		for r := h.Row; r < h.Row+h.RowSpan && r < len(t.Rows); r++ {
+			for c := h.Col; c < h.Col+h.ColSpan && c < len(t.Rows[r]); c++ {
+				hidden[[2]int{r, c}] |= h.Hidden
+			}
+		}
+	}
+	var tb strings.Builder
+	var spans []gofastcore.Span
+	for r, row := range t.Rows {
+		if r > 0 {
+			tb.WriteByte('\n')
+		}
+		for c, cell := range row {
+			if c > 0 {
+				tb.WriteByte('\t')
+			}
+			at := tb.Len()
+			tb.WriteString(strings.ReplaceAll(cell, "\n", " "))
+			if reasons := hidden[[2]int{r, c}]; reasons != 0 && tb.Len() > at {
+				spans = append(spans, gofastcore.Span{Start: at, End: tb.Len(), Hidden: reasons})
+			}
+		}
+	}
+	// The text is trimmed, and the spans moved to match.
+	full := tb.String()
+	lead := len(full) - len(strings.TrimLeftFunc(full, unicode.IsSpace))
+	text := strings.TrimSpace(full)
+	kept := spans[:0]
+	for _, sp := range spans {
+		sp.Start, sp.End = max(sp.Start-lead, 0), min(sp.End-lead, len(text))
+		if sp.Start < sp.End {
+			kept = append(kept, sp)
+		}
+	}
+	return text, kept
 }
 
 // flatten gives the text of blocks as it is written into a table cell, a
@@ -320,19 +492,7 @@ func flatten(blocks []gofastcore.Block) string {
 		var text string
 		switch {
 		case b.Table != nil:
-			var tb strings.Builder
-			for r, row := range b.Table.Rows {
-				if r > 0 {
-					tb.WriteByte('\n')
-				}
-				for c, cell := range row {
-					if c > 0 {
-						tb.WriteByte('\t')
-					}
-					tb.WriteString(strings.ReplaceAll(cell, "\n", " "))
-				}
-			}
-			text = strings.TrimSpace(tb.String())
+			text, _ = tableText(b.Table)
 		case b.Kind == gofastcore.KindImage:
 			continue
 		case b.Marker != "" && b.Kind != gofastcore.KindFootnote:
@@ -489,4 +649,5 @@ func (r *reader) finish() {
 	}
 	part.MarkHidden()
 	r.doc.Parts = append(r.doc.Parts, *part)
+	r.doc.HiddenChecked = HiddenChecked
 }
