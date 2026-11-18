@@ -1440,7 +1440,8 @@
   "sha256": "5cf7340ffd6516c2fd168f445ff78cf64bd86409fe69db68997fc9f94820c223",
   "size": 12756,
   "producer": "Microsoft Office Word 14.0000",
-  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)"
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "an XML part carries a document type declaration (an entity-expansion test file)"
  },
  {
   "name": "poi/document/FancyFoot.docx",
@@ -4720,7 +4721,7 @@
   "size": 8115,
   "producer": "Microsoft Excel 12.0000",
   "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
-  "note": "content types table carries a document type declaration (an entity-expansion test file)"
+  "note": "an XML part carries a document type declaration (an entity-expansion test file)"
  },
  {
   "name": "poi/spreadsheet/54764.xlsx",
@@ -4730,7 +4731,8 @@
   "sha256": "9b200eadb9ec0bc0f9c9b088a2f4f8bb3d73983e45a947a8929c9c22fd635886",
   "size": 8016,
   "producer": "Microsoft Excel 12.0000",
-  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)"
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "an XML part carries a document type declaration (an entity-expansion test file)"
  },
  {
   "name": "poi/spreadsheet/55406_Conditional_formatting_sample.xlsx",
@@ -6817,8 +6819,8 @@
   "url": "https://raw.githubusercontent.com/apache/poi/f66927954a29cf1f5b86614fdf1816e6321c8aea/test-data/spreadsheet/clusterfuzz-testcase-minimized-POIXSSFFuzzer-5265527465181184.xlsx",
   "sha256": "3df2702db5e10050701637415465bad583d97e8126121660c229b331c3e3c439",
   "size": 10483,
-  "producer": "Microsoft Excel 15.0300",
-  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)"
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "not a readable zip archive (BadZipFile)"
  },
  {
   "name": "poi/spreadsheet/clusterfuzz-testcase-minimized-POIXSSFFuzzer-5937385319563264.xlsx",
@@ -7198,7 +7200,8 @@
   "sha256": "4ba7b6c26d74df6da8b46fab945b09f96180a75aad88914cea7b98e787a5cb11",
   "size": 5193,
   "producer": "LibreOffice/4.3.3.2$Linux_X86_64 LibreOffice_project/430m0$Build-2",
-  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)"
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "an XML part carries a document type declaration (an entity-expansion test file)"
  },
  {
   "name": "poi/spreadsheet/poc-xmlbomb.xlsx",
@@ -7208,7 +7211,8 @@
   "sha256": "5edcd16d3efccd3a8ae5e0bddd7ae5ed52abb0359ba71af81370cbf869ab8d56",
   "size": 5240,
   "producer": "LibreOffice/4.3.3.2$Linux_X86_64 LibreOffice_project/430m0$Build-2",
-  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)"
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "an XML part carries a document type declaration (an entity-expansion test file)"
  },
  {
   "name": "poi/spreadsheet/protected_passtika.xlsx",

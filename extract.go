@@ -10,8 +10,10 @@ import (
 	"os"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/props"
+	"github.com/AOShei/go-fast-ooxml/internal/wml"
 )
 
 // Defaults for the limits of gofastcore.Options.Limits, used where a limit
@@ -42,9 +44,35 @@ const (
 	// WarnControlCharsRemoved: control characters with no meaning as text
 	// were removed from extracted strings.
 	WarnControlCharsRemoved = "ooxml.control_characters_removed"
+	// WarnAmbiguousArchive: the zip archive names a member twice, in two
+	// ways, or has two members with one name. Programs differ in which
+	// they read, so the file shows one document to one program and another
+	// to the next. This library reads each member under the name in its
+	// header and takes the first of two with one name.
+	WarnAmbiguousArchive = "ooxml.ambiguous_archive"
 	// WarnNotImplemented: content extraction for this format is not
 	// implemented in this version; only properties were read.
 	WarnNotImplemented = "ooxml.not_implemented"
+
+	// The codes below are raised while a Word document is read.
+
+	// WarnTrackedChanges: the document has tracked changes. Text is given
+	// as if all were accepted; each deletion is kept as a note block.
+	WarnTrackedChanges = wml.WarnTrackedChanges
+	// WarnExternalReference: the document links to a file or address
+	// outside itself other than by an ordinary hyperlink: a remote
+	// template, a linked image, a linked object. Nothing is fetched.
+	WarnExternalReference = wml.WarnExternalReference
+	// WarnUnreadContent: the document holds content of a kind this version
+	// does not read: a chart, a diagram.
+	WarnUnreadContent = wml.WarnUnreadContent
+	// WarnPartDamaged: a supporting part (styles, numbering, notes, a
+	// header) could not be read to its end; what was read is used.
+	WarnPartDamaged = wml.WarnPartDamaged
+	// WarnTableFlattened: a table whose declared grid is far larger than
+	// the cells it holds was written as lines of text, cells separated by
+	// tabs, instead of as a table.
+	WarnTableFlattened = wml.WarnTableFlattened
 )
 
 // Extractor extracts Word, Excel and PowerPoint files. The zero value is
@@ -131,7 +159,11 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	if err != nil {
 		return nil, wrap(err)
 	}
-	_ = main // read by the format readers, from Phase 2
+	// A document of these formats that is not split into pages has one
+	// part, or one per sheet or slide; a range must select at least one.
+	if format == opc.Docx && !opts.Parts.Contains(1) {
+		return nil, fmt.Errorf("gofastooxml: a Word document has one part, numbered 1: %w", gofastcore.ErrNoPartsSelected)
+	}
 
 	doc := gofastcore.New(string(format))
 	doc.Source.MIME = mime
@@ -144,7 +176,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	meta, err := props.Read(pkg)
 	doc.Metadata = meta.Metadata
 	for _, name := range meta.Damaged {
-		doc.Warn(gofastcore.SeverityWarning, WarnPropertiesDamaged, name)
+		doc.Warn(gofastcore.SeverityWarning, WarnPropertiesDamaged, clean.Label(name))
 	}
 	if meta.Truncated > 0 {
 		doc.Warn(gofastcore.SeverityWarning, WarnPropertyTruncated, fmt.Sprintf("%d values", meta.Truncated))
@@ -155,6 +187,9 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	if hiddenInMetadata(&doc.Metadata) {
 		doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextHidden, "document properties contain invisible characters")
 	}
+	if n := pkg.Ambiguous(); n > 0 {
+		doc.Warn(gofastcore.SeverityWarning, WarnAmbiguousArchive, fmt.Sprintf("%d members", n))
+	}
 	if pkg.HasContentType(vbaContentType) {
 		doc.Warn(gofastcore.SeverityInfo, WarnHasMacros, "")
 	}
@@ -162,14 +197,19 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading document properties")
 	}
 
-	// Phase 1: the container and the properties are read; the content is
-	// not. The one part says so, as a failed part, so that no consumer
-	// takes an empty document for an empty file.
-	part := gofastcore.Part{Kind: partKinds[format], Number: 1}
-	part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "content extraction is not implemented in this version")
-	part.MarkHidden()
-	doc.Parts = append(doc.Parts, part)
-	doc.Warn(gofastcore.SeverityError, WarnNotImplemented, "only document properties were read")
+	switch format {
+	case opc.Docx:
+		wml.Extract(ctx, pkg, main, opts, doc)
+	default:
+		// Excel and PowerPoint: the container and the properties are read,
+		// the content is not yet. The one part says so, as a failed part,
+		// so that no consumer takes an empty document for an empty file.
+		part := gofastcore.Part{Kind: partKinds[format], Number: 1}
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "content extraction is not implemented for this format in this version")
+		part.MarkHidden()
+		doc.Parts = append(doc.Parts, part)
+		doc.Warn(gofastcore.SeverityError, WarnNotImplemented, "only document properties were read")
+	}
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -195,7 +235,9 @@ func wrap(err error) error {
 	case errors.Is(err, opc.ErrBudget), errors.Is(err, opc.ErrTooManyParts):
 		shared = gofastcore.ErrLimitExceeded
 	}
-	return fmt.Errorf("gofastooxml: %v: %w", err, shared)
+	// The message can quote names from the file; it is made safe to print
+	// and to store, since a caller may put it into a document's warnings.
+	return fmt.Errorf("gofastooxml: %s: %w", clean.Label(err.Error()), shared)
 }
 
 // hiddenInMetadata reports whether any property value holds invisible

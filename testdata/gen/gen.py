@@ -494,11 +494,36 @@ def libreoffice_version():
         return None
 
 
+def run_contained(args, timeout, max_file_bytes=256 << 20):
+    """Run a program so that it cannot outlive its time limit or fill the
+    disk. It gets a process group of its own, which is killed as a whole
+    when the time is up and again when it returns: LibreOffice's launcher
+    starts the real program as a child, and killing only the launcher
+    leaves that child running. It also runs under a file-size limit."""
+    import resource
+    import signal
+
+    def limits():
+        resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_bytes, max_file_bytes))
+
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True, preexec_fn=limits)
+    try:
+        code = proc.wait(timeout=timeout)
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if code != 0:
+        raise RuntimeError(f"{args[0]} exited with status {code}")
+
+
 def resave_with_libreoffice(src, dst, ext):
     with tempfile.TemporaryDirectory() as tmp:
         profile = "-env:UserInstallation=file://" + os.path.join(tmp, "profile")
-        subprocess.run(["soffice", profile, "--headless", "--norestore", "--convert-to", LO_FILTERS[ext],
-                        "--outdir", tmp, src], check=True, capture_output=True, timeout=300)
+        run_contained(["soffice", profile, "--headless", "--norestore", "--convert-to", LO_FILTERS[ext],
+                       "--outdir", tmp, src], timeout=300)
         shutil.move(os.path.join(tmp, os.path.basename(src)), dst)
 
 

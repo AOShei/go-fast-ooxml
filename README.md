@@ -5,10 +5,12 @@ macro and template variants) into the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
-**Status: under construction, nothing released.** The library identifies a
-file, enforces its limits and reads the document properties. It does not
-extract the content of the document yet, and `Extract` says so: the one part
-it returns carries a `part.failed` warning.
+**Status: under construction, nothing released.**
+
+| Format | State |
+|---|---|
+| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes, comments, tracked changes, headers and footers, text boxes, pictures, embedded files. Hidden-text flags and inline formatting are not yet |
+| Excel, PowerPoint | The file is identified and its properties read. Content is not extracted yet, and `Extract` says so: the one part it returns carries a `part.failed` warning |
 
 ## Layout
 
@@ -17,6 +19,7 @@ it returns carries a `part.failed` warning.
 | `extract.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor` |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget |
+| `internal/wml` | The Word reader: styles, numbering, body, tables, notes |
 | `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |
 | `testdata/fixtures`, `testdata/expect`, `testdata/fixtures.json` | Small generated files with exactly known content, the expected result of each in the shared model's JSON form, and their manifest |

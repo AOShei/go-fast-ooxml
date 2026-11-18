@@ -49,7 +49,50 @@ const (
 	RelCoreProps     = "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties"
 	RelExtProps      = relBase + "extended-properties"
 	RelCustomProps   = relBase + "custom-properties"
+	RelFootnotes     = relBase + "footnotes"
+	RelEndnotes      = relBase + "endnotes"
+	RelComments      = relBase + "comments"
+	RelHeader        = relBase + "header"
+	RelFooter        = relBase + "footer"
+	RelSettings      = relBase + "settings"
+	RelImage         = relBase + "image"
+	RelOLEObject     = relBase + "oleObject"
+	RelPackage       = relBase + "package"
+	RelTemplate      = relBase + "attachedTemplate"
 )
+
+// Content types of the supporting parts of a Word document.
+const (
+	CTFootnotes = "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"
+	CTEndnotes  = "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"
+	CTComments  = "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
+	CTHeader    = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"
+	CTFooter    = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"
+	CTSettings  = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"
+)
+
+// WordNS declares the namespace prefixes used in Word parts: w, r, w14,
+// mc, wp, wps, a, pic, v, o, m and c. It is for the root element of a
+// part a test writes itself.
+const WordNS = ` xmlns:w="` + NSWord + `" xmlns:r="` + NSRel + `"` +
+	` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+	` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
+	` xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"` +
+	` xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"` +
+	` xmlns:a="` + NSDraw + `" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"` +
+	` xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"` +
+	` xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"` +
+	` xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
+
+// WordPart adds a supporting part of a Word document (footnotes, a
+// header, comments) and its relationship from the main part, and returns
+// the relationship id. root is the element name without prefix
+// ("footnotes", "hdr"); xml is its content.
+func (p *Package) WordPart(name, contentType, relType, root, xml string) string {
+	id := p.Rel("word/document.xml", relType, name)
+	p.Add("word/"+name, contentType, `<w:`+root+WordNS+`>`+xml+`</w:`+root+`>`)
+	return id
+}
 
 // XML namespaces, for use in the snippets tests pass to the builder.
 const (
@@ -210,9 +253,30 @@ func Docx(body string) *Package {
 	p := NewPackage()
 	p.Rel("", RelOfficeDoc, "word/document.xml")
 	p.Add("word/document.xml", CTDocument,
-		`<w:document xmlns:w="`+NSWord+`" xmlns:r="`+NSRel+`"><w:body>`+body+
+		`<w:document`+WordNS+`><w:body>`+body+
 			`<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`)
 	return p
+}
+
+// DocxSection is Docx with section properties of the caller's choosing in
+// place of the default ones: xml is the content of the body's w:sectPr.
+func DocxSection(body, sectPr string) *Package {
+	p := NewPackage()
+	p.Rel("", RelOfficeDoc, "word/document.xml")
+	p.Add("word/document.xml", CTDocument,
+		`<w:document`+WordNS+`><w:body>`+body+`<w:sectPr>`+sectPr+`</w:sectPr></w:body></w:document>`)
+	return p
+}
+
+// StyledPara returns a Word paragraph in the given paragraph style.
+func StyledPara(style, text string) string {
+	return `<w:p><w:pPr><w:pStyle w:val="` + style + `"/></w:pPr><w:r><w:t xml:space="preserve">` + EscapeXML(text) + `</w:t></w:r></w:p>`
+}
+
+// ListPara returns a Word paragraph numbered by a list instance at a level.
+func ListPara(numID, level int, text string) string {
+	return fmt.Sprintf(`<w:p><w:pPr><w:numPr><w:ilvl w:val="%d"/><w:numId w:val="%d"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">%s</w:t></w:r></w:p>`,
+		level, numID, EscapeXML(text))
 }
 
 // WithStyles adds a styles part to a Word package. xml is the content of

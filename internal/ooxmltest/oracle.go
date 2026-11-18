@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -40,16 +42,39 @@ func oracleCache(t testing.TB, data []byte, kind string) string {
 
 func run(t testing.TB, timeout time.Duration, name string, args ...string) ([]byte, error) {
 	t.Helper()
+	out, stderr, err := runContained(timeout, name, args...)
+	if err != nil {
+		return out, fmt.Errorf("%s: %w: %s", name, err, clip(stderr))
+	}
+	return out, nil
+}
+
+// runContained runs an oracle program with a time limit and a limit on the
+// size of the files it writes, and makes sure nothing it started is left
+// running. See contain.
+func runContained(timeout time.Duration, name string, args ...string) (stdout, stderr []byte, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return out, fmt.Errorf("%s: %w: %s", name, err, clip(stderr.Bytes()))
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	cmd.WaitDelay = 5 * time.Second
+	cleanup := contain(cmd)
+	defer cleanup()
+	err = cmd.Run()
+	return out.Bytes(), errOut.Bytes(), err
+}
+
+// tidy removes what LibreOffice leaves in a conversion directory besides
+// its output: the private profile, lock files and temporary files.
+func tidy(dir string) {
+	os.RemoveAll(filepath.Join(dir, "profile"))
+	for _, pattern := range []string{"lu*.tmp", ".~lock.*"} {
+		leftovers, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, f := range leftovers {
+			os.RemoveAll(f)
+		}
 	}
-	return out, nil
 }
 
 // soffice converts data with LibreOffice and returns the directory that
@@ -71,10 +96,11 @@ func soffice(t testing.TB, data []byte, ext, filter string) string {
 	// A private profile lets conversions run while the user has LibreOffice
 	// open, and lets several run at once.
 	profile := "-env:UserInstallation=file://" + filepath.Join(dir, "profile")
-	if _, err := run(t, 3*time.Minute, bin, profile, "--headless", "--norestore", "--convert-to", filter, "--outdir", dir, in); err != nil {
+	_, err = run(t, 3*time.Minute, bin, profile, "--headless", "--norestore", "--convert-to", filter, "--outdir", dir, in)
+	tidy(dir)
+	if err != nil {
 		t.Fatalf("LibreOffice conversion failed: %v", err)
 	}
-	os.RemoveAll(filepath.Join(dir, "profile"))
 	os.WriteFile(filepath.Join(dir, "done"), nil, 0o644)
 	return dir
 }
@@ -90,6 +116,76 @@ func LibreOfficeText(t testing.TB, docx []byte) string {
 		t.Fatalf("LibreOffice produced no text: %v", err)
 	}
 	return strings.TrimPrefix(string(out), "\uFEFF")
+}
+
+// convertText converts a Word file to text with LibreOffice into the
+// oracle cache and returns the text. It does not need a test, so several
+// can run at once. A file LibreOffice cannot open, or takes too long over,
+// gives ok false; that outcome is cached too, so it is not tried again.
+func convertText(bin string, docx []byte, timeout time.Duration) (text string, ok bool) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	sum := sha256.Sum256(append([]byte("soffice:txt:Text (encoded):UTF8\x00"), docx...))
+	dir := filepath.Join(base, "gofastooxml-oracle", hex.EncodeToString(sum[:16]))
+	if os.MkdirAll(dir, 0o755) != nil {
+		return "", false
+	}
+	if _, err := os.Stat(filepath.Join(dir, "done")); err != nil {
+		in := filepath.Join(dir, "input.docx")
+		if os.WriteFile(in, docx, 0o644) != nil {
+			return "", false
+		}
+		runContained(timeout, bin, "-env:UserInstallation=file://"+filepath.Join(dir, "profile"),
+			"--headless", "--norestore", "--convert-to", "txt:Text (encoded):UTF8", "--outdir", dir, in)
+		tidy(dir)
+		os.WriteFile(filepath.Join(dir, "done"), nil, 0o644)
+	}
+	out, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimPrefix(string(out), "\uFEFF"), true
+}
+
+// LibreOfficeTextOK is LibreOfficeText for files LibreOffice may not be
+// able to open, such as the damaged ones in the corpus: it reports false
+// instead of failing the test.
+func LibreOfficeTextOK(t testing.TB, docx []byte) (string, bool) {
+	t.Helper()
+	bin, err := exec.LookPath("soffice")
+	if err != nil {
+		t.Skip("LibreOffice (soffice) is not installed")
+	}
+	return convertText(bin, docx, 40*time.Second)
+}
+
+// WarmLibreOfficeText converts many Word files at once, so that a test
+// which then asks for them one by one finds them in the cache. Starting
+// LibreOffice costs seconds a file; this spreads that over the processors.
+func WarmLibreOfficeText(t testing.TB, files [][]byte) {
+	t.Helper()
+	bin, err := exec.LookPath("soffice")
+	if err != nil {
+		t.Skip("LibreOffice (soffice) is not installed")
+	}
+	work := make(chan []byte)
+	var wg sync.WaitGroup
+	for range max(runtime.GOMAXPROCS(0)/3, 1) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for data := range work {
+				convertText(bin, data, 40*time.Second)
+			}
+		}()
+	}
+	for _, data := range files {
+		work <- data
+	}
+	close(work)
+	wg.Wait()
 }
 
 // LibreOfficeCSV returns the cells of every sheet of a workbook as
@@ -153,6 +249,35 @@ func Pandoc(t testing.TB, docx []byte, to string) string {
 	}
 	os.WriteFile(cached, out, 0o644)
 	return string(out)
+}
+
+// PandocOK is Pandoc for files pandoc may not be able to read: it reports
+// false instead of failing the test.
+func PandocOK(t testing.TB, docx []byte, to string) (string, bool) {
+	t.Helper()
+	bin, err := exec.LookPath("pandoc")
+	if err != nil {
+		t.Skip("pandoc is not installed")
+	}
+	dir := oracleCache(t, docx, "pandoc-atx:"+to)
+	cached := filepath.Join(dir, "out")
+	if out, err := os.ReadFile(cached); err == nil {
+		return string(out), true
+	}
+	if _, err := os.Stat(filepath.Join(dir, "failed")); err == nil {
+		return "", false
+	}
+	in := filepath.Join(dir, "input.docx")
+	if err := os.WriteFile(in, docx, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(t, time.Minute, bin, "--from", "docx", "--to", to, "--wrap=none", "--markdown-headings=atx", in)
+	if err != nil {
+		os.WriteFile(filepath.Join(dir, "failed"), nil, 0o644)
+		return "", false
+	}
+	os.WriteFile(cached, out, 0o644)
+	return string(out), true
 }
 
 // PythonResult is what testdata/gen/oracle.py prints for one tool and file.
