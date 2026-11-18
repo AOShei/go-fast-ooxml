@@ -66,7 +66,7 @@ for band, err := range f.Rows(ctx, sheetNumber, 1000) {
 ```
 
 Each band is a part like any other, with the sheet's number and name and
-the hidden flags of its cells. Two million cells are read in about 20 MB,
+the hidden flags of its cells. Two million cells are read in 20 to 25 MB,
 where the sheet read whole takes over 100 (`bench/README.md`). The price:
 the sheet's part is read twice, a table that runs past the end of a band is
 cut there, declared tables are not looked up, and comments, shapes and

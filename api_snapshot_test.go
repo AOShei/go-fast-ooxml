@@ -117,6 +117,8 @@ func TestAPISnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no recorded surface (run with -update): %v", err)
 	}
+	// A checkout may have given the file the line ends of its system.
+	want = bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))
 	if !bytes.Equal(bytes.TrimSpace(want), bytes.TrimSpace(out.Bytes())) {
 		t.Errorf("the exported declarations differ from testdata/api.txt; if the change is meant, run with -update and review the diff\n%s", out.String())
 	}

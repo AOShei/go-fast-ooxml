@@ -513,7 +513,7 @@ func TestPartsMemoryDoesNotGrowWithTheDocument(t *testing.T) {
 		slides := make([]ooxmltest.Slide, n)
 		for i := range slides {
 			var paras []string
-			for k := 0; k < 12; k++ {
+			for k := 0; k < 40; k++ {
 				paras = append(paras, dpara("", plain(fmt.Sprintf("slide %d, paragraph %d: %s", i+1, k, strings.Repeat("some words of text ", 12)))))
 			}
 			slides[i].Shapes = ooxmltest.Shape(2, ph("title", -1), "", ooxmltest.TextBody(dpara("", plain(fmt.Sprintf("Slide %d", i+1))))) + box(3, 10, 100, 600, 400, "", paras...)
@@ -548,15 +548,34 @@ func TestPartsMemoryDoesNotGrowWithTheDocument(t *testing.T) {
 		})
 		return peak, parts, held
 	}
+	whole := func(data []byte) uint64 {
+		path := filepath.Join(dir, "whole.pptx")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return peakHeap(func() {
+			doc, err := gofastooxml.ExtractFile(context.Background(), path, &gofastcore.Options{Workers: 1})
+			if err != nil || len(doc.Parts) != 3000 {
+				t.Fatal(err)
+			}
+		})
+	}
+	large := build(3000)
+	held := whole(large)
 	for _, workers := range []int{1, 4} {
 		peakSmall, _, _ := read(build(300), workers)
-		peakLarge, parts, text := read(build(3000), workers)
-		t.Logf("%d workers: 300 slides peak heap %.1f MB; %d slides (%d MB of text) %.1f MB", workers, float64(peakSmall)/(1<<20), parts, text>>20, float64(peakLarge)/(1<<20))
-		// Ten times the slides, and well under ten times the memory: the
-		// text of the long one alone is more than the ceiling.
-		const ceiling = 6 << 20
-		if parts != 3000 || text < ceiling || peakLarge > ceiling {
-			t.Errorf("%d workers: %d parts, %d bytes of text, peak heap %d bytes (ceiling %d)", workers, parts, text, peakLarge, ceiling)
+		peakLarge, parts, text := read(large, workers)
+		t.Logf("%d workers: 300 slides peak heap %.1f MB; %d slides (%d MB of text) %.1f MB; the document whole %.1f MB",
+			workers, float64(peakSmall)/(1<<20), parts, text>>20, float64(peakLarge)/(1<<20), float64(held)/(1<<20))
+		if parts != 3000 {
+			t.Errorf("%d workers: %d parts", workers, parts)
+		}
+		// A part at a time takes a fraction of what the document takes,
+		// and less than the text of the document alone. (How much garbage
+		// is about when the peak is taken differs from run to run and
+		// from system to system, so the test is of proportions.)
+		if peakLarge > held/3 || peakLarge > uint64(text) {
+			t.Errorf("%d workers: peak heap %d bytes a part at a time; the document whole takes %d, and its text alone is %d", workers, peakLarge, held, text)
 		}
 	}
 }

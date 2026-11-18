@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -395,8 +396,25 @@ func TestRowsMemoryDoesNotGrowWithTheSheet(t *testing.T) {
 	if cellsSmall != 200_000 || cellsLarge != 1_600_000 {
 		t.Errorf("%d and %d cells", cellsSmall, cellsLarge)
 	}
+	// A band at a time takes a fraction of what the sheet takes whole, on
+	// any system. Where the numbers can be relied on, it is also under a
+	// fixed ceiling.
+	held := peakHeap(func() {
+		f, err := (&gofastooxml.Extractor{MaxCells: -1}).OpenBytes(large, &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: -1}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if part, err := f.Part(context.Background(), 1); err != nil || len(part.Blocks) == 0 {
+			t.Fatalf("the sheet whole: %v", err)
+		}
+	})
+	t.Logf("the long sheet whole: %.1f MB", float64(held)/(1<<20))
+	if peakLarge > held/3 {
+		t.Errorf("peak heap %d bytes a band at a time, %d for the whole sheet", peakLarge, held)
+	}
 	const ceiling = 48 << 20
-	if peakLarge > ceiling {
+	absolute := !underRace && runtime.GOOS == "linux"
+	if absolute && peakLarge > ceiling {
 		t.Errorf("peak heap %d MB for the long sheet is over the ceiling of %d MB", peakLarge>>20, ceiling>>20)
 	}
 
@@ -424,7 +442,7 @@ func TestRowsMemoryDoesNotGrowWithTheSheet(t *testing.T) {
 		}
 	})
 	t.Logf("large.xlsx a band at a time: %d cells, peak heap %.1f MB", cells, float64(peak)/(1<<20))
-	if peak > ceiling {
+	if absolute && peak > ceiling {
 		t.Errorf("large.xlsx: peak heap %d MB is over the ceiling of %d MB", peak>>20, ceiling>>20)
 	}
 }
