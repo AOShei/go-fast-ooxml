@@ -47,8 +47,10 @@ func TestOracleProgramsAreContained(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Size() > maxOutputBytes {
-		t.Errorf("the program wrote %d MiB; the limit is %d MiB", info.Size()>>20, maxOutputBytes>>20)
+	// The kernel may let the write that reaches the limit finish, so the
+	// file can pass it by less than one write of the stand-in (1 MiB).
+	if info.Size() > maxOutputBytes+1<<20 {
+		t.Errorf("the program wrote %d bytes; the limit is %d", info.Size(), maxOutputBytes)
 	}
 	if info.Size() < maxOutputBytes/4 {
 		t.Logf("the program wrote %d MiB in its time: the %d MiB limit itself was not reached", info.Size()>>20, maxOutputBytes>>20)
