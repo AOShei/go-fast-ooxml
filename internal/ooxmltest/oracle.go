@@ -42,16 +42,39 @@ func oracleCache(t testing.TB, data []byte, kind string) string {
 
 func run(t testing.TB, timeout time.Duration, name string, args ...string) ([]byte, error) {
 	t.Helper()
+	out, stderr, err := runContained(timeout, name, args...)
+	if err != nil {
+		return out, fmt.Errorf("%s: %w: %s", name, err, clip(stderr))
+	}
+	return out, nil
+}
+
+// runContained runs an oracle program with a time limit and a limit on the
+// size of the files it writes, and makes sure nothing it started is left
+// running. See contain.
+func runContained(timeout time.Duration, name string, args ...string) (stdout, stderr []byte, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return out, fmt.Errorf("%s: %w: %s", name, err, clip(stderr.Bytes()))
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	cmd.WaitDelay = 5 * time.Second
+	cleanup := contain(cmd)
+	defer cleanup()
+	err = cmd.Run()
+	return out.Bytes(), errOut.Bytes(), err
+}
+
+// tidy removes what LibreOffice leaves in a conversion directory besides
+// its output: the private profile, lock files and temporary files.
+func tidy(dir string) {
+	os.RemoveAll(filepath.Join(dir, "profile"))
+	for _, pattern := range []string{"lu*.tmp", ".~lock.*"} {
+		leftovers, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, f := range leftovers {
+			os.RemoveAll(f)
+		}
 	}
-	return out, nil
 }
 
 // soffice converts data with LibreOffice and returns the directory that
@@ -73,10 +96,11 @@ func soffice(t testing.TB, data []byte, ext, filter string) string {
 	// A private profile lets conversions run while the user has LibreOffice
 	// open, and lets several run at once.
 	profile := "-env:UserInstallation=file://" + filepath.Join(dir, "profile")
-	if _, err := run(t, 3*time.Minute, bin, profile, "--headless", "--norestore", "--convert-to", filter, "--outdir", dir, in); err != nil {
+	_, err = run(t, 3*time.Minute, bin, profile, "--headless", "--norestore", "--convert-to", filter, "--outdir", dir, in)
+	tidy(dir)
+	if err != nil {
 		t.Fatalf("LibreOffice conversion failed: %v", err)
 	}
-	os.RemoveAll(filepath.Join(dir, "profile"))
 	os.WriteFile(filepath.Join(dir, "done"), nil, 0o644)
 	return dir
 }
@@ -113,12 +137,9 @@ func convertText(bin string, docx []byte, timeout time.Duration) (text string, o
 		if os.WriteFile(in, docx, 0o644) != nil {
 			return "", false
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		cmd := exec.CommandContext(ctx, bin, "-env:UserInstallation=file://"+filepath.Join(dir, "profile"),
+		runContained(timeout, bin, "-env:UserInstallation=file://"+filepath.Join(dir, "profile"),
 			"--headless", "--norestore", "--convert-to", "txt:Text (encoded):UTF8", "--outdir", dir, in)
-		cmd.Run()
-		cancel()
-		os.RemoveAll(filepath.Join(dir, "profile"))
+		tidy(dir)
 		os.WriteFile(filepath.Join(dir, "done"), nil, 0o644)
 	}
 	out, err := os.ReadFile(filepath.Join(dir, "input.txt"))
