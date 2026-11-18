@@ -35,6 +35,8 @@ const (
 	Math                                                   // m: Office Math
 	Chart                                                  // c:
 	Diagram                                                // dgm: SmartArt
+	SheetDraw                                              // xdr: drawings on a worksheet
+	Threaded                                               // threaded comments and their authors
 )
 
 // Spaces is the table handed to every scanner.
@@ -75,6 +77,9 @@ var Spaces = map[string]xmlscan.Space{
 	"http://purl.oclc.org/ooxml/drawingml/chart":                                Chart,
 	"http://schemas.openxmlformats.org/drawingml/2006/diagram":                  Diagram,
 	"http://purl.oclc.org/ooxml/drawingml/diagram":                              Diagram,
+	"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing":       SheetDraw,
+	"http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing":                   SheetDraw,
+	"http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments":   Threaded,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part
@@ -105,6 +110,19 @@ const (
 	RelChart     = "chart"
 	RelDiagram   = "diagramData"
 	RelTheme     = "theme"
+
+	RelWorksheet       = "worksheet"
+	RelChartsheet      = "chartsheet"
+	RelDialogsheet     = "dialogsheet"
+	RelMacrosheet      = "xlMacrosheet"
+	RelIntlMacrosheet  = "xlIntlMacrosheet"
+	RelSharedStrings   = "sharedStrings"
+	RelTable           = "table"
+	RelDrawing         = "drawing"
+	RelThreadedComment = "threadedComment"
+	RelPerson          = "person"
+	RelExternalLink    = "externalLink"
+	RelPivotTable      = "pivotTable"
 )
 
 // IsRel reports whether a relationship type URI is of one of the given

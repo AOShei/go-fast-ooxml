@@ -81,9 +81,9 @@ func TestExtractIdentifiesTheFormat(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 		// Until a format's content is extracted, the document must say so
-		// loudly. Word is read; Excel and PowerPoint are not yet.
+		// loudly. Word and Excel are read; PowerPoint is not yet.
 		unread := doc.Parts[0].Has(gofastcore.WarnPartFailed) && warned(doc, gofastooxml.WarnNotImplemented)
-		if unread != (c.format != "docx") {
+		if unread != (c.format == "pptx") {
 			t.Errorf("%s: unread content reported = %v", name, unread)
 		}
 	}

@@ -3,24 +3,19 @@
 package wml
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/gif"  // image sizes are read from the file header,
-	_ "image/jpeg" // which needs the format registered
-	_ "image/png"
-	"io"
-	"path"
 	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -29,16 +24,16 @@ import (
 const (
 	// WarnUnreadContent: the document holds content of a kind this version
 	// does not read: a chart, a diagram.
-	WarnUnreadContent = "ooxml.unread_content"
+	WarnUnreadContent = warn.UnreadContent
 	// WarnControlCharsRemoved: see the package gofastooxml.
-	WarnControlCharsRemoved = "ooxml.control_characters_removed"
+	WarnControlCharsRemoved = warn.ControlCharsRemoved
 	// WarnPartDamaged: a supporting part (styles, numbering, notes, a
 	// header) could not be read to its end; what was read is used.
-	WarnPartDamaged = "ooxml.part_damaged"
+	WarnPartDamaged = warn.PartDamaged
 	// WarnTableFlattened: a table whose declared grid is far larger than
 	// the cells it holds was written as lines of text, cells separated by
 	// tabs, instead of as a table.
-	WarnTableFlattened = "ooxml.table_flattened"
+	WarnTableFlattened = warn.TableFlattened
 )
 
 // HiddenChecked is the set of hidden-text reasons this reader checks
@@ -517,34 +512,15 @@ func (r *reader) image(name string) *gofastcore.Image {
 	if img, ok := r.images[name]; ok {
 		return img
 	}
-	img := &gofastcore.Image{ID: clean.Label(r.pkg.Written(name)), MIME: clean.Label(r.pkg.ContentType(name))}
+	var img *gofastcore.Image
+	if r.budget {
+		img = &gofastcore.Image{ID: clean.Label(r.pkg.Written(name)), MIME: clean.Label(r.pkg.ContentType(name))}
+	} else {
+		var err error
+		img, err = media.Image(r.pkg, name, r.opts.Images)
+		r.noteErr(name, err)
+	}
 	r.images[name] = img
-	if r.budget || !r.pkg.Has(name) {
-		return img
-	}
-	rc, err := r.pkg.Open(name)
-	if err != nil {
-		return img
-	}
-	defer rc.Close()
-	if r.opts.Images == gofastcore.ImagesData {
-		data, err := io.ReadAll(rc)
-		if err != nil {
-			r.noteErr(name, err)
-			return img
-		}
-		img.Data = data
-		if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
-			img.Width, img.Height = cfg.Width, cfg.Height
-		}
-		return img
-	}
-	// Only the header is needed for the size.
-	if cfg, _, err := image.DecodeConfig(io.LimitReader(rc, 1<<20)); err == nil {
-		img.Width, img.Height = cfg.Width, cfg.Height
-	} else if errors.Is(err, opc.ErrBudget) {
-		r.budget = true
-	}
 	return img
 }
 
@@ -562,35 +538,12 @@ func (r *reader) imageBlock(name, alt string) gofastcore.Block {
 // embedded hands the files embedded in the document to the caller's child
 // extractor: other Office files, and objects inserted from other programs.
 func (r *reader) embedded(rels []opc.Rel) {
-	for _, rel := range rels {
-		if rel.External || !ns.IsRel(rel.Type, ns.RelOLEObject, ns.RelPackage, ns.RelAltChunk) {
-			continue
-		}
-		if r.children[rel.Target] || !r.pkg.Has(rel.Target) {
-			continue
-		}
-		r.children[rel.Target] = true
-		name, mime, size := clean.Label(path.Base(r.pkg.Written(rel.Target))), clean.Label(r.pkg.ContentType(rel.Target)), r.pkg.Size(rel.Target)
-		if r.opts.Child == nil || r.budget {
-			// Listed, not read: there is nobody to read it.
-			r.doc.Children = append(r.doc.Children, r.opts.ExtractChild(r.ctx, name, mime, nil, size))
-			continue
-		}
-		rc, err := r.pkg.Open(rel.Target)
-		if err != nil {
-			r.noteErr(rel.Target, err)
-			continue
-		}
-		data, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			r.noteErr(rel.Target, err)
-			if errors.Is(err, opc.ErrBudget) {
-				continue
-			}
-		}
-		r.doc.Children = append(r.doc.Children, r.opts.ExtractChild(r.ctx, name, mime, bytes.NewReader(data), int64(len(data))))
+	children, damaged, err := media.Embedded(r.ctx, r.pkg, r.opts, rels, r.children, !r.budget)
+	r.doc.Children = append(r.doc.Children, children...)
+	for _, name := range damaged {
+		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, clean.Label(name))
 	}
+	r.noteErr("", err)
 }
 
 // finish adds the warnings that describe the document as a whole.

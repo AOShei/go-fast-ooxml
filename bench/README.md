@@ -35,6 +35,7 @@ test whose tool is missing skips itself.
 | `accuracy.json` | `go test -run TestBaselineAccuracy -update .` | How well each tool recovers the known text of each fixture: precision, recall, F1 and word order, scored by the same code that scores this library |
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
+| `excel.txt` | `go test -run '^$' -bench 'Extract/large.xlsx' -benchmem -count 3 .` | Excel extraction on the large generated workbook (2 million cells, 100 MB of XML), with one worker and with all |
 | `xmlscan.txt` | `go test -run '^$' -bench . -count 3 ./internal/xmlscan` | The library's XML tokenizer against `encoding/xml` on the XML of the large generated files. Compare the two within one run: the ratio holds when the machine is busy, the absolute numbers do not |
 
 Timings come from one machine and compare tools on that machine only.
@@ -77,6 +78,61 @@ Notes on reading these numbers:
 - One file is cut off at the nesting limit on purpose and is not scored; one
   is an ambiguous archive that programs read differently and is not scored.
 
+## Excel accuracy on the corpus
+
+`go test -run TestExcelCorpus -v .` compares every cell of every sound
+workbook in the corpus with what LibreOffice displays for it (its CSV
+export, "as shown"). Dates are compared with openpyxl's values instead,
+since this library writes them in ISO 8601 and not as displayed.
+
+As measured: 446 workbooks, 6,941,917 cells compared, **2 differ** without
+a named reason. The floor is 0.9999.
+
+Every way the two can differ without either being wrong is a named class,
+counted on each run:
+
+| Cells | Class | Counted as |
+|---|---|---|
+| 127,228 | Dates and times: ISO 8601 here, as displayed there; equal to openpyxl's value | agreeing |
+| 179 | Displayed as nothing by the format; the value is kept here and flagged as hidden | agreeing |
+| 5 | The fifteenth digit: 2.3561944901923448 is 2.35619449019234 to fifteen digits; LibreOffice rounds to sixteen first and shows ...235 | agreeing |
+| 2 | The same number in another notation (`1E+20`, `1E+020`) | agreeing |
+| 1,788 | Text longer than a cell can hold in Excel (one file, made to attack readers, with a string of a megabyte in each cell); LibreOffice shortens or drops it | left out |
+| 626 | Sheets with pivot tables, which LibreOffice builds again with its own labels and formats | left out |
+| 458 | LibreOffice shows an error | left out |
+| 155 | Sheets LibreOffice reads nothing from (one damaged file) | left out |
+| 101 | Formula cells where LibreOffice calculated another result than the file stores | left out |
+| 40 | Logical values: Excel shows TRUE or FALSE whatever the number format; LibreOffice puts them through it | left out |
+| 3 | Numbers a format writes in the digits of another script; ASCII digits here | left out |
+| 2 | Dates not checked: openpyxl cannot read the file | left out |
+
+The two that differ, each by design: a date the file stores as text in ISO
+form already, which is given as stored (LibreOffice displays it by its
+format); and a negative date serial, which Excel cannot show as a date and
+which is given as the number.
+
+The number formats themselves are held to a table: `testdata/numfmt/libreoffice.tsv`
+is what LibreOffice displays for 84 formats applied to 72 values, and
+`go test ./internal/numfmt` requires the engine to give the same for all
+6,048 pairs, apart from 204 where LibreOffice shows an error, 174 where the
+format displays nothing and the value is kept, and 23 very large or very
+small numbers in another notation. `TestNumberFormatTable` checks the table
+against LibreOffice itself.
+
+## Excel speed and memory
+
+On `large.xlsx` (19.9 MB, four sheets, 2 million cells, 100 MB of XML), on
+the machine of `baseline.md`:
+
+| | Time | Peak memory |
+|---|---|---|
+| openpyxl, read-only mode | 9.45 s | 308 MB |
+| This library, one worker | 0.58 s | 127 MB |
+| This library, all workers | 0.17 s | 172 to 220 MB over five runs |
+
+Memory is the largest size the heap reached during `Extract`, garbage
+included (`TestLargeWorkbookMemory`, which holds it under 300 MB).
+
 ## Hidden text on the corpus
 
 `HIDDEN_SURVEY=1 go test -run TestWordHiddenSurvey -v .` lists every piece of
@@ -97,3 +153,22 @@ tiny and white runs agrees:
 | White text on dark paragraph or cell shading | 2 | no |
 | White text on a dark highlight | 1 | no |
 | White text in a filled shape or text box | 3 | no |
+
+For Excel, `HIDDEN_SURVEY=1 go test -run TestExcelHiddenSurvey -v .` does
+the same. As measured: 449 workbooks read, 31 with hidden text.
+
+| What | Cells | Workbooks |
+|---|---|---|
+| On hidden sheets | 3,601 | 11 |
+| In hidden columns | 6,822 | 6 |
+| In hidden rows | 2,084 | 12 |
+| Values their format displays as nothing | 164 | 1 |
+| Text in the colour of its cell | 517 | 8 |
+| Text in hidden shapes (macro buttons) | 25 | 5 |
+| Invisible characters (zero-width spaces before a postcode) | 2 | 2 |
+
+The cells flagged for their colour were checked against the styles in the
+files: white text on unfilled cells, text in the colour of its fill (white
+on white, yellow on yellow, black on black), and the linked cells of check
+boxes in a one-point white font. Cells under conditional formatting are not
+judged, since their colours depend on their values.
