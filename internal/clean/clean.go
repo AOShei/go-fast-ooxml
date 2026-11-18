@@ -96,6 +96,35 @@ func String(b []byte, flags Flags) (s string, removed int) {
 	return s, removed
 }
 
+// maxLabel bounds a label. Names and messages are short; a longer one is
+// a file trying to be expensive.
+const maxLabel = 512
+
+// Label makes a string that came from the file fit to appear as a name, an
+// identifier or part of a message in the output: valid UTF-8, no control
+// characters, no line breaks, trimmed, and of bounded length. It is for
+// part names, content types, addresses and error text, which a file
+// controls as much as it controls its content.
+func Label(s string) string {
+	plain := len(s) <= maxLabel
+	for i := 0; plain && i < len(s); i++ {
+		if c := s[i]; c >= 0x80 || c < 0x20 || c == 0x7F {
+			plain = false
+		}
+	}
+	if plain {
+		return strings.TrimSpace(s)
+	}
+	if len(s) > maxLabel {
+		s = s[:maxLabel]
+	}
+	out, _ := String([]byte(s), Trim)
+	out = strings.Join(strings.Fields(out), " ")
+	// Cutting may have split a character; String turned the pieces into
+	// U+FFFD, which says honestly that something stood there.
+	return out
+}
+
 func trimASCII(b []byte) []byte {
 	for len(b) > 0 && isASCIISpace(b[0]) {
 		b = b[1:]

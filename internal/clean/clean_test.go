@@ -1,6 +1,10 @@
 package clean
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestString(t *testing.T) {
 	cases := []struct {
@@ -40,5 +44,24 @@ func TestPlainTextDoesNotAllocateTwice(t *testing.T) {
 	in := []byte("an ordinary cell value")
 	if n := testing.AllocsPerRun(100, func() { String(in, Prose) }); n > 1 {
 		t.Errorf("%v allocations for plain text, want 1 (the string itself)", n)
+	}
+}
+
+func TestLabel(t *testing.T) {
+	for in, want := range map[string]string{
+		"word/media/image1.png":        "word/media/image1.png",
+		"  padded  ":                   "padded",
+		"we\x01ird\tname\nwith breaks": "weird name with breaks",
+		"bad \xff byte":                "bad \uFFFD byte",
+		"caf\u00e9":                    "caf\u00e9",
+		"":                             "",
+	} {
+		if got := Label(in); got != want {
+			t.Errorf("Label(%q) = %q, want %q", in, got, want)
+		}
+	}
+	long := Label(strings.Repeat("\u00e9", 5000))
+	if len(long) > maxLabel+3 || !utf8.ValidString(long) || len(long) < maxLabel/2 {
+		t.Errorf("a long label came out %d bytes, valid=%v", len(long), utf8.ValidString(long))
 	}
 }

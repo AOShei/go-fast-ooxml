@@ -26,6 +26,15 @@ const (
 	Sheet                                                  // SpreadsheetML main
 	Pres                                                   // p:
 	Draw                                                   // a:
+	Word14                                                 // w14: Word 2010 extensions
+	WordDraw                                               // wp: drawings anchored in Word text
+	WordShape                                              // wps: Word 2010 shapes and text boxes
+	Picture                                                // pic:
+	VML                                                    // v: legacy drawings
+	Office                                                 // o: legacy Office extensions
+	Math                                                   // m: Office Math
+	Chart                                                  // c:
+	Diagram                                                // dgm: SmartArt
 )
 
 // Spaces is the table handed to every scanner.
@@ -52,6 +61,20 @@ var Spaces = map[string]xmlscan.Space{
 	"http://purl.oclc.org/ooxml/presentationml/main":                            Pres,
 	"http://schemas.openxmlformats.org/drawingml/2006/main":                     Draw,
 	"http://purl.oclc.org/ooxml/drawingml/main":                                 Draw,
+	"http://schemas.microsoft.com/office/word/2010/wordml":                      Word14,
+	"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing":    WordDraw,
+	"http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing":                WordDraw,
+	"http://schemas.microsoft.com/office/word/2010/wordprocessingShape":         WordShape,
+	"http://schemas.openxmlformats.org/drawingml/2006/picture":                  Picture,
+	"http://purl.oclc.org/ooxml/drawingml/picture":                              Picture,
+	"urn:schemas-microsoft-com:vml":                                             VML,
+	"urn:schemas-microsoft-com:office:office":                                   Office,
+	"http://schemas.openxmlformats.org/officeDocument/2006/math":                Math,
+	"http://purl.oclc.org/ooxml/officeDocument/math":                            Math,
+	"http://schemas.openxmlformats.org/drawingml/2006/chart":                    Chart,
+	"http://purl.oclc.org/ooxml/drawingml/chart":                                Chart,
+	"http://schemas.openxmlformats.org/drawingml/2006/diagram":                  Diagram,
+	"http://purl.oclc.org/ooxml/drawingml/diagram":                              Diagram,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part
@@ -65,6 +88,22 @@ const (
 	RelExtPropsStrict = "extendedProperties"
 	RelCustomProps    = "custom-properties"
 	RelCustomStrict   = "customProperties"
+
+	RelStyles    = "styles"
+	RelNumbering = "numbering"
+	RelFootnotes = "footnotes"
+	RelEndnotes  = "endnotes"
+	RelComments  = "comments"
+	RelHeader    = "header"
+	RelFooter    = "footer"
+	RelSettings  = "settings"
+	RelImage     = "image"
+	RelHyperlink = "hyperlink"
+	RelOLEObject = "oleObject"
+	RelPackage   = "package"
+	RelAltChunk  = "aFChunk"
+	RelChart     = "chart"
+	RelDiagram   = "diagramData"
 )
 
 // IsRel reports whether a relationship type URI is of one of the given

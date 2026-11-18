@@ -10,6 +10,7 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"path"
 	"strings"
@@ -65,10 +66,12 @@ type Rel struct {
 // use.
 type Package struct {
 	files     map[string]*zip.File // by canonical part name
+	written   map[string]string    // canonical name -> the name as the archive writes it, where they differ
 	names     []string             // canonical names, in archive order
 	defaults  map[string]string    // lower-case extension -> content type
 	overrides map[string]string    // canonical part name -> content type
 	budget    atomic.Int64         // decompressed bytes still allowed
+	ambiguous int                  // members that different readers would read differently
 }
 
 // Open reads the archive's directory and the content-types table.
@@ -92,11 +95,21 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 			continue // a directory entry
 		}
 		name := Canonical(f.Name)
+		if other := unicodePath(f); other != "" && Canonical(other) != name {
+			p.ambiguous++ // a second name for this member; it is read under its first
+		}
 		if _, dup := p.files[name]; dup {
+			p.ambiguous++
 			continue // the first of two members with one name is the part
 		}
 		p.files[name] = f
 		p.names = append(p.names, name)
+		if shown := strings.TrimLeft(strings.ReplaceAll(f.Name, "\\", "/"), "/"); shown != name {
+			if p.written == nil {
+				p.written = map[string]string{}
+			}
+			p.written[name] = shown
+		}
 	}
 	if _, ok := p.files[contentTypesName]; !ok {
 		return nil, ErrNotPackage
@@ -186,10 +199,55 @@ func Resolve(source, target string) string {
 	return Canonical(joined)
 }
 
+// Ambiguous returns the number of archive members that programs disagree
+// about: a member whose name is given twice, differently (once in its
+// header and once in a Unicode-path field), and a member with the same name
+// as an earlier one. Such an archive shows one document to one reader and
+// another to the next. This package reads each member under its header
+// name and takes the first of two with one name.
+func (p *Package) Ambiguous() int { return p.ambiguous }
+
+// unicodePath returns the name a member's Info-ZIP Unicode Path extra
+// field gives it, or "" if it has no valid one.
+func unicodePath(f *zip.File) string {
+	extra := f.Extra
+	for len(extra) >= 4 {
+		id := uint16(extra[0]) | uint16(extra[1])<<8
+		size := int(extra[2]) | int(extra[3])<<8
+		if size > len(extra)-4 {
+			return ""
+		}
+		field := extra[4 : 4+size]
+		extra = extra[4+size:]
+		if id != 0x7075 || len(field) < 5 || field[0] != 1 {
+			continue
+		}
+		// The field is only valid for the header name it was written for.
+		sum := uint32(field[1]) | uint32(field[2])<<8 | uint32(field[3])<<16 | uint32(field[4])<<24
+		if crc32.ChecksumIEEE([]byte(f.Name)) != sum {
+			return ""
+		}
+		return string(field[5:])
+	}
+	return ""
+}
+
 // Has reports whether the package has the named part.
 func (p *Package) Has(name string) bool {
 	_, ok := p.files[Canonical(name)]
 	return ok
+}
+
+// Written returns a part's name as the archive writes it, with its own
+// capitals. Part names are matched without regard to case, but a name
+// shown to a person, or used as an identifier in the output, should be the
+// file's own.
+func (p *Package) Written(name string) string {
+	name = Canonical(name)
+	if shown, ok := p.written[name]; ok {
+		return shown
+	}
+	return name
 }
 
 // Names returns the canonical names of all parts, in archive order. The

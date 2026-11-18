@@ -88,8 +88,13 @@ def describe(data, fmt):
             types = z.read("[Content_Types].xml").decode("utf-8", "replace")
             found = {f for ct, f in MAIN_PARTS.items() if ct + '"' in types}
             note = ""
-            if "<!DOCTYPE" in types:
-                note = "content types table carries a document type declaration (an entity-expansion test file)"
+            doctype = "<!DOCTYPE" in types
+            for n in names:
+                if not doctype and n.lower().endswith((".xml", ".rels")):
+                    with z.open(n) as part:
+                        doctype = b"<!DOCTYPE" in part.read(4096)
+            if doctype:
+                note = "an XML part carries a document type declaration (an entity-expansion test file)"
             elif not found:
                 note = "package has no Word, Excel or PowerPoint main part"
             elif found != {fmt}:
