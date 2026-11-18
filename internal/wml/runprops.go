@@ -284,12 +284,13 @@ var highlights = map[string]color{
 }
 
 // readTheme reads the colour scheme of a theme part.
-func readTheme(s *xmlscan.Scanner) map[string]color {
+func readTheme(s *xmlscan.Scanner) (map[string]color, *theme.Scheme) {
+	scheme := theme.Read(s)
 	out := map[string]color{}
-	for name, c := range theme.Read(s).Colors() {
+	for name, c := range scheme.Colors() {
 		out[name] = color{set: true, r: c.R, g: c.G, b: c.B}
 	}
-	return out
+	return out, scheme
 }
 
 // hiddenReasons says why text with the given formatting cannot be seen,

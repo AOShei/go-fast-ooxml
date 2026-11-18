@@ -15,6 +15,9 @@ type CompareOptions struct {
 	// Furniture compares running headers and footers; without it they are
 	// left out on both sides.
 	Furniture bool
+	// NoHeaderRows leaves the number of header rows of tables out, for a
+	// file written by a program that does not record it.
+	NoHeaderRows bool
 }
 
 // CompareBlocks checks an extracted document against the known content of
@@ -100,7 +103,10 @@ func describeAll(blocks, reference []gofastcore.Block, opts CompareOptions, isRe
 			fmt.Fprintf(&sb, " %q", b.Text)
 		}
 		if t := b.Table; t != nil {
-			fmt.Fprintf(&sb, " header_rows=%d rows=%q", t.HeaderRows, t.Rows)
+			if !opts.NoHeaderRows {
+				fmt.Fprintf(&sb, " header_rows=%d", t.HeaderRows)
+			}
+			fmt.Fprintf(&sb, " rows=%q", t.Rows)
 			if len(t.Merges) > 0 {
 				fmt.Fprintf(&sb, " merges=%v", t.Merges)
 			}

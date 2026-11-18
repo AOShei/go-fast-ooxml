@@ -148,3 +148,72 @@ func FuzzXlsx(f *testing.F) {
 		checkOutcome(t, "fuzz input", doc, err)
 	})
 }
+
+// FuzzPptx gives the PowerPoint reader arbitrary slide, layout, master
+// and supporting parts inside a sound package. Whatever they hold, the
+// result is a valid document or one of the shared errors.
+func FuzzPptx(f *testing.F) {
+	part := func(root, attrs, bg, shapes, after string) []byte {
+		return []byte(`<p:` + root + ooxmltest.PresNS + attrs + `><p:cSld>` + bg + `<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>` +
+			shapes + `</p:spTree></p:cSld>` + after + `</p:` + root + `>`)
+	}
+	const style = "{11111111-2222-3333-4444-555555555555}"
+	group := `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="40" name="g" hidden="1"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm rot="2700000" flipH="1"><a:off x="100" y="100"/><a:ext cx="900000" cy="400000"/>` +
+		`<a:chOff x="0" y="0"/><a:chExt cx="100" cy="0"/></a:xfrm></p:grpSpPr>` + box(41, 1, 1, 5, 5, solid("FFFFFF"), dpara("", colored("FFFFFF", "in a group"))) + `</p:grpSp>`
+	slide := part("sld", ` show="0" showMasterSp="0"`, `<p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>`,
+		ooxmltest.Shape(2, ph("title", -1), "", ooxmltest.TextBody(dpara("", plain("Title"), `<a:br/>`, drun(` sz="100" b="1"`, `<a:noFill/>`, "tiny"))))+
+			ooxmltest.Shape(3, ph("", 1), "", `<p:txBody><a:bodyPr vertOverflow="clip" tIns="0"><a:normAutofit fontScale="25000"/></a:bodyPr><a:lstStyle><a:lvl2pPr><a:buAutoNum type="romanLcParenR" startAt="3"/></a:lvl2pPr></a:lstStyle>`+
+				dpara(`<a:pPr lvl="1"/>`, plain("numbered"))+dpara(`<a:pPr><a:buChar char="§"/><a:buFont typeface="Wingdings"/></a:pPr>`, drun("", `<a:hlinkClick r:id="rId7" action="ppaction://program"/>`, "link"),
+				`<a:fld type="slidenum"><a:t>1</a:t></a:fld>`, `<mc:AlternateContent><mc:Choice><a14:m><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></a14:m></mc:Choice><mc:Fallback>`+plain("y")+`</mc:Fallback></mc:AlternateContent>`)+`</p:txBody>`)+
+			group+picture(5, "rId5", "alt", 0, 0, 720, 540, `<a:alphaModFix amt="50000"/>`)+filled(6, 0, 0, 720, 540, "rect", scheme("accent1"))+
+			tableFrame(7, 10, 10, 300, 100, `<a:tblPr firstRow="1" bandRow="1" lastCol="1"><a:tableStyleId>`+style+`</a:tableStyleId></a:tblPr>`,
+				trow(tcell(` gridSpan="2" rowSpan="2"`, solid("000000"), dpara("", colored("000000", "a"))), tcell(` hMerge="1"`, "", dpara("", plain("b")))),
+				trow(tcell(` vMerge="1"`, "", dpara("", plain("c"))), tc("d"), tc("e")))+
+			frame(8, 0, 0, 10, 10, "chart", `<c:chart r:id="rId9"/>`)+
+			`<mc:AlternateContent><mc:Choice Requires="p14">`+box(9, -500, 0, 10, 10, "", dpara("", plain("off")))+`</mc:Choice><mc:Fallback>`+box(10, 0, 0, 10, 10, "", dpara("", plain("fallback")))+`</mc:Fallback></mc:AlternateContent>`,
+		`<p:clrMapOvr><a:overrideClrMapping bg1="dk1" tx1="lt1" bg2="dk2" tx2="lt2" accent1="accent2" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/></p:clrMapOvr>`+
+			`<p:timing><p:tnLst><p:par><p:cTn id="1"><p:childTnLst><p:set><p:cBhvr><p:tgtEl><p:spTgt spid="6"/></p:tgtEl></p:cBhvr></p:set></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>`)
+	layout := part("sldLayout", ` showMasterSp="1"`, bgSolid("FFF2CC"), testLayout()+box(20, 36, 4, 300, 14, solid("000000"), dpara("", plain("Layout text"))),
+		`<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>`)
+	master := part("sldMaster", "", bgSolid("FFFFFF"), testMaster()+box(21, 36, 520, 300, 14, "", dpara("", plain("Master text")))+picture(22, "rId5", "", 0, 0, 10, 10, ""),
+		`<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>`+testTxStyles)
+	extras := [][]byte{
+		part("notes", "", "", noteShapes(dpara("", plain("Notes"), colored("FFFFFF", " in white"))), ""),
+		[]byte(`<p:cmLst` + ooxmltest.PresNS + `><p:cm authorId="0" dt="2026-03-04T09:30:00.000" idx="1"><p:pos x="10" y="10"/><p:text>A comment</p:text></p:cm></p:cmLst>`),
+		[]byte(`<p188:cmLst` + ooxmltest.PresNS + `><p188:cm id="{A}" authorId="0" created="2026"><p188:replyLst><p188:reply id="{B}" authorId="0"><p188:txBody><a:p><a:r><a:t>reply</a:t></a:r></a:p></p188:txBody></p188:reply></p188:replyLst>` +
+			`<p188:txBody><a:p><a:r><a:t>comment</a:t></a:r></a:p></p188:txBody></p188:cm></p188:cmLst>`),
+		[]byte(`<a:tblStyleLst` + ooxmltest.PresNS + `><a:tblStyle styleId="` + style + `"><a:tblBg><a:fill>` + solid("FFFFFF") + `</a:fill></a:tblBg><a:wholeTbl><a:tcTxStyle><a:fontRef idx="minor"/><a:schemeClr val="dk1"/></a:tcTxStyle>` +
+			`<a:tcStyle><a:tcBdr><a:left><a:ln>` + solid("FFFFFF") + `</a:ln></a:left></a:tcBdr><a:fill>` + solid("DDEBF7") + `</a:fill></a:tcStyle></a:wholeTbl>` +
+			`<a:lastCol><a:tcStyle><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef></a:tcStyle></a:lastCol></a:tblStyle></a:tblStyleLst>`),
+		[]byte(`<p:cmAuthorLst` + ooxmltest.PresNS + `><p:cmAuthor id="0" name="Ada"/></p:cmAuthorLst>`),
+	}
+	for _, extra := range extras {
+		f.Add(slide, layout, master, extra)
+	}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Spans: true}
+	e := &gofastooxml.Extractor{MaxCells: 100_000}
+	picture := jpegBytes(f, 2, 2)
+	f.Fuzz(func(t *testing.T, slide, layout, master, extra []byte) {
+		pkg := ooxmltest.Pptx(ooxmltest.Slide{}, ooxmltest.Slide{Shapes: box(2, 10, 10, 100, 40, "", dpara("", plain("A sound slide")))})
+		const first = "ppt/slides/slide1.xml"
+		pkg.AddBytes(first, ooxmltest.CTSlide, slide)
+		pkg.AddBytes("ppt/slideLayouts/slideLayout1.xml", ooxmltest.CTSlideLayout, layout)
+		pkg.AddBytes("ppt/slideMasters/slideMaster1.xml", ooxmltest.CTSlideMaster, master)
+		pkg.AddBytes("ppt/media/image1.jpeg", "image/jpeg", picture)
+		for _, source := range []string{first, "ppt/slideMasters/slideMaster1.xml"} {
+			for pkg.Rel(source, ooxmltest.RelImage, "../media/image1.jpeg") != "rId5" {
+			}
+		}
+		pkg.Rel(first, ooxmltest.RelNotesSlide, "../notesSlides/notesSlide1.xml")
+		pkg.ExternalRel(first, ooxmltest.RelHyperlink, "https://example.com/")
+		pkg.Rel(first, relBase+"comments", "../comments/comment1.xml")
+		pkg.Rel("ppt/presentation.xml", ooxmltest.RelTableStyle, "tableStyles.xml")
+		pkg.Rel("ppt/presentation.xml", relBase+"commentAuthors", "commentAuthors.xml")
+		for _, name := range []string{"ppt/notesSlides/notesSlide1.xml", "ppt/comments/comment1.xml", "ppt/tableStyles.xml", "ppt/commentAuthors.xml"} {
+			pkg.AddBytes(name, "application/xml", extra)
+		}
+		data := pkg.Bytes()
+		doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
+		checkOutcome(t, "fuzz input", doc, err)
+	})
+}

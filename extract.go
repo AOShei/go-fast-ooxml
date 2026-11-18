@@ -12,6 +12,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/pml"
 	"github.com/AOShei/go-fast-ooxml/internal/props"
 	"github.com/AOShei/go-fast-ooxml/internal/sml"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -40,8 +41,11 @@ const (
 // this library raises these of them besides the ones about parts, limits
 // and embedded documents:
 //
-//	input.active_content      the package contains a VBA project
-//	input.external_reference  a remote template, a linked picture or object
+//	input.active_content      the package contains a VBA project, a sheet of
+//	                          Excel 4.0 macros, or an action on a slide
+//	                          that starts a program or runs a macro
+//	input.external_reference  a remote template, a linked picture, object
+//	                          or media clip, a link to another workbook
 //	input.ambiguous           the archive names a member twice, in two ways,
 //	                          or has two members with one name; each member
 //	                          is read under the name in its header, and the
@@ -61,14 +65,12 @@ const (
 	// WarnControlCharsRemoved: control characters with no meaning as text
 	// were removed from extracted strings.
 	WarnControlCharsRemoved = "ooxml.control_characters_removed"
-	// WarnNotImplemented: content extraction for this format is not
-	// implemented in this version; only properties were read.
-	WarnNotImplemented = "ooxml.not_implemented"
 
-	// The codes below are raised while a Word document is read.
+	// The codes below are raised while a Word document is read, and the
+	// first two for workbooks and presentations as well.
 
 	// WarnUnreadContent: the document holds content of a kind this version
-	// does not read: a chart, a diagram.
+	// does not read: a chart, a diagram, a sound or video clip.
 	WarnUnreadContent = wml.WarnUnreadContent
 	// WarnPartDamaged: a supporting part (styles, numbering, notes, a
 	// header) could not be read to its end; what was read is used.
@@ -89,6 +91,14 @@ const (
 	// written as one table. Each run of cells side by side in a row is a
 	// table of one row instead.
 	WarnRegionSplit = warn.RegionSplit
+
+	// The code below is raised while a PowerPoint presentation is read.
+
+	// WarnHiddenUnchecked: a slide has more overlapping shapes than the
+	// hidden-text checks compare. Some of its text was not compared with
+	// what lies under it (low_contrast) or over it (occluded), so the
+	// absence of those flags on the slide says less than usual.
+	WarnHiddenUnchecked = warn.HiddenUnchecked
 )
 
 // Extractor extracts Word, Excel and PowerPoint files. The zero value is
@@ -99,7 +109,8 @@ type Extractor struct {
 	// Zero means DefaultMaxArchiveMembers; negative means no limit.
 	MaxArchiveMembers int
 	// MaxCells bounds the cells kept from a workbook, over all its
-	// sheets. A sheet that reaches it is cut off there, with a
+	// sheets, or from the tables of a presentation, over all its slides.
+	// A sheet or slide that reaches it is cut off there, with a
 	// limit.exceeded warning. Zero means DefaultMaxCells; negative means
 	// no limit.
 	MaxCells int64
@@ -192,7 +203,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	doc.Source.Size = size
 	// Invisible characters are checked for in everything that is
 	// extracted. A format's reader adds the checks it makes: see
-	// wml.HiddenChecked and sml.HiddenChecked.
+	// HiddenChecked in wml, sml and pml.
 	doc.HiddenChecked = gofastcore.HiddenChars
 
 	meta, err := props.Read(pkg)
@@ -234,15 +245,13 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		if err != nil {
 			return nil, err
 		}
-	default:
-		// PowerPoint: the container and the properties are read, the
-		// content is not yet. The one part says so, as a failed part,
-		// so that no consumer takes an empty document for an empty file.
-		part := gofastcore.Part{Kind: partKinds[format], Number: 1}
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "content extraction is not implemented for this format in this version")
-		part.MarkHidden()
-		doc.Parts = append(doc.Parts, part)
-		doc.Warn(gofastcore.SeverityError, WarnNotImplemented, "only document properties were read")
+	case opc.Pptx:
+		err := pml.Extract(ctx, pkg, main, opts, doc, pml.Config{
+			MaxCells: gofastcore.ResolveLimit(e.MaxCells, DefaultMaxCells),
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -252,12 +261,6 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 }
 
 const vbaContentType = "application/vnd.ms-office.vbaProject"
-
-var partKinds = map[opc.Format]gofastcore.PartKind{
-	opc.Docx: gofastcore.PartBody,
-	opc.Xlsx: gofastcore.PartSheet,
-	opc.Pptx: gofastcore.PartSlide,
-}
 
 // wrap turns a container error into one that wraps the matching shared
 // error.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
@@ -88,7 +89,8 @@ type reader struct {
 	evenAndOdd          bool            // the document has different odd and even pages
 	showBackground      bool            // the page colour is displayed
 	theme               map[string]color
-	page                color // the page background
+	drawn               dml.Palette // resolves the colours of drawings
+	page                color       // the page background
 	seenFurniture       map[string]bool
 	images              map[string]*gofastcore.Image // by part name, to share one read
 	delivered           map[string]bool              // image data already given once
@@ -112,7 +114,7 @@ type reader struct {
 // It does not return an error for a damaged or over-budget document: what
 // could be read is in the part, and warnings say what could not.
 func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcore.Options, doc *gofastcore.Document) {
-	r := &reader{
+	r := &reader{drawn: dml.Palette{Map: dml.DefaultMap},
 		ctx: ctx, pkg: pkg, opts: opts, doc: doc,
 		part:          &gofastcore.Part{Kind: gofastcore.PartBody, Number: 1},
 		seenFurniture: map[string]bool{},
@@ -130,7 +132,7 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	// The theme first: styles name its colours.
 	for _, rel := range rels {
 		if !rel.External && ns.IsRel(rel.Type, ns.RelTheme) {
-			r.load(rel.Target, func(s *xmlscan.Scanner) { r.theme = readTheme(s) })
+			r.load(rel.Target, func(s *xmlscan.Scanner) { r.theme, r.drawn.Theme = readTheme(s) })
 		}
 	}
 	for _, rel := range rels {
@@ -303,7 +305,7 @@ func (r *reader) readNotes(name, element string) map[int]note {
 			if element == "comment" {
 				author, _ := s.Attr(ns.Word, "author")
 				date, _ := s.Attr(ns.Word, "date")
-				n.author, n.date = p.clean(author, clean.Trim), p.clean(date, clean.Trim)
+				n.author, n.date = p.clean(author, clean.Prose), p.clean(date, clean.Trim)
 			}
 			var blocks []gofastcore.Block
 			p.container(func(b gofastcore.Block) { blocks = append(blocks, b) })

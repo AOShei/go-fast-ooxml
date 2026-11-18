@@ -1,0 +1,7 @@
+cpu: AMD Ryzen 9 9900X 12-Core Processor            
+BenchmarkExtract/large.pptx/single-24         	      22	  49011128 ns/op	  71.21 MB/s	18143598 B/op	  168243 allocs/op
+BenchmarkExtract/large.pptx/single-24         	      24	  47328148 ns/op	  73.75 MB/s	18147159 B/op	  168240 allocs/op
+BenchmarkExtract/large.pptx/single-24         	      25	  48955868 ns/op	  71.29 MB/s	18146618 B/op	  168241 allocs/op
+BenchmarkExtract/large.pptx/all-24            	     100	  10160903 ns/op	 343.50 MB/s	25826572 B/op	  174706 allocs/op
+BenchmarkExtract/large.pptx/all-24            	     100	  10085098 ns/op	 346.08 MB/s	25919076 B/op	  174723 allocs/op
+BenchmarkExtract/large.pptx/all-24            	     100	  10204529 ns/op	 342.03 MB/s	26031992 B/op	  174868 allocs/op

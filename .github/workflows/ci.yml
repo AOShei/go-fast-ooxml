@@ -41,6 +41,7 @@ jobs:
           go test -run '^$' -fuzz '^FuzzXML$' -fuzztime 30s ./internal/xmlscan
           go test -run '^$' -fuzz '^FuzzNumFmt$' -fuzztime 20s ./internal/numfmt
           go test -run '^$' -fuzz '^FuzzXlsx$' -fuzztime 30s .
+          go test -run '^$' -fuzz '^FuzzPptx$' -fuzztime 30s .
 
   dependencies:
     # The series rule: the standard library and go-fast modules only.

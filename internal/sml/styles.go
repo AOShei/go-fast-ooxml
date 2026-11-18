@@ -118,7 +118,8 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 				id, ok := intAttr(s, "numFmtId")
 				code, has := s.Attr(xmlscan.NoSpace, "formatCode")
 				if ok && has {
-					codes[id], _ = clean.String(code, clean.Verbatim)
+					// Text a format writes into a cell is text like any other.
+					codes[id], _ = clean.String(code, clean.Ligatures)
 				}
 			}
 		case "fonts":

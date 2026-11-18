@@ -142,6 +142,55 @@ def python_pptx(path):
     return "\n".join(out)
 
 
+def python_pptx_slides(path):
+    """What python-pptx reads from each slide, as JSON: the text of its
+    shapes apart from the date, footer and slide-number placeholders, the
+    text of those, its title and its speaker's notes. It is the oracle for
+    the words of a presentation: the plain adapter above mixes the slide's
+    furniture into its text, and this library tags furniture.
+    """
+    import json
+
+    from pptx import Presentation
+    from pptx.enum.shapes import PP_PLACEHOLDER
+
+    furniture_types = {PP_PLACEHOLDER.DATE, PP_PLACEHOLDER.FOOTER, PP_PLACEHOLDER.SLIDE_NUMBER, PP_PLACEHOLDER.HEADER}
+
+    def walk(shape, body, furniture):
+        if shape.shape_type == 6:  # group
+            for s in shape.shapes:
+                walk(s, body, furniture)
+        elif getattr(shape, "has_table", False) and shape.has_table:
+            for row in shape.table.rows:
+                body.append("\t".join(c.text for c in row.cells))
+        elif shape.has_text_frame:
+            kind = None
+            if shape.is_placeholder:
+                try:
+                    kind = shape.placeholder_format.type
+                except Exception:
+                    kind = None
+            (furniture if kind in furniture_types else body).append(shape.text_frame.text)
+
+    out = []
+    for slide in Presentation(path).slides:
+        body, furniture = [], []
+        for shape in slide.shapes:
+            walk(shape, body, furniture)
+        title = None
+        try:
+            if slide.shapes.title is not None and slide.shapes.title.has_text_frame:
+                title = slide.shapes.title.text_frame.text
+        except Exception:
+            title = None
+        notes = ""
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
+            notes = slide.notes_slide.notes_text_frame.text
+        out.append({"body": body, "furniture": furniture, "title": title, "notes": notes,
+                    "hidden": slide._element.get("show") in ("0", "false")})
+    return json.dumps(out, ensure_ascii=False)
+
+
 _markitdown = None
 
 
@@ -169,6 +218,7 @@ TOOLS = {
 # not part of the baseline measurements.
 ORACLES = {
     "openpyxl-cells": ("openpyxl", openpyxl_cells, {"xlsx"}),
+    "python-pptx-slides": ("python-pptx", python_pptx_slides, {"pptx"}),
 }
 
 

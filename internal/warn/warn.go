@@ -11,4 +11,5 @@ const (
 	TableFlattened      = "ooxml.table_flattened"
 	FormulaNoValue      = "ooxml.formula_no_value"
 	RegionSplit         = "ooxml.region_split"
+	HiddenUnchecked     = "ooxml.hidden_unchecked"
 )

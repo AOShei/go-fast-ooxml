@@ -1,6 +1,7 @@
 package gofastooxml_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -156,5 +157,74 @@ func TestExcelEmbeddedFiles(t *testing.T) {
 	}})
 	if calls != 1 || len(doc.Children) != 1 || !strings.Contains(doc.Children[0].Text(), "inside the embedded document") {
 		t.Errorf("%d calls; children = %+v", calls, doc.Children)
+	}
+}
+
+// What a limit leaves out of a workbook, and which sheet carries the
+// bytes of a picture that several show, do not depend on how many
+// workers read the sheets.
+func TestExcelLimitsAndPicturesAreTheSameForAnyWorkers(t *testing.T) {
+	var sheets []ooxmltest.Sheet
+	for i := 1; i <= 24; i++ {
+		var rows strings.Builder
+		for r := 1; r <= 40; r++ {
+			rows.WriteString(xlRow(r, xlNum("A"+strconv.Itoa(r), strconv.Itoa(r*i)), xlStr("B"+strconv.Itoa(r), strings.Repeat("x", 10*i))))
+		}
+		sheets = append(sheets, ooxmltest.Sheet{Name: "S" + strconv.Itoa(i), Data: rows.String(), Extra: `<drawing r:id="rId1"/>`})
+	}
+	pkg := ooxmltest.Xlsx(sheets...)
+	drawing := drawingHeader + `<xdr:twoCellAnchor><xdr:from><xdr:col>3</xdr:col><xdr:row>1</xdr:row></xdr:from>` +
+		`<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="3" name="Picture"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill><xdr:spPr/></xdr:pic></xdr:twoCellAnchor></xdr:wsDr>`
+	for i := 1; i <= len(sheets); i++ {
+		sheet, name := fmt.Sprintf("xl/worksheets/sheet%d.xml", i), fmt.Sprintf("xl/drawings/drawing%d.xml", i)
+		pkg.Rel(sheet, relBase+"drawing", fmt.Sprintf("../drawings/drawing%d.xml", i))
+		pkg.Add(name, ctDrawing, drawing)
+		pkg.Rel(name, relBase+"image", "../media/image1.png")
+	}
+	pkg.AddBytes("xl/media/image1.png", "image/png", pngBytes(t, 3, 2))
+	data := pkg.Bytes()
+
+	for name, c := range map[string]struct {
+		extractor gofastooxml.Extractor
+		limits    gofastcore.Limits
+	}{
+		"no limit":          {},
+		"decompressed size": {limits: gofastcore.Limits{MaxDecodedBytes: 60_000}},
+		"cells":             {extractor: gofastooxml.Extractor{MaxCells: 777}},
+	} {
+		var want string
+		for _, workers := range []int{1, 2, 7, 64} {
+			doc, err := c.extractor.Extract(t.Context(), bytes.NewReader(data), int64(len(data)), &gofastcore.Options{Workers: workers, Limits: c.limits, Images: gofastcore.ImagesData})
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			ooxmltest.CheckDocument(t, doc)
+			var sb strings.Builder
+			limited, withBytes := 0, 0
+			for _, p := range doc.Parts {
+				fmt.Fprintf(&sb, "%d %v\n", p.Number, p.Warnings)
+				if p.Has(gofastcore.WarnLimitExceeded) || p.Has(gofastcore.WarnPartFailed) {
+					limited++
+				}
+				for _, b := range p.Blocks {
+					if b.Image != nil && len(b.Image.Data) > 0 {
+						withBytes++
+						fmt.Fprintf(&sb, "picture bytes on sheet %d\n", p.Number)
+					}
+				}
+			}
+			got := sb.String() + strings.Join(renderSheets(doc), "\n")
+			if (name == "no limit") != (limited == 0) || limited == len(doc.Parts) {
+				t.Errorf("%s: %d of %d sheets cut short", name, limited, len(doc.Parts))
+			}
+			if name == "no limit" && (withBytes != 1 || !strings.Contains(got, "picture bytes on sheet 1\n")) {
+				t.Errorf("%d workers: the picture's bytes are on %d blocks, and not on the first sheet's alone", workers, withBytes)
+			}
+			if workers == 1 {
+				want = got
+			} else if got != want {
+				t.Errorf("%s: with %d workers the result differs from that of one", name, workers)
+			}
+		}
 	}
 }

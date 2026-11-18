@@ -2,6 +2,7 @@ package wml
 
 import (
 	"bytes"
+	"github.com/AOShei/go-fast-ooxml/internal/label"
 	"strconv"
 	"strings"
 
@@ -200,7 +201,7 @@ func readLevel(s *xmlscan.Scanner, l *level) {
 			if len(v) > maxLabelText {
 				v = bytes.ToValidUTF8(v[:maxLabelText], nil)
 			}
-			l.text, _ = clean.String(v, clean.Verbatim)
+			l.text, _ = clean.String(v, clean.Ligatures)
 		case s.Is(ns.Word, "lvlRestart"):
 			if v, ok := intAttr(s, "val"); ok {
 				l.restart = v
@@ -315,7 +316,7 @@ func (st *numState) next(n *numbering, numID, ilvl int) (marker string, ordered,
 		return "", false, true
 	}
 	if lv.format == "bullet" {
-		return bullet(lv.text, lv.font), false, true
+		return label.Bullet(lv.text, lv.font), false, true
 	}
 	var sb strings.Builder
 	for i := 0; i < len(lv.text); i++ {
@@ -343,57 +344,6 @@ func (st *numState) next(n *numbering, numID, ilvl int) (marker string, ordered,
 	return strings.TrimSpace(sb.String()), ordered, true
 }
 
-// bullet returns the character a reader sees for a bullet definition.
-// Bullets are usually stored as a code in a symbol font's private range;
-// the common ones are translated and any other becomes a plain bullet.
-func bullet(text, font string) string {
-	for _, r := range text {
-		if r < 0xF000 || r > 0xF0FF {
-			if r == 'o' || r == '-' || r == '*' || r > 0x7F {
-				return string(r)
-			}
-			continue
-		}
-		code := r & 0xFF
-		switch strings.ToLower(font) {
-		case "symbol":
-			switch code {
-			case 0xB7:
-				return "•"
-			case 0x2D:
-				return "−"
-			case 0xA8:
-				return "♦"
-			case 0xDE:
-				return "⇒"
-			}
-		case "wingdings":
-			switch code {
-			case 0xA7:
-				return "▪"
-			case 0x6C, 0x9F:
-				return "●"
-			case 0x6E:
-				return "■"
-			case 0x71, 0x6F, 0xA8:
-				return "□"
-			case 0x76:
-				return "❖"
-			case 0xD8:
-				return "➢"
-			case 0xE0:
-				return "→"
-			case 0xFC:
-				return "✓"
-			case 0xFE:
-				return "☑"
-			}
-		}
-		return "•"
-	}
-	return "•"
-}
-
 // formatNumber writes a counter value in one of Word's number formats.
 // A format this function does not know is written in decimal, which keeps
 // the value even if not its look.
@@ -406,19 +356,19 @@ func formatNumber(v int, format string) string {
 			return "0" + strconv.Itoa(v)
 		}
 	case "upperRoman":
-		if r := roman(v); r != "" {
+		if r := label.Roman(v); r != "" {
 			return r
 		}
 	case "lowerRoman":
-		if r := roman(v); r != "" {
+		if r := label.Roman(v); r != "" {
 			return strings.ToLower(r)
 		}
 	case "upperLetter":
-		if l := letters(v); l != "" {
+		if l := label.Letters(v); l != "" {
 			return l
 		}
 	case "lowerLetter":
-		if l := letters(v); l != "" {
+		if l := label.Letters(v); l != "" {
 			return strings.ToLower(l)
 		}
 	case "ordinal":
@@ -444,32 +394,6 @@ func formatNumber(v int, format string) string {
 		}
 	}
 	return strconv.Itoa(v)
-}
-
-func roman(v int) string {
-	if v < 1 || v > 3999 {
-		return ""
-	}
-	var sb strings.Builder
-	for _, p := range []struct {
-		n int
-		s string
-	}{{1000, "M"}, {900, "CM"}, {500, "D"}, {400, "CD"}, {100, "C"}, {90, "XC"}, {50, "L"}, {40, "XL"}, {10, "X"}, {9, "IX"}, {5, "V"}, {4, "IV"}, {1, "I"}} {
-		for v >= p.n {
-			sb.WriteString(p.s)
-			v -= p.n
-		}
-	}
-	return sb.String()
-}
-
-// letters writes 1 as A, 26 as Z, 27 as AA, 28 as BB: Word repeats the
-// letter, it does not count in base 26.
-func letters(v int) string {
-	if v < 1 || v > 26*30 {
-		return ""
-	}
-	return strings.Repeat(string(rune('A'+(v-1)%26)), (v-1)/26+1)
 }
 
 func ordinalSuffix(v int) string {

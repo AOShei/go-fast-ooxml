@@ -62,9 +62,8 @@ type workbook struct {
 	cells atomic.Int64 // cells that may still be kept
 	text  atomic.Int64 // bytes of cell text that may still be kept
 
-	mu        sync.Mutex
-	images    map[string]*gofastcore.Image
-	delivered map[string]bool
+	mu     sync.Mutex
+	images map[string]*gofastcore.Image
 }
 
 // sheetRef is a sheet as the workbook lists it.
@@ -81,7 +80,7 @@ const maxSheets = 1 << 16
 // Extract reads the workbook in main into doc. The error is one of the
 // caller's making: no sheet selected, or the context cancelled.
 func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcore.Options, doc *gofastcore.Document, cfg Config) error {
-	wb := &workbook{ctx: ctx, pkg: pkg, opts: opts, images: map[string]*gofastcore.Image{}, delivered: map[string]bool{}}
+	wb := &workbook{ctx: ctx, pkg: pkg, opts: opts, images: map[string]*gofastcore.Image{}}
 	wb.cells.Store(cfg.MaxCells)
 	wb.text.Store(cfg.MaxTextBytes)
 	doc.HiddenChecked = HiddenChecked
@@ -217,27 +216,45 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		workers = runtime.GOMAXPROCS(0)
 	}
 	workers = min(workers, len(selected))
-	if workers <= 1 {
-		for k, i := range selected {
-			sheets[k] = wb.sheet(i, refs[i], budget)
-		}
-	} else {
-		var wg sync.WaitGroup
-		var next atomic.Int64
-		for w := 0; w < workers; w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for {
-					k := int(next.Add(1)) - 1
-					if k >= len(selected) {
-						return
+	run := func(workers int) (limited bool) {
+		if workers <= 1 {
+			for k, i := range selected {
+				sheets[k] = wb.sheet(i, refs[i], budget)
+			}
+		} else {
+			var wg sync.WaitGroup
+			var next atomic.Int64
+			for w := 0; w < workers; w++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for {
+						k := int(next.Add(1)) - 1
+						if k >= len(selected) {
+							return
+						}
+						sheets[k] = wb.sheet(selected[k], refs[selected[k]], budget)
 					}
-					sheets[k] = wb.sheet(selected[k], refs[selected[k]], budget)
-				}
-			}()
+				}()
+			}
+			wg.Wait()
 		}
-		wg.Wait()
+		for _, sh := range sheets {
+			limited = limited || sh.budget || sh.cut != ""
+		}
+		return limited
+	}
+	before := pkg.Budget()
+	if run(workers) && workers > 1 && ctx.Err() == nil {
+		// A limit was reached, and which sheets were read before it
+		// depends on which worker got there first. What a limit leaves
+		// out must not depend on the number of workers, so the sheets are
+		// read again, in order, against the same limits.
+		pkg.Restore(before)
+		wb.cells.Store(cfg.MaxCells)
+		wb.text.Store(cfg.MaxTextBytes)
+		wb.images = map[string]*gofastcore.Image{}
+		run(1)
 	}
 
 	// Put together in workbook order, so that the result does not depend
@@ -245,7 +262,19 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	unread := map[string]int{}
 	embedded := map[string]bool{}
 	macros := false
+	delivered := map[string]bool{}
 	for _, sh := range sheets {
+		// A picture's bytes go with the first block that shows it.
+		for i := range sh.part.Blocks {
+			img := sh.part.Blocks[i].Image
+			if img == nil || img.Data == nil {
+				continue
+			}
+			if delivered[img.ID] {
+				img.Data = nil
+			}
+			delivered[img.ID] = true
+		}
 		doc.Parts = append(doc.Parts, sh.part)
 		for kind, n := range sh.unread {
 			unread[kind] += n
@@ -276,7 +305,7 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	sort.Strings(damaged)
 	for i, name := range damaged {
 		if i == 0 || name != damaged[i-1] {
-			doc.Warn(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(name))
+			doc.Warn(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(pkg.Written(name)))
 		}
 	}
 	if removed > 0 {
@@ -450,19 +479,22 @@ func (sh *sheet) load(name string, read func(*xmlscan.Scanner)) {
 }
 
 // image returns the block of a picture. Its bytes, if asked for, are
-// given the first time the workbook shows it.
-func (wb *workbook) image(name, alt string) gofastcore.Block {
+// read once; which of the blocks that show it carries them is settled
+// when the sheets are put together.
+//
+// The error is opc.ErrBudget if the picture could not be read within the
+// decompression budget.
+func (wb *workbook) image(name, alt string) (gofastcore.Block, error) {
 	wb.mu.Lock()
 	defer wb.mu.Unlock()
 	img, ok := wb.images[name]
+	var err error
 	if !ok {
-		img, _ = media.Image(wb.pkg, name, wb.opts.Images)
-		wb.images[name] = img
+		img, err = media.Image(wb.pkg, name, wb.opts.Images)
+		if err == nil {
+			wb.images[name] = img // one that was cut short is read again
+		}
 	}
 	copy := *img
-	if wb.delivered[name] {
-		copy.Data = nil
-	}
-	wb.delivered[name] = true
-	return gofastcore.Block{Kind: gofastcore.KindImage, Text: alt, Image: &copy}
+	return gofastcore.Block{Kind: gofastcore.KindImage, Text: alt, Image: &copy}, err
 }

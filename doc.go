@@ -4,7 +4,13 @@
 //
 // It uses the standard library and go-fast-core only.
 //
-// The package is under construction. It identifies a file, enforces the
-// limits, and reads the document properties; the content of the document
-// is not extracted yet, and Extract says so with a part.failed warning.
+// A Word document is one part; a workbook has a part for each sheet and a
+// presentation one for each slide. Headings, list items with their labels,
+// tables with merged cells, pictures, notes and comments are read as what
+// the file declares them to be. Text that a reader of the document cannot
+// see is extracted like any other and flagged with the reason; see
+// gofastcore.Hidden and the README.
+//
+// The package is under construction and nothing is released: the native
+// interface, the command and password-protected files are still to come.
 package gofastooxml
