@@ -28,6 +28,9 @@ const (
 	CTSlideMaster   = "application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"
 	CTTheme         = "application/vnd.openxmlformats-officedocument.theme+xml"
 	CTCoreProps     = "application/vnd.openxmlformats-package.core-properties+xml"
+	CTExtProps      = "application/vnd.openxmlformats-officedocument.extended-properties+xml"
+	CTCustomProps   = "application/vnd.openxmlformats-officedocument.custom-properties+xml"
+	CTVBA           = "application/vnd.ms-office.vbaProject"
 )
 
 // Relationship types.
@@ -44,6 +47,8 @@ const (
 	RelTheme         = relBase + "theme"
 	RelHyperlink     = relBase + "hyperlink"
 	RelCoreProps     = "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties"
+	RelExtProps      = relBase + "extended-properties"
+	RelCustomProps   = relBase + "custom-properties"
 )
 
 // XML namespaces, for use in the snippets tests pass to the builder.
@@ -144,13 +149,20 @@ func (p *Package) Bytes() []byte {
 	ct.WriteString(`<Default Extension="png" ContentType="image/png"/>`)
 	ct.WriteString(`<Default Extension="jpeg" ContentType="image/jpeg"/>`)
 	for _, part := range p.parts {
-		if part.contentType == "" || part.contentType == "image/png" || part.contentType == "image/jpeg" {
+		if part.contentType == "" || part.contentType == "image/png" || part.contentType == "image/jpeg" || part.name == "[Content_Types].xml" {
 			continue
 		}
 		fmt.Fprintf(&ct, `<Override PartName="/%s" ContentType="%s"/>`, part.name, part.contentType)
 	}
 	ct.WriteString(`</Types>`)
-	write("[Content_Types].xml", []byte(ct.String()))
+	// A test that needs a particular content-types table adds one itself.
+	custom := false
+	for _, part := range p.parts {
+		custom = custom || part.name == "[Content_Types].xml"
+	}
+	if !custom {
+		write("[Content_Types].xml", []byte(ct.String()))
+	}
 
 	sources := make([]string, 0, len(p.rels))
 	for s := range p.rels {
@@ -215,6 +227,35 @@ func (p *Package) WithStyles(xml string) *Package {
 func (p *Package) WithNumbering(xml string) *Package {
 	p.Rel("word/document.xml", RelNumbering, "numbering.xml")
 	return p.Add("word/numbering.xml", CTNumbering, `<w:numbering xmlns:w="`+NSWord+`">`+xml+`</w:numbering>`)
+}
+
+// WithCore adds core properties (title, author, dates) to a package. xml is
+// the content of cp:coreProperties, with the prefixes cp, dc and dcterms
+// bound.
+func (p *Package) WithCore(xml string) *Package {
+	p.Rel("", RelCoreProps, "docProps/core.xml")
+	return p.Add("docProps/core.xml", CTCoreProps,
+		`<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"`+
+			` xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"`+
+			` xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">`+xml+`</cp:coreProperties>`)
+}
+
+// WithApp adds extended properties (application, company) to a package.
+// xml is the content of the Properties element.
+func (p *Package) WithApp(xml string) *Package {
+	p.Rel("", RelExtProps, "docProps/app.xml")
+	return p.Add("docProps/app.xml", CTExtProps,
+		`<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"`+
+			` xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">`+xml+`</Properties>`)
+}
+
+// WithCustom adds custom properties to a package. xml is the content of
+// the Properties element: property elements, with the prefix vt bound.
+func (p *Package) WithCustom(xml string) *Package {
+	p.Rel("", RelCustomProps, "docProps/custom.xml")
+	return p.Add("docProps/custom.xml", CTCustomProps,
+		`<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"`+
+			` xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">`+xml+`</Properties>`)
 }
 
 // Para returns a Word paragraph with one run of plain text.

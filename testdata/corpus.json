@@ -4719,7 +4719,8 @@
   "sha256": "f5086915bf75301648346126b02c89ca18084d8b8ec8becbb47fcb276c806566",
   "size": 8115,
   "producer": "Microsoft Excel 12.0000",
-  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)"
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "content types table carries a document type declaration (an entity-expansion test file)"
  },
  {
   "name": "poi/spreadsheet/54764.xlsx",

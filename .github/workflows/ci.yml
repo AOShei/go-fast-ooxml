@@ -36,7 +36,9 @@ jobs:
 
       - name: Fuzz smoke
         if: matrix.os == 'ubuntu-latest'
-        run: go test -run '^$' -fuzz '^FuzzOpen$' -fuzztime 30s .
+        run: |
+          go test -run '^$' -fuzz '^FuzzOpen$' -fuzztime 30s .
+          go test -run '^$' -fuzz '^FuzzXML$' -fuzztime 30s ./internal/xmlscan
 
   dependencies:
     # The series rule: the standard library and go-fast modules only.

@@ -160,7 +160,7 @@ func TestCompare(t *testing.T) {
 		t.Errorf("duplicate: %+v", s)
 	}
 	// Whitespace of any kind separates words; ligatures are expanded; case counts.
-	if s := Compare("ofﬁce\tfile name\n", "office file name"); s.F1 != 1 {
+	if s := Compare("of\uFB01ce\tfile\u00A0name\n", "office file name"); s.F1 != 1 {
 		t.Errorf("normalisation: %+v", s)
 	}
 	if s := Compare("Word", "word"); s.F1 != 0 {
