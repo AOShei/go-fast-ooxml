@@ -11,6 +11,12 @@
 // see is extracted like any other and flagged with the reason; see
 // gofastcore.Hidden and the README.
 //
-// The package is under construction and nothing is released: the native
-// interface, the command and password-protected files are still to come.
+// Extract and ExtractFile return a whole document. Open returns a File,
+// which reads a part when it is asked for, so that a caller which handles
+// one part and lets it go holds little at a time however large the file
+// is; File.Rows does the same within a sheet too long to hold. The
+// command is in cmd/gofastooxml.
+//
+// The package is under construction and nothing is released:
+// password-protected files are still to come.
 package gofastooxml

@@ -3,6 +3,8 @@ package gofastooxml_test
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
@@ -146,7 +148,56 @@ func FuzzXlsx(f *testing.F) {
 		data := pkg.Bytes()
 		doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
 		checkOutcome(t, "fuzz input", doc, err)
+		// The same sheet a band of rows at a time: every band is a part
+		// that stands by itself, and the cells are those of the sheet
+		// read whole, unless a limit cut either short.
+		f, err := e.OpenBytes(data, opts)
+		if err != nil {
+			return
+		}
+		var bands []gofastcore.Part
+		limited := doc != nil && (doc.Parts[0].Has(gofastcore.WarnLimitExceeded) || doc.Parts[0].Has(gofastcore.WarnPartFailed))
+		for part, err := range f.Rows(context.Background(), 1, 2) {
+			if err != nil {
+				t.Fatalf("rows: %v", err)
+			}
+			band := gofastcore.New("xlsx")
+			band.HiddenChecked = f.HiddenChecked()
+			band.Parts = []gofastcore.Part{part}
+			if verr := band.Validate(); verr != nil {
+				t.Errorf("a band of rows is not a valid part: %v", verr)
+			}
+			limited = limited || part.Has(gofastcore.WarnLimitExceeded) || part.Has(gofastcore.WarnPartFailed)
+			bands = append(bands, part)
+		}
+		if doc != nil && !limited {
+			if got, want := len(fuzzCells(bands...)), len(fuzzCells(doc.Parts[0])); got != want {
+				t.Errorf("%d cells a band at a time, %d in the sheet read whole", got, want)
+			}
+		}
 	})
+}
+
+// fuzzCells returns the text of the cells of the tables in the given
+// parts, by where the tables say they are.
+func fuzzCells(parts ...gofastcore.Part) map[string]string {
+	out := map[string]string{}
+	for p := range parts {
+		for i := range parts[p].Blocks {
+			b := &parts[p].Blocks[i]
+			if b.Table == nil {
+				continue
+			}
+			for r, row := range b.Table.Rows {
+				for c, text := range row {
+					if text != "" {
+						out[fmt.Sprintf("%s+%d,%d", strings.SplitN(b.Loc.Range, ":", 2)[0], r, c)] = text
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 // FuzzPptx gives the PowerPoint reader arbitrary slide, layout, master
@@ -215,5 +266,23 @@ func FuzzPptx(f *testing.F) {
 		data := pkg.Bytes()
 		doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
 		checkOutcome(t, "fuzz input", doc, err)
+		// The same slides one at a time are the same slides.
+		f, err := e.OpenBytes(data, opts)
+		if err != nil || doc == nil {
+			return
+		}
+		n := 0
+		for part, err := range f.Parts(context.Background()) {
+			if err != nil {
+				t.Fatalf("parts: %v", err)
+			}
+			if n >= len(doc.Parts) || part.Number != doc.Parts[n].Number || len(part.Blocks) != len(doc.Parts[n].Blocks) || part.Blocks == nil {
+				t.Fatalf("part %d read by itself differs from the document's", n+1)
+			}
+			n++
+		}
+		if n != len(doc.Parts) {
+			t.Errorf("%d parts one at a time, %d in the document", n, len(doc.Parts))
+		}
 	})
 }

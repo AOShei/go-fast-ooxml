@@ -337,6 +337,8 @@ type Sheet struct {
 	// Extra is XML placed after sheetData inside the worksheet element,
 	// e.g. mergeCells.
 	Extra string
+	// Before is XML placed before sheetData, e.g. cols.
+	Before string
 }
 
 // Xlsx returns a minimal Excel package with the given sheets.
@@ -359,7 +361,7 @@ func Xlsx(sheets ...Sheet) *Package {
 	p.Add("xl/workbook.xml", CTWorkbook, wb.String())
 	for i, s := range sheets {
 		p.Add("xl/"+files[i], CTWorksheet,
-			`<worksheet xmlns="`+NSSheet+`" xmlns:r="`+NSRel+`"><sheetData>`+s.Data+`</sheetData>`+s.Extra+`</worksheet>`)
+			`<worksheet xmlns="`+NSSheet+`" xmlns:r="`+NSRel+`">`+s.Before+`<sheetData>`+s.Data+`</sheetData>`+s.Extra+`</worksheet>`)
 	}
 	return p
 }

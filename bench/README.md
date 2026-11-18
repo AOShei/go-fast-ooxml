@@ -134,6 +134,34 @@ the machine of `baseline.md`:
 Memory is the largest size the heap reached during `Extract`, garbage
 included (`TestLargeWorkbookMemory`, which holds it under 300 MB).
 
+## Reading a part at a time
+
+`File.Parts` and `File.Rows` hand on one part, or one band of a sheet's
+rows, at a time. What they hold is measured as the Excel reader's memory
+is, by `TestRowsMemoryDoesNotGrowWithTheSheet` and
+`TestPartsMemoryDoesNotGrowWithTheDocument`:
+
+| | Peak memory |
+|---|---|
+| `large.xlsx`, 2 million cells, whole (`Extract`, one worker) | 127 MB |
+| The same through `Rows`, 1,000 rows to a band | 20 MB |
+| A sheet of 200,000 cells through `Rows` | 7 MB |
+| A sheet of 1.6 million cells through `Rows` | 11 MB |
+| 300 slides through `Parts`, file on disk | 1 MB |
+| 3,000 slides (8 MB of text) through `Parts`, file on disk | 3 to 4 MB |
+
+The figures include garbage not yet collected, which is why they are not
+flat. The tests hold `Rows` under 48 MB and `Parts` under 6 MB.
+
+The cells that `Rows` gives are the cells of the sheet read whole, with the
+same hidden flags: checked on the fixtures and on every sixth corpus
+workbook under 400 KB (`TestRowsOnFixturesAndCorpus`: 74 workbooks, 189
+sheets, 159,654 cells).
+
+Every file of the corpus goes through the command
+(`go test ./cmd/gofastooxml`), with the files embedded in it extracted too:
+737 give a valid document and 46 are refused with a reason.
+
 ## PowerPoint accuracy on the corpus
 
 `go test -run TestPowerPointCorpus -v .` compares every sound presentation

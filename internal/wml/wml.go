@@ -16,6 +16,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -605,4 +606,56 @@ func (r *reader) finish() {
 	part.MarkHidden()
 	r.doc.Parts = append(r.doc.Parts, *part)
 	r.doc.HiddenChecked = HiddenChecked
+}
+
+// Body is a Word document opened for reading. It has one part, the body,
+// which is read whole.
+type Body struct {
+	pkg   *opc.Package
+	main  string
+	opts  *gofastcore.Options
+	after int64 // the decompression budget when it was opened
+}
+
+// Open prepares the Word document whose main part is named main. Nothing
+// is read until Read.
+func Open(pkg *opc.Package, main string, opts *gofastcore.Options) *Body {
+	return &Body{pkg: pkg, main: main, opts: opts, after: pkg.Budget()}
+}
+
+// Len returns the number of parts, which is one.
+func (b *Body) Len() int { return 1 }
+
+// Noun names the parts of a Word document.
+func (b *Body) Noun() string { return "parts" }
+
+// HiddenChecked returns the reasons this reader checks completely.
+func (b *Body) HiddenChecked() gofastcore.Hidden { return HiddenChecked }
+
+// Begin starts a pass over the document: the limits count from here.
+func (b *Body) Begin() { b.pkg.Restore(b.after) }
+
+// Limited reports whether a limit has cut short something parts share;
+// there is one part, and nothing shared.
+func (b *Body) Limited() bool { return false }
+
+// Read reads the body. The warnings about the document and the files
+// embedded in it come with the result.
+func (b *Body) Read(ctx context.Context, index int) *unit.Result {
+	doc := &gofastcore.Document{}
+	Extract(ctx, b.pkg, b.main, b.opts, doc)
+	res := &unit.Result{Part: doc.Parts[0]}
+	res.Warnings, res.Children = doc.Warnings, doc.Children
+	res.Limited = res.Part.Has(gofastcore.WarnLimitExceeded)
+	return res
+}
+
+// Summary returns the warnings about the document, which the reading of
+// the body made.
+func (b *Body) Summary(tallies []*unit.Tally) []gofastcore.Warning {
+	var out []gofastcore.Warning
+	for _, t := range tallies {
+		out = append(out, t.Warnings...)
+	}
+	return out
 }

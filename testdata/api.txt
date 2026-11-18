@@ -1,0 +1,58 @@
+package gofastooxml
+
+const (
+	DefaultMaxInputBytes	= 1 << 30
+	DefaultMaxDecodedBytes	= 2 << 30
+	DefaultMaxArchiveMembers	= 100_000
+	DefaultMaxCells	= 20_000_000
+)
+const (
+	WarnPropertiesDamaged	= "ooxml.properties_damaged"
+	WarnPropertyTruncated	= "ooxml.property_truncated"
+	WarnControlCharsRemoved	= "ooxml.control_characters_removed"
+	WarnUnreadContent	= wml.WarnUnreadContent
+	WarnPartDamaged	= wml.WarnPartDamaged
+	WarnTableFlattened	= wml.WarnTableFlattened
+	WarnFormulaNoValue	= warn.FormulaNoValue
+	WarnRegionSplit	= warn.RegionSplit
+	WarnHiddenUnchecked	= warn.HiddenUnchecked
+)
+func Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error)
+func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error)
+
+type Extractor struct {
+	MaxArchiveMembers	int
+	MaxCells	int64
+}
+func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error)
+func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error)
+func (e *Extractor) Formats() []string
+func (e *Extractor) Open(path string, opts *gofastcore.Options) (*File, error)
+func (e *Extractor) OpenBytes(data []byte, opts *gofastcore.Options) (*File, error)
+func (e *Extractor) OpenReaderAt(r io.ReaderAt, size int64, opts *gofastcore.Options) (*File, error)
+
+type File struct {
+	// contains filtered or unexported fields
+}
+func Open(path string, opts *gofastcore.Options) (*File, error)
+func OpenBytes(data []byte, opts *gofastcore.Options) (*File, error)
+func OpenReaderAt(r io.ReaderAt, size int64, opts *gofastcore.Options) (*File, error)
+func (f *File) Children(ctx context.Context) ([]*gofastcore.Document, error)
+func (f *File) Close() error
+func (f *File) Document(ctx context.Context) (*gofastcore.Document, error)
+func (f *File) Format() string
+func (f *File) HiddenChecked() gofastcore.Hidden
+func (f *File) Metadata() gofastcore.Metadata
+func (f *File) NumParts() int
+func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error)
+func (f *File) Parts(ctx context.Context) iter.Seq2[gofastcore.Part, error]
+func (f *File) Rows(ctx context.Context, number, band int) iter.Seq2[gofastcore.Part, error]
+func (f *File) Sheets() []Sheet
+func (f *File) Source() gofastcore.Source
+func (f *File) Warnings() []gofastcore.Warning
+
+type Sheet struct {
+	Number	int
+	Name	string
+	Hidden	bool
+}

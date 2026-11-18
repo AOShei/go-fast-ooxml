@@ -13,6 +13,96 @@ library and go-fast modules only.
 | Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, merged cells, comments, text in shapes, pictures and embedded files are read. Hidden text is flagged (see below). Sheets are read in parallel |
 | PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. Hidden text is flagged (see below). Slides are read in parallel |
 
+## Using it
+
+```go
+import (
+    "github.com/AOShei/go-fast-core"
+    "github.com/AOShei/go-fast-ooxml"
+)
+
+// The whole file as one document, in the model every go-fast library shares.
+doc, err := gofastooxml.ExtractFile(ctx, "report.docx", nil)
+doc, err := gofastooxml.Extract(ctx, readerAt, size, &gofastcore.Options{Spans: true})
+fmt.Println(doc.Markdown())
+```
+
+`Extract` reads from anything that can be read at an offset (a file, bytes
+in memory); the format is decided from the file itself, never from its
+name. Options are `gofastcore.Options`; the two settings only this library
+has are fields of `Extractor` (`MaxCells`, `MaxArchiveMembers`), which
+implements `gofastcore.Extractor`. Errors wrap the shared ones
+(`ErrMalformed`, `ErrUnsupported`, `ErrLimitExceeded`,
+`ErrNoPartsSelected`). A file that is damaged in part is not an error: what
+could be read is returned, with warnings that say what could not.
+
+**A part at a time.** `Open` gives a `File`, which reads a part when it is
+asked for: the body of a Word document, a sheet, a slide.
+
+```go
+f, err := gofastooxml.Open("deck.pptx", nil)   // also OpenBytes, OpenReaderAt
+defer f.Close()
+f.Format(); f.NumParts(); f.Metadata(); f.Sheets()
+
+for part, err := range f.Parts(ctx) {          // gofastcore.Part, in order
+    ...                                        // nothing holds on to it afterwards
+}
+part, err := f.Part(ctx, 12)                   // one part, by number
+doc, err := f.Document(ctx)                    // everything: what Extract returns
+f.Warnings(); f.Children(ctx); f.HiddenChecked()
+```
+
+The parts are the ones `Extract` returns, each complete, with its warnings
+and its hidden text flagged. With more than one worker a few parts are
+read ahead; what is held does not grow with the number of parts. A `File`
+is safe for concurrent use, and each pass over it counts the limits afresh.
+
+**A sheet too long to hold** is read a band of rows at a time:
+
+```go
+for band, err := range f.Rows(ctx, sheetNumber, 1000) {
+    for _, b := range band.Blocks { ... }      // the tables of these 1,000 rows
+}
+```
+
+Each band is a part like any other, with the sheet's number and name and
+the hidden flags of its cells. Two million cells are read in about 20 MB,
+where the sheet read whole takes over 100 (`bench/README.md`). The price:
+the sheet's part is read twice, a table that runs past the end of a band is
+cut there, declared tables are not looked up, and comments, shapes and
+pictures are left to `Part`.
+
+## The command
+
+```sh
+go install github.com/AOShei/go-fast-ooxml/cmd/gofastooxml@latest
+
+gofastooxml report.docx                      # the document as JSON
+gofastooxml -format markdown deck.pptx       # or markdown, or text
+gofastooxml -format text -exclude-hidden contract.docx
+gofastooxml ./archive > documents.jsonl      # every Office file under a directory
+```
+
+| Flag | |
+|---|---|
+| `-format json\|markdown\|text` | What to print. JSON is the shared document; with several inputs each document is one line |
+| `-o file` | Write there instead of standard output |
+| `-parts 3`, `-parts 2-5` | Only those parts: sheets or slides by number |
+| `-images none\|meta\|data` | Pictures: not at all, where and how large, or their bytes too |
+| `-spans` | Bold, italic and the like, and links, as spans |
+| `-exclude-hidden`, `-exclude-hidden=tiny,low_contrast` | In Markdown and text, leave out hidden text: all of it, or what is hidden for the reasons named. JSON always has everything, flagged |
+| `-furniture`, `-part-markers` | In Markdown and text: include running headers and footers; mark where each part begins |
+| `-workers n` | Sheets or slides read at a time |
+| `-max-cells n`, `-max-decoded-bytes n` | The limits; `-1` for none |
+| `-password p` | For encrypted files, which this version does not read yet |
+| `-quiet`, `-version` | |
+
+Only documents go to standard output. A file that cannot be read is
+reported on standard error and makes the exit status 1; the other inputs
+are still read. Unless `-quiet` is given, a line on standard error names
+the files that have hidden text or a warning of severity error. Office
+files embedded in a document are extracted too, into its `children`.
+
 ## Excel workbooks
 
 **Cells are given as displayed.** A cell holding 1234.5 with the format
@@ -216,7 +306,8 @@ yellow text on a white page is under its threshold and is flagged.
 
 | Path | Content |
 |---|---|
-| `extract.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor` |
+| `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for reading a part at a time |
+| `cmd/gofastooxml` | The command |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting and what lies behind text |
@@ -224,11 +315,12 @@ yellow text on a white page is under its threshold and is flagged.
 | `internal/numfmt` | Number formats: what a cell displays for the value it holds |
 | `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables and table styles, reading order, what covers what, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
-| `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn` | Shared by the readers: theme colours and fill styles, pictures and embedded files, settling which text is hidden, bullets and numerals, warning codes |
+| `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours and fill styles, pictures and embedded files, settling which text is hidden, bullets and numerals, warning codes, what reading one part gives |
 | `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |
 | `testdata/fixtures`, `testdata/expect`, `testdata/fixtures.json` | Small generated files with exactly known content, the expected result of each in the shared model's JSON form, and their manifest |
 | `testdata/gen` | The fixture generator and the adapters for the comparison tools |
+| `testdata/api.txt` | The exported declarations of the package; a test fails when they change |
 | `testdata/numfmt` | What LibreOffice displays for 6,048 pairs of a number format and a value: the table the number-format engine is held to |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 783 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |
 | `bench` | Baseline measurements of the tools in use today; see `bench/README.md` |
