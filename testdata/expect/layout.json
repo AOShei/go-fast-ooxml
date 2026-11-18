@@ -1,0 +1,112 @@
+{
+ "schema_version": "0.1",
+ "source": {
+  "format": "xlsx"
+ },
+ "parts": [
+  {
+   "kind": "sheet",
+   "number": 1,
+   "name": "Data",
+   "blocks": [
+    {
+     "kind": "table",
+     "hidden": "invisible",
+     "loc": {
+      "range": "A1:C4"
+     },
+     "table": {
+      "header_rows": 1,
+      "rows": [
+       [
+        "Region",
+        "Q1",
+        "Q2"
+       ],
+       [
+        "North",
+        "10",
+        "12"
+       ],
+       [
+        "South",
+        "7",
+        "9"
+       ],
+       [
+        "West",
+        "5",
+        "6"
+       ]
+      ],
+      "hidden": [
+       {
+        "row": 2,
+        "col": 0,
+        "row_span": 1,
+        "col_span": 3,
+        "hidden": "invisible"
+       }
+      ]
+     }
+    },
+    {
+     "kind": "table",
+     "origin": "inferred",
+     "loc": {
+      "range": "A7:B8"
+     },
+     "table": {
+      "rows": [
+       [
+        "Notes",
+        ""
+       ],
+       [
+        "x",
+        "y"
+       ]
+      ],
+      "merges": [
+       {
+        "row": 0,
+        "col": 0,
+        "row_span": 1,
+        "col_span": 2
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "kind": "sheet",
+   "number": 2,
+   "name": "Secret",
+   "hidden": "invisible",
+   "blocks": [
+    {
+     "kind": "table",
+     "origin": "inferred",
+     "hidden": "invisible",
+     "loc": {
+      "range": "A1:A1"
+     },
+     "table": {
+      "rows": [
+       [
+        "hidden sheet text"
+       ]
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "kind": "sheet",
+   "number": 3,
+   "name": "Empty",
+   "blocks": []
+  }
+ ]
+}

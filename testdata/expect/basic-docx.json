@@ -1,0 +1,67 @@
+{
+ "schema_version": "0.1",
+ "source": {
+  "format": "docx"
+ },
+ "parts": [
+  {
+   "kind": "body",
+   "number": 1,
+   "blocks": [
+    {
+     "kind": "heading",
+     "text": "Quarterly Report",
+     "level": 1
+    },
+    {
+     "kind": "paragraph",
+     "text": "Revenue grew in every region, and the outlook for next year remains stable."
+    },
+    {
+     "kind": "heading",
+     "text": "Résumé en français",
+     "level": 2
+    },
+    {
+     "kind": "paragraph",
+     "text": "Le chiffre d'affaires a progressé dans toutes les régions ; l'année s'achève à l'équilibre."
+    },
+    {
+     "kind": "heading",
+     "text": "Deutsche Zusammenfassung",
+     "level": 2
+    },
+    {
+     "kind": "paragraph",
+     "text": "Der Umsatz stieg in allen Regionen, und die Größe des Marktes übertraf die Schätzung."
+    },
+    {
+     "kind": "heading",
+     "text": "Русский",
+     "level": 3
+    },
+    {
+     "kind": "paragraph",
+     "text": "Выручка выросла во всех регионах, и прогноз на следующий год остаётся стабильным."
+    },
+    {
+     "kind": "heading",
+     "text": "Ελληνικά",
+     "level": 3
+    },
+    {
+     "kind": "paragraph",
+     "text": "Τα έσοδα αυξήθηκαν σε όλες τις περιοχές και η πρόβλεψη παραμένει σταθερή."
+    },
+    {
+     "kind": "paragraph",
+     "text": "Name:\tValue"
+    },
+    {
+     "kind": "paragraph",
+     "text": "First line\nsecond line"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,116 @@
+{
+ "schema_version": "0.1",
+ "source": {
+  "format": "xlsx"
+ },
+ "parts": [
+  {
+   "kind": "sheet",
+   "number": 1,
+   "name": "Values",
+   "blocks": [
+    {
+     "kind": "table",
+     "origin": "inferred",
+     "loc": {
+      "range": "A1:C18"
+     },
+     "table": {
+      "rows": [
+       [
+        "Kind",
+        "Value",
+        "Format"
+       ],
+       [
+        "text",
+        "hello",
+        "General"
+       ],
+       [
+        "integer",
+        "42",
+        "General"
+       ],
+       [
+        "decimal",
+        "3.14159",
+        "General"
+       ],
+       [
+        "binary rounding",
+        "0.3",
+        "General"
+       ],
+       [
+        "large integer",
+        "123456789012",
+        "General"
+       ],
+       [
+        "thousands",
+        "1,234.50",
+        "#,##0.00"
+       ],
+       [
+        "negative in brackets",
+        "(1,234.50)",
+        "#,##0.00;(#,##0.00)"
+       ],
+       [
+        "percent",
+        "12.5%",
+        "0.0%"
+       ],
+       [
+        "currency",
+        "$1,234.50",
+        "\"$\"#,##0.00"
+       ],
+       [
+        "scientific",
+        "1.23E+07",
+        "0.00E+00"
+       ],
+       [
+        "fixed decimals",
+        "2.50",
+        "0.00"
+       ],
+       [
+        "date, day first",
+        "2026-03-04",
+        "dd/mm/yyyy"
+       ],
+       [
+        "date, month first",
+        "2026-03-04",
+        "m/d/yy"
+       ],
+       [
+        "date and time",
+        "2026-03-04T14:30:00",
+        "m/d/yy h:mm"
+       ],
+       [
+        "time of day",
+        "14:30:00",
+        "h:mm:ss"
+       ],
+       [
+        "boolean",
+        "TRUE",
+        "General"
+       ],
+       [
+        "digits as text",
+        "007",
+        "@"
+       ]
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
