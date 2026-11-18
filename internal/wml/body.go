@@ -76,6 +76,7 @@ type paraState struct {
 	hidden    gofastcore.Hidden // why text with only that formatting cannot be seen, if so
 	behind    color             // what lies behind its text
 	flags     clean.Flags       // how its text is cleaned
+	verbatim  bool              // it is code: its text is kept as written
 }
 
 var noFormatting runProps
@@ -470,7 +471,7 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 // are the paragraph's first child.
 func (p *parser) format(pp *paraProps) {
 	st := &p.para
-	st.base, st.flags = &noFormatting, clean.Ligatures
+	st.base, st.flags, st.verbatim = &noFormatting, clean.Ligatures, false
 	if p.r.styles != nil {
 		st.base = &p.r.styles.defaults
 	}
@@ -478,8 +479,18 @@ func (p *parser) format(pp *paraProps) {
 	st.own = 0
 	if pp.style != nil {
 		st.base, st.own = &pp.style.run, pp.style.own
-		if pp.style.role == roleCode {
-			st.flags = clean.Verbatim
+		// A paragraph in a code style is code, kept as written, unless it
+		// is also a heading or a numbered item: those are what they are
+		// declared to be, and their text is text like any other.
+		outline, numID := pp.outline, pp.numID
+		if outline < 0 {
+			outline = pp.style.outline
+		}
+		if numID < 0 {
+			numID = pp.style.numID
+		}
+		if pp.style.role == roleCode && !(outline >= 0 && outline < 9) && numID <= 0 {
+			st.flags, st.verbatim = clean.Verbatim, true
 		}
 		if !st.behind.set || st.behind.auto {
 			st.behind = pp.style.shade
@@ -613,7 +624,7 @@ func (p *parser) block(pp *paraProps) (gofastcore.Block, bool) {
 		}
 		to -= size
 	}
-	for kind != roleCode && from < to {
+	for !p.para.verbatim && from < to {
 		r, size := utf8.DecodeRune(raw[from:to])
 		if !unicode.IsSpace(r) {
 			break
@@ -663,7 +674,7 @@ func (p *parser) block(pp *paraProps) (gofastcore.Block, bool) {
 		}
 	case kind == roleQuote:
 		b.Kind, b.Level = gofastcore.KindQuote, 1
-	case kind == roleCode:
+	case p.para.verbatim:
 		b.Kind = gofastcore.KindCode
 	}
 	return b, true

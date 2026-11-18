@@ -423,7 +423,7 @@ func TestWordTextBoxesAndAlternateContent(t *testing.T) {
 	)
 }
 
-func pngBytes(t *testing.T, w, h int) []byte {
+func pngBytes(t testing.TB, w, h int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	img.Set(0, 0, color.RGBA{255, 0, 0, 255})
@@ -679,5 +679,33 @@ func TestAmbiguousArchiveIsReported(t *testing.T) {
 	}
 	if clean := word(t, ooxmltest.Docx(ooxmltest.Para("x")), nil); warned(clean, gofastcore.WarnInputAmbiguous) {
 		t.Error("an ordinary archive was reported as ambiguous")
+	}
+}
+
+// A paragraph in a code style is code, kept as it is written. One that is
+// also a numbered item or a heading is that, and its text is text like
+// any other: trimmed, with ligatures written as letters. (Found in a
+// document embedded in a presentation of the corpus, where a numbered
+// paragraph in a plain-text style came out with a space in front.)
+func TestWordCodeStyleOnListItemsAndHeadings(t *testing.T) {
+	body := `<w:p><w:pPr><w:pStyle w:val="Code"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>` + run(text("  a numbered item with a \ufb01 ligature ")) + `</w:p>` +
+		`<w:p><w:pPr><w:pStyle w:val="Code"/><w:outlineLvl w:val="1"/></w:pPr>` + run(text("\t a heading in a code style")) + `</w:p>` +
+		ooxmltest.StyledPara("Code", "  kept as written: \ufb01")
+	doc := word(t, ooxmltest.Docx(body).WithStyles(wordStyles).WithNumbering(wordNumbering), nil)
+	blocks := doc.Parts[0].Blocks
+	if len(blocks) != 3 {
+		t.Fatalf("%d blocks: %+v", len(blocks), blocks)
+	}
+	for i, want := range []struct {
+		kind gofastcore.Kind
+		text string
+	}{
+		{gofastcore.KindListItem, "a numbered item with a fi ligature"},
+		{gofastcore.KindHeading, "a heading in a code style"},
+		{gofastcore.KindCode, "  kept as written: \ufb01"},
+	} {
+		if blocks[i].Kind != want.kind || blocks[i].Text != want.text {
+			t.Errorf("block %d is %s %q, want %s %q", i, blocks[i].Kind, blocks[i].Text, want.kind, want.text)
+		}
 	}
 }

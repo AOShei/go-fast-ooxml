@@ -2,6 +2,7 @@ package sml
 
 import (
 	"bytes"
+	"context"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ type span struct{ lo, hi int32 }
 // budgets.
 type sheet struct {
 	wb   *workbook
+	ctx  context.Context
 	part gofastcore.Part
 	name string // the worksheet's part
 	rels map[string]opc.Rel
@@ -67,8 +69,14 @@ type sheet struct {
 	unread  map[string]int // content of kinds that are not read
 	damaged []string       // parts that could not be read to their end
 	cut     string         // why reading stopped early, if it did
-	budget  bool           // the decompression budget ran out
-	macros  bool           // the sheet is a sheet of macros
+
+	// Reading a band of rows at a time (see Rows).
+	pass   int                // which of the two passes over the part this is
+	band   int                // rows to a band; zero when the sheet is read whole
+	inBand int                // rows with cells read since the last band
+	emit   func() (more bool) // hands the band on
+	budget bool               // the decompression budget ran out
+	macros bool               // the sheet is a sheet of macros
 }
 
 // arena holds the text of a sheet's cells in large pieces, so that a cell
@@ -90,6 +98,13 @@ func (a *arena) put(p []byte) string {
 	return a.b.String()[start:]
 }
 
+// The passes over a worksheet's part when it is read a band at a time.
+const (
+	passWhole  = iota // the one pass of reading a sheet whole
+	passAround        // everything but the rows: hidden columns, merged cells
+	passRows          // the rows
+)
+
 // read reads the worksheet part.
 func (sh *sheet) read() {
 	s := &sh.s
@@ -101,8 +116,16 @@ func (sh *sheet) read() {
 			s.Skip()
 			continue
 		}
+		if sh.pass == passRows && string(s.Local()) != "sheetData" {
+			s.Skip() // read by the pass before
+			continue
+		}
 		switch string(s.Local()) {
 		case "sheetData":
+			if sh.pass == passAround {
+				s.Skip()
+				continue
+			}
 			sh.readData()
 			if sh.cut != "" {
 				return
@@ -253,7 +276,7 @@ func (sh *sheet) readData() {
 			s.Skip()
 			continue
 		}
-		if n&1023 == 0 && sh.wb.ctx.Err() != nil {
+		if n&1023 == 0 && sh.ctx.Err() != nil {
 			sh.cut = "cancelled"
 			return
 		}
@@ -283,6 +306,18 @@ func (sh *sheet) readData() {
 		if n := len(sh.cells) - first; n > 0 {
 			if hidden {
 				sh.hiddenRows = append(sh.hiddenRows, row)
+			}
+			if sh.band > 0 {
+				// A band is handed on and forgotten: what is kept does
+				// not grow with the sheet, and is not counted.
+				if sh.inBand++; sh.inBand >= sh.band {
+					sh.inBand = 0
+					if !sh.emit() {
+						sh.cut = "stopped"
+						return
+					}
+				}
+				continue
 			}
 			// What is kept is charged to the document's budgets, a row
 			// at a time.

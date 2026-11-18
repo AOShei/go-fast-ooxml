@@ -1,6 +1,7 @@
 package pml
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -28,10 +30,10 @@ func (pg *page) index(rels []opc.Rel) {
 }
 
 // slide reads one slide into a part.
-func (pg *page) slide(index int, ref slideRef) *result {
+func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result {
 	p := pg.p
-	res := &result{}
-	part := &res.part
+	res := &unit.Result{}
+	part := &res.Part
 	part.Kind, part.Number, part.Width, part.Height = gofastcore.PartSlide, index+1, p.width, p.height
 	pg.exceeded, pg.damaged, pg.cells = false, nil, 0
 
@@ -42,13 +44,13 @@ func (pg *page) slide(index int, ref slideRef) *result {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the presentation lists the slide but does not contain it")
 	case p.exceeded.Load():
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "nothing was read before the limit")
-		res.limited = true
-	case p.ctx.Err() != nil:
+		res.Limited = true
+	case ctx.Err() != nil:
 		// Cancelled: the caller gets the context's error, not this part.
 	default:
 		rels, err := p.pkg.RelsWith(ref.target, &pg.s)
 		pg.fail(opc.RelsName(ref.target), err, false)
-		res.rels = rels
+		res.Rels = rels
 		var notes string
 		var comments []string
 		pg.parent, pg.master, pg.styles = nil, nil, nil
@@ -57,7 +59,7 @@ func (pg *page) slide(index int, ref slideRef) *result {
 			switch {
 			case rel.External:
 				if !ns.IsRel(rel.Type, ns.RelHyperlink) {
-					res.external++
+					res.External++
 				}
 			case ns.IsRel(rel.Type, ns.RelSlideLayout) && pg.parent == nil:
 				pg.parent = p.sheet(rel.Target, false)
@@ -90,7 +92,7 @@ func (pg *page) slide(index int, ref slideRef) *result {
 			part.Hidden = gofastcore.HiddenInvisible
 		}
 		part.Name = pg.title
-		res.unread, res.programs = pg.unread, pg.programs
+		res.Unread, res.Programs = pg.unread, pg.programs
 		removed, skipped, sawImage, cut = pg.text.Removed, pg.skipped, pg.sawImage, pg.cut
 		pg.text.Removed, pg.cells = 0, 0 // counted; the cells stay taken
 		if err := pg.failure; err != nil {
@@ -114,7 +116,7 @@ func (pg *page) slide(index int, ref slideRef) *result {
 			case p.repeated.Add(-n) < 0:
 				p.repeated.Add(n)
 				part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the text of the slide's layout and master is left out: the slides of the presentation repeat more of it than is kept")
-				res.limited = true
+				res.Limited = true
 			default:
 				blocks = append(blocks, above...)
 				// A layout often repeats what its master has, in the same
@@ -140,7 +142,7 @@ func (pg *page) slide(index int, ref slideRef) *result {
 			blocks = append(blocks, pg.blocks...)
 			removed += pg.text.Removed
 			pg.text.Removed = 0
-			res.programs += pg.programs
+			res.Programs += pg.programs
 		}
 		for _, name := range comments {
 			if !pg.exceeded {
@@ -153,14 +155,14 @@ func (pg *page) slide(index int, ref slideRef) *result {
 		pg.blocks = pg.blocks[:0]
 	}
 
-	res.damaged = pg.damaged
+	res.Damaged = pg.damaged
 	if pg.exceeded {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; the slide is cut off there")
-		res.limited = true
+		res.Limited = true
 	}
 	if cut != "" {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, cut+"; the tables of the slide are cut off there")
-		res.limited = true
+		res.Limited = true
 	}
 	hasText, hasImage := false, sawImage
 	for i := range part.Blocks {

@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +21,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
+	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -51,7 +51,6 @@ var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 
 // presentation is what the slides of a presentation share.
 type presentation struct {
-	ctx  context.Context
 	pkg  *opc.Package
 	opts *gofastcore.Options
 
@@ -184,33 +183,35 @@ type slideRef struct {
 // maxSlides bounds the slides of a presentation that are listed at all.
 const maxSlides = 1 << 16
 
-// result is what reading one slide gives.
-type result struct {
-	part     gofastcore.Part
-	rels     []opc.Rel
-	unread   map[string]int
-	damaged  []string
-	external int  // links to things outside the file that are not hyperlinks
-	programs int  // actions that start a program or run a macro
-	limited  bool // a limit cut the slide short
+// Deck is a presentation opened for reading a slide at a time. The list
+// of slides and the presentation's own settings are read when it is
+// opened; layouts, masters and whatever else slides share are read when
+// a slide first needs them.
+type Deck struct {
+	p        *presentation
+	refs     []slideRef
+	after    int64 // the decompression budget once the presentation part was read
+	external int   // links from the presentation to things outside the file
+	pages    sync.Pool
 }
 
-// Extract reads the presentation in main into doc. The error is one of
-// the caller's making: no slide selected, or the context cancelled.
-func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcore.Options, doc *gofastcore.Document, cfg Config) error {
-	p := &presentation{ctx: ctx, pkg: pkg, opts: opts, first: 1, maxCells: cfg.MaxCells, shared: newShared(cfg.MaxCells)}
-	doc.HiddenChecked = HiddenChecked
+// Open reads the presentation in main. It does not fail: what could not
+// be read is reported by Summary, and a presentation with no slides has
+// one part that says so.
+func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *Deck {
+	p := &presentation{pkg: pkg, opts: opts, first: 1, maxCells: cfg.MaxCells, shared: newShared(cfg.MaxCells)}
+	d := &Deck{p: p}
+	d.pages.New = func() any { return &page{p: p} }
 
 	rels, err := pkg.Rels(main)
 	p.note(opc.RelsName(main), err)
 	byID := make(map[string]opc.Rel, len(rels))
-	external := 0
 	for _, rel := range rels {
 		byID[rel.ID] = rel
 		switch {
 		case rel.External:
 			if !ns.IsRel(rel.Type, ns.RelHyperlink) {
-				external++
+				d.external++
 			}
 		case ns.IsRel(rel.Type, ns.RelTableStyles):
 			p.tablePart = rel.Target
@@ -218,7 +219,6 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 			p.authorParts = append(p.authorParts, rel.Target)
 		}
 	}
-	var refs []slideRef
 	p.load(main, func(s *xmlscan.Scanner) {
 		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start {
@@ -231,14 +231,14 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 				}
 			case s.Depth() != 2 && !(s.Depth() == 3 && s.Is(ns.Pres, "sldId")):
 				s.Skip()
-			case s.Is(ns.Pres, "sldId") && len(refs) < maxSlides:
+			case s.Is(ns.Pres, "sldId") && len(d.refs) < maxSlides:
 				var ref slideRef
 				if id, ok := s.Attr(ns.Rel, "id"); ok {
 					if rel, found := byID[string(id)]; found && !rel.External {
 						ref.target = rel.Target
 					}
 				}
-				refs = append(refs, ref)
+				d.refs = append(d.refs, ref)
 			case s.Is(ns.Pres, "sldSz"):
 				cx, ok1 := intAttr(s, "cx")
 				cy, ok2 := intAttr(s, "cy")
@@ -255,121 +255,71 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 			}
 		}
 	})
+	d.after = pkg.Budget()
+	return d
+}
 
-	// The slides asked for, in presentation order. A slide's number is
-	// its place in the presentation, hidden slides included.
-	var selected []int
-	for i := range refs {
-		if opts.Parts.Contains(i + 1) {
-			selected = append(selected, i)
-		}
-	}
-	if len(refs) > 0 && len(selected) == 0 {
-		return fmt.Errorf("gofastooxml: the presentation has %d slides, numbered from 1: %w", len(refs), gofastcore.ErrNoPartsSelected)
-	}
-	if limit := opts.Limits.MaxParts; limit > 0 && len(selected) > limit {
-		doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded,
-			fmt.Sprintf("%d slides were asked for; the first %d are given", len(selected), limit))
-		selected = selected[:limit]
-	}
+// Len returns the number of parts: one for each slide, and one for a
+// presentation that has none.
+func (d *Deck) Len() int { return max(len(d.refs), 1) }
 
-	// The slides, each by one worker.
-	workers := opts.Workers
-	if workers <= 0 {
-		workers = runtime.GOMAXPROCS(0)
-	}
-	workers = min(workers, len(selected))
-	results := make([]*result, len(selected))
-	run := func(workers int) (limited bool) {
-		if workers <= 1 {
-			pg := &page{p: p}
-			for k, i := range selected {
-				results[k] = pg.slide(i, refs[i])
-			}
-		} else {
-			var wg sync.WaitGroup
-			var next atomic.Int64
-			for w := 0; w < workers; w++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					pg := &page{p: p}
-					for {
-						k := int(next.Add(1)) - 1
-						if k >= len(selected) {
-							return
-						}
-						results[k] = pg.slide(selected[k], refs[selected[k]])
-					}
-				}()
-			}
-			wg.Wait()
-		}
-		for _, r := range results {
-			limited = limited || r.limited
-		}
-		return limited || p.exceeded.Load()
-	}
-	budget, damaged := pkg.Budget(), len(p.damaged)
-	if run(workers) && workers > 1 && ctx.Err() == nil {
-		// A limit was reached, and which slides were read before it
-		// depends on which worker got there first. What a limit leaves
-		// out must not depend on the number of workers, so the slides are
-		// read again, in order, against the same limits.
-		pkg.Restore(budget)
-		kept := p.damaged[:damaged:damaged]
-		p.shared = newShared(p.maxCells)
-		p.damaged = kept
-		run(1)
-	}
+// Noun names the parts of a presentation.
+func (d *Deck) Noun() string { return "slides" }
 
-	// Put together in presentation order.
-	unread := map[string]int{}
-	embedded := map[string]bool{}
-	delivered := map[string]bool{}
-	programs := 0
-	exceeded := p.exceeded.Load()
-	all := p.damaged
-	for _, r := range results {
-		// A picture's bytes go with the first block that shows it.
-		for i := range r.part.Blocks {
-			img := r.part.Blocks[i].Image
-			if img == nil || img.Data == nil {
-				continue
-			}
-			if delivered[img.ID] {
-				img.Data = nil
-			}
-			delivered[img.ID] = true
-		}
-		doc.Parts = append(doc.Parts, r.part)
-		for kind, n := range r.unread {
-			unread[kind] += n
-		}
-		all = append(all, r.damaged...)
-		external += r.external
-		programs += r.programs
-		children, bad, err := media.Embedded(ctx, pkg, opts, r.rels, embedded, !exceeded)
-		doc.Children = append(doc.Children, children...)
-		all = append(all, bad...)
-		if err != nil {
-			exceeded = true
-		}
-	}
-	if len(refs) == 0 {
+// HiddenChecked returns the reasons this reader checks completely.
+func (d *Deck) HiddenChecked() gofastcore.Hidden { return HiddenChecked }
+
+// Begin starts a pass over the presentation: the limits count from here.
+func (d *Deck) Begin() {
+	d.p.pkg.Restore(d.after)
+	d.p.cells.Store(d.p.maxCells)
+	d.p.repeated.Store(maxRepeated)
+}
+
+// Limited reports whether the decompression budget has run out.
+func (d *Deck) Limited() bool { return d.p.exceeded.Load() }
+
+// Read reads the slide with the given index into a part.
+func (d *Deck) Read(ctx context.Context, index int) *unit.Result {
+	if len(d.refs) == 0 {
 		// A presentation with no slides, which a template may be. A
 		// document has at least one part, and this one says it is empty.
-		part := gofastcore.Part{Kind: gofastcore.PartSlide, Number: 1, Width: p.width, Height: p.height}
-		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "the presentation has no slides")
-		part.MarkHidden()
-		doc.Parts = append(doc.Parts, part)
+		res := &unit.Result{Part: gofastcore.Part{Kind: gofastcore.PartSlide, Number: 1, Width: d.p.width, Height: d.p.height}}
+		res.Part.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "the presentation has no slides")
+		res.Part.MarkHidden()
+		return res
+	}
+	pg := d.pages.Get().(*page)
+	defer d.pages.Put(pg)
+	return pg.slide(ctx, index, d.refs[index])
+}
+
+// Summary turns what was found while the slides were read into warnings
+// about the presentation.
+func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
+	var out []gofastcore.Warning
+	add := func(severity gofastcore.Severity, code, message string) {
+		out = append(out, gofastcore.Warning{Code: code, Severity: severity, Message: message})
+	}
+	unread := map[string]int{}
+	d.p.mu.Lock()
+	damaged := append([]string(nil), d.p.damaged...)
+	d.p.mu.Unlock()
+	external, programs := d.external, 0
+	for _, t := range tallies {
+		for kind, n := range t.Unread {
+			unread[kind] += n
+		}
+		damaged = append(damaged, t.Damaged...)
+		external += t.External
+		programs += t.Programs
 	}
 	if programs > 0 {
-		doc.Warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent,
+		add(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent,
 			strconv.Itoa(programs)+" actions that start a program or run a macro; none was run")
 	}
 	if external > 0 {
-		doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputExternalReference,
+		add(gofastcore.SeverityWarning, gofastcore.WarnInputExternalReference,
 			fmt.Sprintf("%d links to pictures, media or files outside the presentation; nothing was fetched", external))
 	}
 	if len(unread) > 0 {
@@ -378,18 +328,18 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 			kinds = append(kinds, strconv.Itoa(n)+" "+kind)
 		}
 		sort.Strings(kinds)
-		doc.Warn(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
+		add(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
 	}
-	sort.Strings(all)
-	for i, name := range all {
-		if i == 0 || name != all[i-1] {
-			doc.Warn(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(pkg.Written(name)))
+	sort.Strings(damaged)
+	for i, name := range damaged {
+		if i == 0 || name != damaged[i-1] {
+			add(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(d.p.pkg.Written(name)))
 		}
 	}
-	if exceeded && len(results) == 0 {
-		doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached before any slide was read")
+	if d.p.exceeded.Load() && len(tallies) == 0 {
+		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached before any slide was read")
 	}
-	return nil
+	return out
 }
 
 // round rounds a length in points to the hundredth, which is finer than

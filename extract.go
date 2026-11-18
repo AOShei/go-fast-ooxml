@@ -7,14 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/pml"
-	"github.com/AOShei/go-fast-ooxml/internal/props"
-	"github.com/AOShei/go-fast-ooxml/internal/sml"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/wml"
 )
@@ -129,26 +125,24 @@ func Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Op
 	return (&Extractor{}).Extract(ctx, r, size, opts)
 }
 
+// ExtractFile opens the named file and extracts it, with default
+// settings. It is (&Extractor{}).ExtractFile.
+func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error) {
+	return (&Extractor{}).ExtractFile(ctx, path, opts)
+}
+
 // ExtractFile opens the named file and extracts it. The file name is
 // recorded as the document's source name unless opts.Name is set.
-func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error) {
-	f, err := os.Open(path)
+func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f, err := e.Open(path, opts)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	var o gofastcore.Options
-	if opts != nil {
-		o = *opts
-	}
-	if o.Name == "" {
-		o.Name = path
-	}
-	return (&Extractor{}).Extract(ctx, f, info.Size(), &o)
+	return f.Document(ctx)
 }
 
 // Extract reads size bytes from r and returns the document.
@@ -162,102 +156,19 @@ func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*g
 //     or PowerPoint file; an encrypted or legacy binary Office file.
 //   - ErrLimitExceeded: the input is larger than Limits.MaxInputBytes, or
 //     a limit was reached before anything could be read.
+//   - ErrNoPartsSelected: Options.Parts selects none of the document's
+//     parts.
+//
+// It is OpenReaderAt followed by Document.
 func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error) {
-	if opts == nil {
-		opts = &gofastcore.Options{}
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if limit := gofastcore.ResolveLimit(opts.Limits.MaxInputBytes, DefaultMaxInputBytes); size > limit {
-		return nil, fmt.Errorf("gofastooxml: input is %d bytes, limit is %d: %w", size, limit, gofastcore.ErrLimitExceeded)
-	}
-	if size < 4 {
-		return nil, fmt.Errorf("gofastooxml: input is %d bytes: %w", size, gofastcore.ErrMalformed)
-	}
-	if reason := compoundFile(r, size); reason != "" {
-		return nil, fmt.Errorf("gofastooxml: %s: %w", reason, gofastcore.ErrUnsupported)
-	}
-
-	members := int(gofastcore.ResolveLimit(int64(e.MaxArchiveMembers), DefaultMaxArchiveMembers))
-	pkg, err := opc.Open(r, size, opc.Limits{
-		MaxDecodedBytes: gofastcore.ResolveLimit(opts.Limits.MaxDecodedBytes, DefaultMaxDecodedBytes),
-		MaxMembers:      members,
-	})
+	f, err := e.OpenReaderAt(r, size, opts)
 	if err != nil {
-		return nil, wrap(err)
-	}
-	main, format, mime, err := pkg.Main()
-	if err != nil {
-		return nil, wrap(err)
-	}
-	// A document of these formats that is not split into pages has one
-	// part, or one per sheet or slide; a range must select at least one.
-	if format == opc.Docx && !opts.Parts.Contains(1) {
-		return nil, fmt.Errorf("gofastooxml: a Word document has one part, numbered 1: %w", gofastcore.ErrNoPartsSelected)
-	}
-
-	doc := gofastcore.New(string(format))
-	doc.Source.MIME = mime
-	doc.Source.Name = opts.Name
-	doc.Source.Size = size
-	// Invisible characters are checked for in everything that is
-	// extracted. A format's reader adds the checks it makes: see
-	// HiddenChecked in wml, sml and pml.
-	doc.HiddenChecked = gofastcore.HiddenChars
-
-	meta, err := props.Read(pkg)
-	doc.Metadata = meta.Metadata
-	for _, name := range meta.Damaged {
-		doc.Warn(gofastcore.SeverityWarning, WarnPropertiesDamaged, clean.Label(name))
-	}
-	if meta.Truncated > 0 {
-		doc.Warn(gofastcore.SeverityWarning, WarnPropertyTruncated, fmt.Sprintf("%d values", meta.Truncated))
-	}
-	if meta.Removed > 0 {
-		doc.Warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", meta.Removed))
-	}
-	if hiddenInMetadata(&doc.Metadata) {
-		doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextHidden, "document properties contain invisible characters")
-	}
-	if n := pkg.Ambiguous(); n > 0 {
-		doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous,
-			fmt.Sprintf("%d archive members are named twice or share a name; programs differ in which they read", n))
-	}
-	if pkg.HasContentType(vbaContentType) {
-		doc.Warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "a VBA project (macros); it is not read")
-	}
-	if errors.Is(err, opc.ErrBudget) {
-		doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading document properties")
-	}
-
-	switch format {
-	case opc.Docx:
-		wml.Extract(ctx, pkg, main, opts, doc)
-	case opc.Xlsx:
-		// The text of the cells is bounded by the same number as the
-		// decompressed size: a workbook cannot ask for more output than
-		// the largest input allowed.
-		err := sml.Extract(ctx, pkg, main, opts, doc, sml.Config{
-			MaxCells:     gofastcore.ResolveLimit(e.MaxCells, DefaultMaxCells),
-			MaxTextBytes: gofastcore.ResolveLimit(opts.Limits.MaxDecodedBytes, DefaultMaxDecodedBytes),
-		})
-		if err != nil {
-			return nil, err
-		}
-	case opc.Pptx:
-		err := pml.Extract(ctx, pkg, main, opts, doc, pml.Config{
-			MaxCells: gofastcore.ResolveLimit(e.MaxCells, DefaultMaxCells),
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return doc, nil
+	return f.Document(ctx)
 }
 
 const vbaContentType = "application/vnd.ms-office.vbaProject"

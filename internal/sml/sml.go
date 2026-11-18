@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
+	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -50,7 +50,6 @@ var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 // budgets and the record of pictures, nothing in it changes once the
 // sheets are being read.
 type workbook struct {
-	ctx      context.Context
 	pkg      *opc.Package
 	opts     *gofastcore.Options
 	strings  *stringTable
@@ -77,27 +76,45 @@ type sheetRef struct {
 // maxSheets bounds the sheets of a workbook that are listed at all.
 const maxSheets = 1 << 16
 
-// Extract reads the workbook in main into doc. The error is one of the
-// caller's making: no sheet selected, or the context cancelled.
-func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcore.Options, doc *gofastcore.Document, cfg Config) error {
-	wb := &workbook{ctx: ctx, pkg: pkg, opts: opts, images: map[string]*gofastcore.Image{}}
-	wb.cells.Store(cfg.MaxCells)
-	wb.text.Store(cfg.MaxTextBytes)
-	doc.HiddenChecked = HiddenChecked
+// Book is a workbook opened for reading a sheet at a time. What the sheets
+// share (the list of them, the styles, the shared strings, the theme) is
+// read when it is opened.
+type Book struct {
+	wb   *workbook
+	refs []sheetRef
+	cfg  Config
 
-	var damaged []string
-	budget := false
+	after       int64    // the decompression budget once the shared parts were read
+	budget      bool     // it ran out while they were read
+	damaged     []string // shared parts that could not be read to their end
+	external    int      // links to other workbooks and files
+	removed     int      // control characters removed from shared strings
+	stringsFull bool     // the shared strings were cut off at their limit
+}
+
+// SheetInfo is a sheet as the workbook lists it.
+type SheetInfo struct {
+	Name   string
+	Hidden bool
+}
+
+// Open reads what the sheets of the workbook in main share. It does not
+// fail: what could not be read is reported by Summary, and a workbook
+// that lists no sheets has one part that says so.
+func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *Book {
+	wb := &workbook{pkg: pkg, opts: opts, images: map[string]*gofastcore.Image{}}
+	b := &Book{wb: wb, cfg: cfg}
 	note := func(name string, err error) {
 		switch {
 		case err == nil:
 		case errors.Is(err, opc.ErrBudget):
-			budget = true
+			b.budget = true
 		default:
-			damaged = append(damaged, name)
+			b.damaged = append(b.damaged, name)
 		}
 	}
 	load := func(name string, read func(*xmlscan.Scanner)) {
-		if budget || !pkg.Has(name) {
+		if b.budget || !pkg.Has(name) {
 			return
 		}
 		var s xmlscan.Scanner
@@ -117,7 +134,6 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	for _, rel := range rels {
 		byID[rel.ID] = rel
 	}
-	var refs []sheetRef
 	load(main, func(s *xmlscan.Scanner) {
 		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start || s.Space() != ns.Sheet {
@@ -128,7 +144,7 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 				if v, ok := s.Attr(xmlscan.NoSpace, "date1904"); ok {
 					wb.date1904 = isTrue(v)
 				}
-			case s.Depth() == 3 && s.Is(ns.Sheet, "sheet") && len(refs) < maxSheets:
+			case s.Depth() == 3 && s.Is(ns.Sheet, "sheet") && len(b.refs) < maxSheets:
 				var ref sheetRef
 				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
 					ref.name, _ = clean.String(v, clean.Prose)
@@ -144,53 +160,30 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 						}
 					}
 				}
-				refs = append(refs, ref)
+				b.refs = append(b.refs, ref)
 			}
 		}
 	})
 
-	// The sheets asked for, in workbook order. A sheet's number is its
-	// place in the workbook, hidden sheets included.
-	var selected []int
-	for i := range refs {
-		if opts.Parts.Contains(i + 1) {
-			selected = append(selected, i)
-		}
+	// What the sheets share. If no sheet is asked for there is nothing to
+	// read it for.
+	wanted := false
+	for i := range b.refs {
+		wanted = wanted || opts.Parts.Contains(i+1)
 	}
-	if len(refs) == 0 {
-		// A workbook with no sheets, or whose list of them could not be
-		// read. A document has at least one part, and this one says why
-		// it is empty.
-		part := gofastcore.Part{Kind: gofastcore.PartSheet, Number: 1}
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the workbook lists no sheets")
-		part.MarkHidden()
-		doc.Parts = append(doc.Parts, part)
-	}
-	if len(refs) > 0 && len(selected) == 0 {
-		return fmt.Errorf("gofastooxml: the workbook has %d sheets, numbered from 1: %w", len(refs), gofastcore.ErrNoPartsSelected)
-	}
-	if limit := opts.Limits.MaxParts; limit > 0 && len(selected) > limit {
-		doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded,
-			fmt.Sprintf("%d sheets were asked for; the first %d are given", len(selected), limit))
-		selected = selected[:limit]
-	}
-
-	// What the sheets share.
-	external := 0
 	for _, rel := range rels {
 		switch {
 		case ns.IsRel(rel.Type, ns.RelExternalLink) || rel.External && !ns.IsRel(rel.Type, ns.RelHyperlink):
-			external++
-		case rel.External || len(selected) == 0:
+			b.external++
+		case rel.External || !wanted:
 		case ns.IsRel(rel.Type, ns.RelTheme):
 			load(rel.Target, func(s *xmlscan.Scanner) { wb.theme = theme.Read(s) })
 		case ns.IsRel(rel.Type, ns.RelPerson):
 			load(rel.Target, func(s *xmlscan.Scanner) { wb.persons = readPersons(s) })
 		}
 	}
-	removed := 0
 	for _, rel := range rels {
-		if rel.External || len(selected) == 0 {
+		if rel.External || !wanted {
 			continue
 		}
 		switch {
@@ -201,98 +194,94 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 				var full bool
 				var n int
 				wb.strings, n, full = readStrings(s)
-				removed += n
-				if full {
-					doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the shared strings are cut off at 4 GiB; cells that use later ones are empty")
-				}
+				b.removed += n
+				b.stringsFull = b.stringsFull || full
 			})
 		}
 	}
+	b.after = pkg.Budget()
+	b.Begin()
+	return b
+}
 
-	// The sheets, each by one worker.
-	sheets := make([]*sheet, len(selected))
-	workers := opts.Workers
-	if workers <= 0 {
-		workers = runtime.GOMAXPROCS(0)
-	}
-	workers = min(workers, len(selected))
-	run := func(workers int) (limited bool) {
-		if workers <= 1 {
-			for k, i := range selected {
-				sheets[k] = wb.sheet(i, refs[i], budget)
-			}
-		} else {
-			var wg sync.WaitGroup
-			var next atomic.Int64
-			for w := 0; w < workers; w++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					for {
-						k := int(next.Add(1)) - 1
-						if k >= len(selected) {
-							return
-						}
-						sheets[k] = wb.sheet(selected[k], refs[selected[k]], budget)
-					}
-				}()
-			}
-			wg.Wait()
-		}
-		for _, sh := range sheets {
-			limited = limited || sh.budget || sh.cut != ""
-		}
-		return limited
-	}
-	before := pkg.Budget()
-	if run(workers) && workers > 1 && ctx.Err() == nil {
-		// A limit was reached, and which sheets were read before it
-		// depends on which worker got there first. What a limit leaves
-		// out must not depend on the number of workers, so the sheets are
-		// read again, in order, against the same limits.
-		pkg.Restore(before)
-		wb.cells.Store(cfg.MaxCells)
-		wb.text.Store(cfg.MaxTextBytes)
-		wb.images = map[string]*gofastcore.Image{}
-		run(1)
-	}
+// Len returns the number of parts: one for each sheet, and one for a
+// workbook that lists none.
+func (b *Book) Len() int { return max(len(b.refs), 1) }
 
-	// Put together in workbook order, so that the result does not depend
-	// on how many workers there were.
+// Noun names the parts of a workbook.
+func (b *Book) Noun() string { return "sheets" }
+
+// HiddenChecked returns the reasons this reader checks completely.
+func (b *Book) HiddenChecked() gofastcore.Hidden { return HiddenChecked }
+
+// Begin starts a pass over the workbook: the limits count from here.
+func (b *Book) Begin() {
+	b.wb.pkg.Restore(b.after)
+	b.wb.cells.Store(b.cfg.MaxCells)
+	b.wb.text.Store(b.cfg.MaxTextBytes)
+}
+
+// Limited reports whether the decompression budget ran out while the
+// shared parts were read.
+func (b *Book) Limited() bool { return b.budget }
+
+// Sheets lists the sheets in the order of the workbook.
+func (b *Book) Sheets() []SheetInfo {
+	out := make([]SheetInfo, len(b.refs))
+	for i, ref := range b.refs {
+		out[i] = SheetInfo{Name: ref.name, Hidden: ref.hidden}
+	}
+	return out
+}
+
+// Read reads the sheet with the given index into a part.
+func (b *Book) Read(ctx context.Context, index int) *unit.Result {
+	if len(b.refs) == 0 {
+		// A workbook with no sheets, or whose list of them could not be
+		// read. A document has at least one part, and this one says why
+		// it is empty.
+		res := &unit.Result{Part: gofastcore.Part{Kind: gofastcore.PartSheet, Number: 1}}
+		res.Part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the workbook lists no sheets")
+		res.Part.MarkHidden()
+		return res
+	}
+	return b.wb.sheet(ctx, index, b.refs[index], b.budget).result()
+}
+
+// result is what reading the sheet gave.
+func (sh *sheet) result() *unit.Result {
+	return &unit.Result{Part: sh.part, Tally: unit.Tally{
+		Unread: sh.unread, Damaged: sh.damaged, Macros: sh.macros, Rels: sh.list,
+		Limited: sh.budget || sh.cut != "" && sh.cut != "cancelled",
+	}}
+}
+
+// Summary turns what was found while the sheets were read into warnings
+// about the workbook.
+func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
+	var out []gofastcore.Warning
+	add := func(severity gofastcore.Severity, code, message string) {
+		out = append(out, gofastcore.Warning{Code: code, Severity: severity, Message: message})
+	}
+	if b.stringsFull {
+		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the shared strings are cut off at 4 GiB; cells that use later ones are empty")
+	}
 	unread := map[string]int{}
-	embedded := map[string]bool{}
+	damaged := append([]string(nil), b.damaged...)
 	macros := false
-	delivered := map[string]bool{}
-	for _, sh := range sheets {
-		// A picture's bytes go with the first block that shows it.
-		for i := range sh.part.Blocks {
-			img := sh.part.Blocks[i].Image
-			if img == nil || img.Data == nil {
-				continue
-			}
-			if delivered[img.ID] {
-				img.Data = nil
-			}
-			delivered[img.ID] = true
-		}
-		doc.Parts = append(doc.Parts, sh.part)
-		for kind, n := range sh.unread {
+	for _, t := range tallies {
+		for kind, n := range t.Unread {
 			unread[kind] += n
 		}
-		damaged = append(damaged, sh.damaged...)
-		budget = budget || sh.budget
-		macros = macros || sh.macros
-		children, bad, err := media.Embedded(ctx, pkg, opts, sh.list, embedded, !budget)
-		doc.Children = append(doc.Children, children...)
-		damaged = append(damaged, bad...)
-		note("", err)
+		damaged = append(damaged, t.Damaged...)
+		macros = macros || t.Macros
 	}
 	if macros {
-		doc.Warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "macro sheets (Excel 4.0 macros); what their cells show is read, the macros are not")
+		add(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "macro sheets (Excel 4.0 macros); what their cells show is read, the macros are not")
 	}
-	if external > 0 {
-		doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputExternalReference,
-			fmt.Sprintf("%d links to other workbooks or files; nothing was fetched", external))
+	if b.external > 0 {
+		add(gofastcore.SeverityWarning, gofastcore.WarnInputExternalReference,
+			fmt.Sprintf("%d links to other workbooks or files; nothing was fetched", b.external))
 	}
 	if len(unread) > 0 {
 		kinds := make([]string, 0, len(unread))
@@ -300,32 +289,45 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 			kinds = append(kinds, strconv.Itoa(n)+" "+kind)
 		}
 		sort.Strings(kinds)
-		doc.Warn(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
+		add(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
 	}
 	sort.Strings(damaged)
 	for i, name := range damaged {
 		if i == 0 || name != damaged[i-1] {
-			doc.Warn(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(pkg.Written(name)))
+			add(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(b.wb.pkg.Written(name)))
 		}
 	}
-	if removed > 0 {
-		doc.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(removed)+" in shared strings")
+	if b.removed > 0 {
+		add(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(b.removed)+" in shared strings")
 	}
-	if budget && len(sheets) == 0 {
-		doc.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached before any sheet was read")
+	if b.budget && len(tallies) == 0 {
+		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached before any sheet was read")
 	}
-	return nil
+	return out
 }
 
 // sheet reads one sheet into a part.
-func (wb *workbook) sheet(index int, ref sheetRef, budget bool) *sheet {
-	sh := &sheet{wb: wb, name: ref.target, budget: budget, unread: map[string]int{}}
+func (wb *workbook) sheet(ctx context.Context, index int, ref sheetRef, budget bool) *sheet {
+	sh, readable := wb.start(ctx, index, ref, budget)
+	sawImage := false
+	if readable {
+		sawImage = sh.content()
+	}
+	sh.limits()
+	sh.finish(sawImage)
+	return sh
+}
+
+// start sets up the reading of a sheet: its part, and its relationships.
+// readable is false for a sheet with no cells to read: one that is
+// missing, a chart, a dialog, or one the limit was reached before.
+func (wb *workbook) start(ctx context.Context, index int, ref sheetRef, budget bool) (sh *sheet, readable bool) {
+	sh = &sheet{wb: wb, ctx: ctx, name: ref.target, budget: budget, unread: map[string]int{}}
 	part := &sh.part
 	part.Kind, part.Number, part.Name = gofastcore.PartSheet, index+1, ref.name
 	if ref.hidden {
 		part.Hidden = gofastcore.HiddenInvisible
 	}
-	sawImage := false
 	switch {
 	case ref.target == "" || !wb.pkg.Has(ref.target):
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the workbook lists the sheet but does not contain it")
@@ -347,20 +349,30 @@ func (wb *workbook) sheet(index int, ref sheetRef, budget bool) *sheet {
 			// is a sheet of cells like any other: what the cells show is
 			// read, and the macros in their formulas are not.
 			sh.macros = true
-			sawImage = sh.content()
+			return sh, true
 		case ns.RelDialogsheet:
 			sh.unread["dialog sheet"]++
 		default:
-			sawImage = sh.content()
+			return sh, true
 		}
 	}
+	return sh, false
+}
 
+// limits says on the part which limits cut the sheet short, if any did.
+func (sh *sheet) limits() {
 	if sh.budget {
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; the sheet is cut off there")
+		sh.part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; the sheet is cut off there")
 	}
-	if sh.cut != "" && sh.cut != "cancelled" {
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, sh.cut+"; the sheet is cut off there")
+	if sh.cut != "" && sh.cut != "cancelled" && sh.cut != "stopped" {
+		sh.part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, sh.cut+"; the sheet is cut off there")
 	}
+}
+
+// finish completes the part: what it lacks, what was found while its
+// cells were read, and which of its text is hidden.
+func (sh *sheet) finish(sawImage bool) {
+	part := &sh.part
 	hasText, hasImage := false, sawImage
 	for i := range part.Blocks {
 		if part.Blocks[i].Kind == gofastcore.KindImage {
@@ -386,7 +398,6 @@ func (wb *workbook) sheet(index int, ref sheetRef, budget bool) *sheet {
 		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(sh.removed))
 	}
 	part.MarkHidden()
-	return sh
 }
 
 // content reads a worksheet and everything that hangs on it into the
@@ -403,17 +414,31 @@ func (sh *sheet) content() (sawImage bool) {
 	sh.failed(sh.s.Err())
 	sh.s = xmlscan.Scanner{} // its window is no longer needed
 
-	sh.order()
-	sh.unjudge()
-	blocks := sh.regions(sh.declared())
+	blocks := sh.tablesOf(sh.declared())
 	blocks = append(blocks, sh.comments()...)
 	for _, target := range sh.drawings {
 		var saw bool
 		blocks, saw = sh.drawing(target, blocks)
 		sawImage = sawImage || saw
 	}
-	// In the order of the cells they sit at; where two sit at one cell,
-	// tables first, then notes, then what floats over the sheet.
+	sh.part.Blocks = sh.arrange(blocks)
+	// The tables hold the text now; the list of cells is not needed while
+	// the other sheets are read.
+	sh.cells, sh.raw, sh.out = nil, nil, nil
+	return sawImage
+}
+
+// tablesOf turns the cells read so far into tables.
+func (sh *sheet) tablesOf(declared []declaredTable) []placed {
+	sh.order()
+	sh.unjudge()
+	return sh.regions(declared)
+}
+
+// arrange puts blocks in the order of the cells they sit at; where two
+// sit at one cell, tables first, then notes, then what floats over the
+// sheet.
+func (sh *sheet) arrange(blocks []placed) []gofastcore.Block {
 	for i := range blocks {
 		blocks[i].seq = i
 	}
@@ -427,14 +452,11 @@ func (sh *sheet) content() (sawImage bool) {
 		}
 		return a.seq < b.seq
 	})
-	sh.part.Blocks = make([]gofastcore.Block, len(blocks))
+	out := make([]gofastcore.Block, len(blocks))
 	for i := range blocks {
-		sh.part.Blocks[i] = blocks[i].block
+		out[i] = blocks[i].block
 	}
-	// The tables hold the text now; the list of cells is not needed while
-	// the other sheets are read.
-	sh.cells, sh.raw, sh.out = nil, nil, nil
-	return sawImage
+	return out
 }
 
 // failed records why reading the sheet's own part stopped, if it did.
