@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
@@ -57,6 +58,7 @@ type sheet struct {
 	drawings   []string
 
 	text     arena
+	shapes   dml.Text // reads the text of the shapes on the sheet
 	raw, out []byte
 
 	noValue int            // formulas stored without a result

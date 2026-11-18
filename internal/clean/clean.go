@@ -136,6 +136,17 @@ func Label(s string) string {
 	return out
 }
 
+// Name is Label for a name that is text to be read, such as the name of
+// an author: its ligatures are written as their letters as well.
+func Name(s string) string {
+	s = Label(s)
+	if strings.IndexByte(s, 0xEF) < 0 {
+		return s // every ligature starts with this byte
+	}
+	out, _ := String([]byte(s), Ligatures)
+	return out
+}
+
 func trimASCII(b []byte) []byte {
 	for len(b) > 0 && isASCIISpace(b[0]) {
 		b = b[1:]

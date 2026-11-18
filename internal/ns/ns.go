@@ -37,6 +37,7 @@ const (
 	Diagram                                                // dgm: SmartArt
 	SheetDraw                                              // xdr: drawings on a worksheet
 	Threaded                                               // threaded comments and their authors
+	Pres2018                                               // p188: PowerPoint's threaded comments
 )
 
 // Spaces is the table handed to every scanner.
@@ -80,6 +81,7 @@ var Spaces = map[string]xmlscan.Space{
 	"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing":       SheetDraw,
 	"http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing":                   SheetDraw,
 	"http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments":   Threaded,
+	"http://schemas.microsoft.com/office/powerpoint/2018/8/main":                Pres2018,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part
@@ -123,6 +125,14 @@ const (
 	RelPerson          = "person"
 	RelExternalLink    = "externalLink"
 	RelPivotTable      = "pivotTable"
+
+	RelSlide          = "slide"
+	RelSlideLayout    = "slideLayout"
+	RelSlideMaster    = "slideMaster"
+	RelNotesSlide     = "notesSlide"
+	RelTableStyles    = "tableStyles"
+	RelCommentAuthors = "commentAuthors"
+	RelAuthors        = "authors"
 )
 
 // IsRel reports whether a relationship type URI is of one of the given

@@ -4,6 +4,8 @@
 package theme
 
 import (
+	"math"
+
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -18,44 +20,117 @@ var (
 )
 
 // Scheme is the colour scheme of a theme: twelve colours by name (dk1, lt1,
-// dk2, lt2, accent1 to accent6, hlink, folHlink). A nil Scheme has none.
+// dk2, lt2, accent1 to accent6, hlink, folHlink). It also knows which of
+// the theme's numbered fill styles are a plain colour. A nil Scheme has
+// nothing.
 type Scheme struct {
 	colors map[string]Color
+	fills  []bool // per fill style: a plain fill in the colour of whatever refers to it
+	backs  []bool // the same for the background fill styles
 }
 
-// Read reads the colour scheme from a theme part.
+// maxFillStyles bounds the fill styles kept from a theme. Office writes
+// three of each kind.
+const maxFillStyles = 64
+
+// Read reads the colour scheme and the fill styles from a theme part.
 func Read(s *xmlscan.Scanner) *Scheme {
 	t := &Scheme{colors: map[string]Color{}}
 	for s.Next() != xmlscan.EOF {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Draw, "clrScheme") {
+		if s.Kind() != xmlscan.Start || s.Space() != ns.Draw {
 			continue
 		}
-		depth := s.Depth()
-		name := ""
-		for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-			if s.Kind() != xmlscan.Start || s.Space() != ns.Draw {
-				continue
-			}
-			switch {
-			case s.Depth() == depth+1:
-				name = string(s.Local())
-			case s.Depth() == depth+2 && s.Is(ns.Draw, "srgbClr"):
-				v, _ := s.Attr(xmlscan.NoSpace, "val")
-				if c, ok := Hex(v); ok && len(name) <= 16 {
-					t.colors[name] = c
-				}
-			case s.Depth() == depth+2 && s.Is(ns.Draw, "sysClr"):
-				// A colour of the operating system; the file records what
-				// it was when the file was saved.
-				v, _ := s.Attr(xmlscan.NoSpace, "lastClr")
-				if c, ok := Hex(v); ok && len(name) <= 16 {
-					t.colors[name] = c
-				}
-			}
+		switch string(s.Local()) {
+		case "clrScheme":
+			t.readColors(s)
+		case "fillStyleLst":
+			t.fills = readFillStyles(s)
+		case "bgFillStyleLst":
+			t.backs = readFillStyles(s)
+			return t // nothing after it is used
+		case "objectDefaults", "extraClrSchemeLst":
+			return t
 		}
-		break
 	}
 	return t
+}
+
+func (t *Scheme) readColors(s *xmlscan.Scanner) {
+	depth := s.Depth()
+	name := ""
+	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+		if s.Kind() != xmlscan.Start || s.Space() != ns.Draw {
+			continue
+		}
+		switch {
+		case s.Depth() == depth+1:
+			name = string(s.Local())
+		case s.Depth() == depth+2 && s.Is(ns.Draw, "srgbClr"):
+			v, _ := s.Attr(xmlscan.NoSpace, "val")
+			if c, ok := Hex(v); ok && len(name) <= 16 {
+				t.colors[name] = c
+			}
+		case s.Depth() == depth+2 && s.Is(ns.Draw, "sysClr"):
+			// A colour of the operating system; the file records what
+			// it was when the file was saved.
+			v, _ := s.Attr(xmlscan.NoSpace, "lastClr")
+			if c, ok := Hex(v); ok && len(name) <= 16 {
+				t.colors[name] = c
+			}
+		}
+	}
+}
+
+// readFillStyles reads a list of fill styles and reports, for each,
+// whether it is a plain fill in the unaltered colour of the shape that
+// uses it. Any other (a gradient, a picture, a colour that is adjusted)
+// is a fill whose colour this library does not work out.
+func readFillStyles(s *xmlscan.Scanner) []bool {
+	var out []bool
+	depth := s.Depth()
+	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+		if s.Kind() != xmlscan.Start || s.Depth() != depth+1 {
+			continue
+		}
+		plain := false
+		if s.Is(ns.Draw, "solidFill") {
+			inner, elements := s.Depth(), 0
+			for s.Next() != xmlscan.EOF && s.Depth() >= inner {
+				if s.Kind() != xmlscan.Start {
+					continue
+				}
+				elements++
+				if v, ok := s.Attr(xmlscan.NoSpace, "val"); ok && s.Is(ns.Draw, "schemeClr") && string(v) == "phClr" {
+					plain = true
+				}
+			}
+			plain = plain && elements == 1
+		} else {
+			s.Skip()
+		}
+		if len(out) < maxFillStyles {
+			out = append(out, plain)
+		}
+	}
+	return out
+}
+
+// PlainFill reports whether the fill style a shape refers to by number is
+// a plain fill in the colour the reference names. Numbers from 1 are the
+// theme's fill styles and numbers from 1001 its background fill styles;
+// 0 and 1000 mean no fill, for which none is true.
+func (t *Scheme) PlainFill(index int) (plain, none bool) {
+	if index == 0 || index == 1000 {
+		return false, true
+	}
+	if t == nil {
+		return false, false
+	}
+	list, i := t.fills, index-1
+	if index > 1000 {
+		list, i = t.backs, index-1001
+	}
+	return i >= 0 && i < len(list) && list[i], false
 }
 
 // Named returns the colour with the given scheme name.
@@ -126,6 +201,15 @@ func Tint(c Color, tint float64) Color {
 		l = l*(1-tint) + tint
 	}
 	return fromHLS(h, l, s)
+}
+
+// HLS returns a colour's hue, lightness and saturation, each from 0 to 1.
+func HLS(c Color) (h, l, s float64) { return toHLS(c) }
+
+// FromHLS returns the colour with the given hue, lightness and
+// saturation.
+func FromHLS(h, l, s float64) Color {
+	return fromHLS(h-math.Floor(h), min(max(l, 0), 1), min(max(s, 0), 1))
 }
 
 func toHLS(c Color) (h, l, s float64) {

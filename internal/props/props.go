@@ -105,7 +105,9 @@ func value(s *xmlscan.Scanner, res *Result) string {
 		text = text[:n]
 		res.Truncated++
 	}
-	v, removed := clean.String(text, clean.Trim)
+	// Property values are text to be read: ligatures are written as
+	// their letters here as everywhere.
+	v, removed := clean.String(text, clean.Prose)
 	res.Removed += removed
 	return v
 }

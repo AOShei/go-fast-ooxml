@@ -36,6 +36,7 @@ test whose tool is missing skips itself.
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
 | `excel.txt` | `go test -run '^$' -bench 'Extract/large.xlsx' -benchmem -count 3 .` | Excel extraction on the large generated workbook (2 million cells, 100 MB of XML), with one worker and with all |
+| `powerpoint.txt` | `go test -run '^$' -bench 'Extract/large.pptx' -benchmem -count 3 .` | PowerPoint extraction on the large generated presentation (1,500 slides), with one worker and with all |
 | `xmlscan.txt` | `go test -run '^$' -bench . -count 3 ./internal/xmlscan` | The library's XML tokenizer against `encoding/xml` on the XML of the large generated files. Compare the two within one run: the ratio holds when the machine is busy, the absolute numbers do not |
 
 Timings come from one machine and compare tools on that machine only.
@@ -133,6 +134,43 @@ the machine of `baseline.md`:
 Memory is the largest size the heap reached during `Extract`, garbage
 included (`TestLargeWorkbookMemory`, which holds it under 300 MB).
 
+## PowerPoint accuracy on the corpus
+
+`go test -run TestPowerPointCorpus -v .` compares every sound presentation
+in the corpus with python-pptx, slide by slide (the `python-pptx-slides`
+adapter in `testdata/gen/tools.py`).
+
+python-pptx reads the shapes of a slide and nothing of its layout or
+master, and it does not tell a slide's footer from its text. So the words
+are compared twice. Everything python-pptx reads must be found. And what
+this library reads apart from furniture (the date, footer and slide-number
+placeholders, and the layout's and master's own text) must be what
+python-pptx reads apart from those placeholders.
+
+As measured: 100 presentations, 676 slides; python-pptx cannot read 5 more,
+which this library reads.
+
+| What | Result | Floor |
+|---|---|---|
+| Words python-pptx reads that are found (mean recall) | 1.0000 | 0.999 |
+| Words of the body against python-pptx (mean F1) | 1.0000 | 0.99 |
+| Slides with a title where the slide's name is that title | 381 of 381 | 0.99 |
+| Slides hidden or not, as python-pptx says | 676 of 676 | all |
+
+Order is checked on the fixtures and in tests with shapes in known places,
+not against python-pptx, which gives shapes in the order they are stored.
+
+## PowerPoint speed
+
+On `large.pptx` (3.5 MB, 1,500 slides, each with notes, 150 tables), on the
+machine of `baseline.md` (`bench/powerpoint.txt`):
+
+| | Time |
+|---|---|
+| python-pptx | 0.37 s |
+| This library, one worker | 0.048 s |
+| This library, all workers | 0.010 s |
+
 ## Hidden text on the corpus
 
 `HIDDEN_SURVEY=1 go test -run TestWordHiddenSurvey -v .` lists every piece of
@@ -172,3 +210,20 @@ files: white text on unfilled cells, text in the colour of its fill (white
 on white, yellow on yellow, black on black), and the linked cells of check
 boxes in a one-point white font. Cells under conditional formatting are not
 judged, since their colours depend on their values.
+
+For PowerPoint, `HIDDEN_SURVEY=1 go test -run TestPowerPointHiddenSurvey -v .`.
+As measured: 105 presentations read, 7 with hidden text. The first runs
+flagged much more, and each false alarm changed the reader: titles in white
+on a fill their own shape's style gives them (a shape's own style comes
+before what it inherits from a placeholder), table headers in the colour a
+table style gives them (it comes before the presentation's default colour),
+and text under a picture that an animation brings in (a shape that an
+animation acts on does not count as covering anything).
+
+| What | Blocks | Presentations | Checked |
+|---|---|---|---|
+| On hidden slides | 40 | 2 | The slides are marked `show="0"` |
+| White text in shapes with no fill on the white slide: leftovers beside pictures and under diagrams | 17 | 1 | Five of the slides rendered with LibreOffice: the words are not to be seen |
+| Table cells: cyan on pale blue, bright yellow on white | 3 | 2 | Colours read from the table styles in the files; both are under the shared contrast threshold. The files are Apache POI's tests of font colours in tables |
+| Text under a grey rectangle drawn after it, a slide number under a full-width box | 5 | 2 | The first rendered with LibreOffice: the rectangle covers the words |
+| A legend of the brand's colours beside the slide, on the master | 47 | 1 | The shapes lie to the right of the slide's edge |

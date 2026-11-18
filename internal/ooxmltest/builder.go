@@ -389,24 +389,52 @@ func InlineCell(ref, text string) string {
 	return `<c r="` + ref + `" t="inlineStr"><is><t xml:space="preserve">` + EscapeXML(text) + `</t></is></c>`
 }
 
+// PresNS declares the namespace prefixes used in PowerPoint parts: p, a,
+// r, mc, c, dgm, m, a14 and p188. It is for the root element of a part a
+// test writes itself.
+const PresNS = ` xmlns:p="` + NSPres + `" xmlns:a="` + NSDraw + `" xmlns:r="` + NSRel + `"` +
+	` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
+	` xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"` +
+	` xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"` +
+	` xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"` +
+	` xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"` +
+	` xmlns:p188="http://schemas.microsoft.com/office/powerpoint/2018/8/main"`
+
+// Content and relationship types of the supporting parts of a
+// presentation.
+const (
+	CTNotesSlide    = "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"
+	CTSlideComments = "application/vnd.openxmlformats-officedocument.presentationml.comments+xml"
+	CTTableStyles   = "application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"
+	RelNotesSlide   = relBase + "notesSlide"
+	RelTableStyle   = relBase + "tableStyles"
+)
+
 // Slide describes one slide for Pptx.
 type Slide struct {
 	// Shapes is the content of the slide's shape tree after the mandatory
 	// group properties: p:sp, p:pic, p:graphicFrame elements, with the
-	// prefixes "p", "a" and "r" bound.
+	// prefixes of PresNS bound.
 	Shapes string
 	// Hidden marks the slide as hidden (show="0").
 	Hidden bool
+	// Background is the slide's p:bg element, if it has one.
+	Background string
+	// After is what follows the slide's content: p:clrMapOvr, p:timing.
+	After string
+	// Notes, if not empty, is the shape tree of the slide's notes page.
+	Notes string
 }
 
+const (
+	spTreeHead    = `<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>`
+	defaultClrMap = `<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>`
+)
+
 // Pptx returns a minimal PowerPoint package: one theme, one master, one
-// layout and the given slides. The slide size is 720 by 540 points.
+// layout and the given slides. The slide size is 720 by 540 points. The
+// master and the layout are empty; Master and Layout replace them.
 func Pptx(slides ...Slide) *Package {
-	const (
-		ns     = ` xmlns:p="` + NSPres + `" xmlns:a="` + NSDraw + `" xmlns:r="` + NSRel + `"`
-		spTree = `<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>`
-		clrMap = `<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>`
-	)
 	p := NewPackage()
 	p.Rel("", RelOfficeDoc, "ppt/presentation.xml")
 
@@ -422,38 +450,75 @@ func Pptx(slides ...Slide) *Package {
 		}
 		p.Rel("ppt/"+file, RelSlideLayout, "../slideLayouts/slideLayout1.xml")
 		p.Add("ppt/"+file, CTSlide,
-			`<p:sld`+ns+show+`><p:cSld><p:spTree>`+spTree+s.Shapes+`</p:spTree></p:cSld></p:sld>`)
+			`<p:sld`+PresNS+show+`><p:cSld>`+s.Background+`<p:spTree>`+spTreeHead+s.Shapes+`</p:spTree></p:cSld>`+s.After+`</p:sld>`)
+		if s.Notes != "" {
+			notes := fmt.Sprintf("notesSlides/notesSlide%d.xml", i+1)
+			p.Rel("ppt/"+file, RelNotesSlide, "../"+notes)
+			p.Add("ppt/"+notes, CTNotesSlide, `<p:notes`+PresNS+`><p:cSld><p:spTree>`+spTreeHead+s.Notes+`</p:spTree></p:cSld></p:notes>`)
+		}
 	}
 	p.Add("ppt/presentation.xml", CTPresentation,
-		`<p:presentation`+ns+`><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="`+masterID+`"/></p:sldMasterIdLst>`+
+		`<p:presentation`+PresNS+`><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="`+masterID+`"/></p:sldMasterIdLst>`+
 			`<p:sldIdLst>`+ids.String()+`</p:sldIdLst><p:sldSz cx="9144000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`)
 
-	layoutID := p.Rel("ppt/slideMasters/slideMaster1.xml", RelSlideLayout, "../slideLayouts/slideLayout1.xml")
+	p.Rel("ppt/slideMasters/slideMaster1.xml", RelSlideLayout, "../slideLayouts/slideLayout1.xml")
 	p.Rel("ppt/slideMasters/slideMaster1.xml", RelTheme, "../theme/theme1.xml")
-	p.Add("ppt/slideMasters/slideMaster1.xml", CTSlideMaster,
-		`<p:sldMaster`+ns+`><p:cSld><p:spTree>`+spTree+`</p:spTree></p:cSld>`+clrMap+
-			`<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="`+layoutID+`"/></p:sldLayoutIdLst></p:sldMaster>`)
 	p.Rel("ppt/slideLayouts/slideLayout1.xml", RelSlideMaster, "../slideMasters/slideMaster1.xml")
-	p.Add("ppt/slideLayouts/slideLayout1.xml", CTSlideLayout,
-		`<p:sldLayout`+ns+` type="blank"><p:cSld name="Blank"><p:spTree>`+spTree+`</p:spTree></p:cSld></p:sldLayout>`)
 	p.Add("ppt/theme/theme1.xml", CTTheme, minimalTheme)
-	return p
+	return p.Master("", "", "", "").Layout("", "", "")
+}
+
+// Master sets the presentation's slide master: its background (a p:bg
+// element), its shapes, its colour map (a p:clrMap element; the usual
+// one if empty) and its text styles (a p:txStyles element).
+func (p *Package) Master(background, shapes, clrMap, txStyles string) *Package {
+	if clrMap == "" {
+		clrMap = defaultClrMap
+	}
+	return p.Add("ppt/slideMasters/slideMaster1.xml", CTSlideMaster,
+		`<p:sldMaster`+PresNS+`><p:cSld>`+background+`<p:spTree>`+spTreeHead+shapes+`</p:spTree></p:cSld>`+clrMap+
+			`<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>`+txStyles+`</p:sldMaster>`)
+}
+
+// Layout sets the one slide layout: its background, its shapes, and
+// what follows its content (p:clrMapOvr).
+func (p *Package) Layout(background, shapes, after string) *Package {
+	return p.Add("ppt/slideLayouts/slideLayout1.xml", CTSlideLayout,
+		`<p:sldLayout`+PresNS+`><p:cSld name="Layout">`+background+`<p:spTree>`+spTreeHead+shapes+`</p:spTree></p:cSld>`+after+`</p:sldLayout>`)
+}
+
+// Xfrm returns the a:xfrm element of a shape at the given position and
+// size in points.
+func Xfrm(x, y, w, h float64) string {
+	const emu = 12700
+	return fmt.Sprintf(`<a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/></a:xfrm>`, int64(x*emu), int64(y*emu), int64(w*emu), int64(h*emu))
+}
+
+// Shape returns a PowerPoint shape. nv is the content of p:nvPr (a p:ph
+// element for a placeholder), props the content of p:spPr, and body the
+// p:txBody element, or "" for a shape with no text.
+func Shape(id int, nv, props, body string) string {
+	return fmt.Sprintf(`<p:sp><p:nvSpPr><p:cNvPr id="%d" name="Shape %d"/><p:cNvSpPr/><p:nvPr>%s</p:nvPr></p:nvSpPr><p:spPr>%s</p:spPr>%s</p:sp>`, id, id, nv, props, body)
+}
+
+// TextBody returns a p:txBody element holding the given a:p elements.
+func TextBody(paragraphs ...string) string {
+	return `<p:txBody><a:bodyPr/>` + strings.Join(paragraphs, "") + `</p:txBody>`
+}
+
+// DrawPara returns an a:p element with one run of the given text.
+func DrawPara(text string) string {
+	return `<a:p><a:r><a:rPr lang="en-US"/><a:t>` + EscapeXML(text) + `</a:t></a:r></a:p>`
 }
 
 // TextShape returns a PowerPoint text box at the given position and size
 // in points, holding one paragraph per text.
 func TextShape(id int, x, y, w, h float64, paragraphs ...string) string {
-	const emu = 12700
-	var sb strings.Builder
-	fmt.Fprintf(&sb, `<p:sp><p:nvSpPr><p:cNvPr id="%d" name="TextBox %d"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>`, id, id)
-	fmt.Fprintf(&sb, `<p:spPr><a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>`,
-		int64(x*emu), int64(y*emu), int64(w*emu), int64(h*emu))
-	sb.WriteString(`<p:txBody><a:bodyPr/>`)
-	for _, t := range paragraphs {
-		sb.WriteString(`<a:p><a:r><a:rPr lang="en-US"/><a:t>` + EscapeXML(t) + `</a:t></a:r></a:p>`)
+	ps := make([]string, len(paragraphs))
+	for i, t := range paragraphs {
+		ps[i] = DrawPara(t)
 	}
-	sb.WriteString(`</p:txBody></p:sp>`)
-	return sb.String()
+	return Shape(id, "", Xfrm(x, y, w, h)+`<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`, TextBody(ps...))
 }
 
 const minimalTheme = `<a:theme xmlns:a="` + NSDraw + `" name="Office"><a:themeElements>` +

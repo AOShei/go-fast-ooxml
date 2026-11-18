@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -67,43 +68,21 @@ var drawingNames = map[string]string{
 	"hlink": "hlink", "folHlink": "folHlink",
 }
 
-// drawingColor reads the colour inside a drawing's fill element, such as
-// a:solidFill or a:fillRef, and consumes the element. A colour that is
-// adjusted (lightened, darkened, made partly transparent) is unknown: the
-// adjustments are not computed.
-func drawingColor(s *xmlscan.Scanner, theme map[string]color) color {
-	c := unknown
-	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start {
-			continue
+// drawingFill turns the fill of a drawing's shape into what text in the
+// shape is seen against: a colour if the fill is one opaque colour,
+// nothing if there is no fill, and unknown for a gradient, a picture or a
+// colour that is partly transparent.
+func (r *reader) drawingFill(f dml.Fill) color {
+	switch f.Paint {
+	case dml.PaintSolid:
+		if rgb, ok := r.drawn.Opaque(f, nil); ok {
+			return color{set: true, r: rgb.R, g: rgb.G, b: rgb.B}
 		}
-		if s.Depth() > depth+1 {
-			c = unknown // an adjustment of the colour
-			continue
-		}
-		if s.Space() != ns.Draw {
-			continue
-		}
-		switch string(s.Local()) {
-		case "srgbClr":
-			v, _ := s.Attr(xmlscan.NoSpace, "val")
-			if rgb, ok := hexColor(v); ok {
-				c = rgb
-			}
-		case "sysClr":
-			v, _ := s.Attr(xmlscan.NoSpace, "lastClr")
-			if rgb, ok := hexColor(v); ok {
-				c = rgb
-			}
-		case "schemeClr":
-			v, _ := s.Attr(xmlscan.NoSpace, "val")
-			if rgb, ok := theme[drawingNames[string(v)]]; ok {
-				c = rgb
-			}
-		}
+		return unknown
+	case dml.PaintOther:
+		return unknown
 	}
-	return c
+	return color{}
 }
 
 // vmlColors are the colour names legacy drawings use.

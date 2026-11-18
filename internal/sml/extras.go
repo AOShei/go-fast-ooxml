@@ -1,12 +1,9 @@
 package sml
 
 import (
-	"unicode"
-	"unicode/utf8"
-
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
-	"github.com/AOShei/go-fast-ooxml/internal/hidden"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
@@ -66,7 +63,7 @@ func readPersons(s *xmlscan.Scanner) map[string]string {
 		id, ok1 := s.Attr(xmlscan.NoSpace, "id")
 		name, ok2 := s.Attr(xmlscan.NoSpace, "displayName")
 		if ok1 && ok2 && len(id) <= 64 {
-			persons[string(id)] = clean.Label(string(name))
+			persons[string(id)] = clean.Name(string(name))
 		}
 	}
 	return persons
@@ -151,7 +148,7 @@ func (sh *sheet) comments() []placed {
 				case s.Is(ns.Sheet, "author"):
 					sh.raw = s.AppendText(sh.raw[:0])
 					if len(authors) < maxAuthors {
-						authors = append(authors, clean.Label(string(sh.raw)))
+						authors = append(authors, clean.Name(string(sh.raw)))
 					}
 				case s.Is(ns.Sheet, "comment"):
 					ref, _ := s.Attr(xmlscan.NoSpace, "ref")
@@ -180,56 +177,6 @@ func (sh *sheet) comments() []placed {
 	return out
 }
 
-// fill is what text in a shape is seen against.
-type fill struct {
-	color theme.Color
-	known bool // false: a gradient, a picture, an adjusted colour
-}
-
-var onWhite = fill{color: theme.White, known: true}
-
-// drawingNames maps the names of theme colours in a drawing to the names
-// of the colours in the theme part.
-var drawingNames = map[string]string{
-	"dk1": "dk1", "lt1": "lt1", "dk2": "dk2", "lt2": "lt2",
-	"tx1": "dk1", "bg1": "lt1", "tx2": "dk2", "bg2": "lt2",
-	"accent1": "accent1", "accent2": "accent2", "accent3": "accent3",
-	"accent4": "accent4", "accent5": "accent5", "accent6": "accent6",
-	"hlink": "hlink", "folHlink": "folHlink",
-}
-
-// drawingColor reads the colour inside a fill element such as a:solidFill
-// and consumes the element. A colour that is adjusted (lightened, made
-// partly transparent) is not known: the adjustments are not computed.
-func drawingColor(s *xmlscan.Scanner, th *theme.Scheme) fill {
-	var f fill
-	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start {
-			continue
-		}
-		if s.Depth() > depth+1 {
-			f.known = false // an adjustment
-			continue
-		}
-		if s.Space() != ns.Draw {
-			continue
-		}
-		switch string(s.Local()) {
-		case "srgbClr":
-			v, _ := s.Attr(xmlscan.NoSpace, "val")
-			f.color, f.known = theme.Hex(v)
-		case "sysClr":
-			v, _ := s.Attr(xmlscan.NoSpace, "lastClr")
-			f.color, f.known = theme.Hex(v)
-		case "schemeClr":
-			v, _ := s.Attr(xmlscan.NoSpace, "val")
-			f.color, f.known = th.Named(drawingNames[string(v)])
-		}
-	}
-	return f
-}
-
 // drawing reads a drawing part: the text of its shapes as paragraphs, and
 // its pictures. Each block sits at the cell its shape is anchored to. It
 // reports whether there are pictures that were not asked for.
@@ -241,15 +188,15 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 		byID[rel.ID] = rel
 	}
 	sawImage := false
-	th := sh.wb.theme
+	pal := dml.Palette{Theme: sh.wb.theme, Map: dml.DefaultMap}
 	sh.load(target, func(s *xmlscan.Scanner) {
 		var row, col int32 // the cell the current anchor starts at
 		var alt string
-		var unseen bool   // the current shape is marked hidden
-		behind := onWhite // what the current shape's text is seen against
-		ownFill := false  // set by the shape itself, not by its style
-		props := 0        // depth of the shape properties being read
-		choice := -1      // blocks there were when the current choice of alternatives began
+		var unseen bool          // the current shape is marked hidden
+		var own, styled dml.Fill // the current shape's fill, and the one its style gives it
+		var ink dml.Color        // the colour its style gives its text
+		props := 0               // depth of the shape properties being read
+		choice := -1             // blocks there were when the current choice of alternatives began
 		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start {
 				continue
@@ -287,7 +234,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					}
 				}
 			case s.Is(ns.SheetDraw, "sp"), s.Is(ns.SheetDraw, "pic"), s.Is(ns.SheetDraw, "graphicFrame"):
-				alt, unseen, behind, ownFill, props = "", false, onWhite, false, 0
+				alt, unseen, own, styled, ink, props = "", false, dml.Fill{}, dml.Fill{}, dml.Color{}, 0
 			case s.Is(ns.SheetDraw, "cNvPr"):
 				if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && len(v) > 0 {
 					alt, _ = clean.String(v, clean.Prose)
@@ -298,23 +245,23 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 			case s.Is(ns.SheetDraw, "spPr"):
 				props = s.Depth()
 			case props > 0 && s.Depth() == props+1 && s.Space() == ns.Draw:
-				switch string(s.Local()) {
-				case "solidFill":
-					behind, ownFill = drawingColor(s, th), true
-				case "noFill":
-					behind, ownFill = onWhite, true // the sheet shows through
-				case "gradFill", "pattFill", "blipFill", "grpFill":
-					behind, ownFill = fill{}, true
-				case "ln":
+				if f, ok := dml.ReadFill(s); ok {
+					own = f
+				} else if s.Is(ns.Draw, "ln") {
 					s.Skip() // the outline has a fill of its own
 				}
 			case s.Is(ns.Draw, "fillRef"):
 				// The fill the shape's style gives it, unless it has its own.
-				if idx, ok := s.Attr(xmlscan.NoSpace, "idx"); ok && string(idx) != "0" && !ownFill {
-					behind = drawingColor(s, th)
-				}
+				idx, _ := intAttr(s, "idx")
+				styled = pal.StyleFill(idx, dml.ReadColor(s))
+			case s.Is(ns.Draw, "fontRef"):
+				ink = dml.ReadColor(s)
 			case s.Is(ns.SheetDraw, "txBody"):
-				out = sh.textBody(s, out, row, col, behind, unseen)
+				fill := own
+				if fill.Paint == dml.PaintUnset {
+					fill = styled
+				}
+				out = sh.textBody(s, out, &pal, row, col, fill, ink, unseen)
 			case s.Is(ns.Draw, "blip"):
 				id, ok := s.Attr(ns.Rel, "embed")
 				if !ok {
@@ -333,7 +280,9 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					// A picture that is not in the file: named, not fetched.
 					b = gofastcore.Block{Kind: gofastcore.KindImage, Text: alt, Image: &gofastcore.Image{}, Attrs: map[string]string{"href": clean.Label(rel.Target)}}
 				} else {
-					b = sh.wb.image(rel.Target, alt)
+					var err error
+					b, err = sh.wb.image(rel.Target, alt)
+					sh.noteErr(rel.Target, err)
 				}
 				if unseen {
 					b.Hidden = gofastcore.HiddenInvisible
@@ -351,92 +300,35 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 }
 
 // textBody reads the text of a shape (the element whose Start token is
-// current): one paragraph block for each of its paragraphs that has text.
-// Text too small to read, or in the colour of what is behind it, is
-// marked; so is all of it if the shape is hidden.
-func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, row, col int32, behind fill, unseen bool) []placed {
-	th := sh.wb.theme
-	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Draw, "p") {
-			continue
+// current): one block for each of its paragraphs that has text. Text too
+// small to read, or in the colour of what is behind it, is marked; so is
+// all of it if the shape is hidden.
+func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, row, col int32, fill dml.Fill, ink dml.Color, unseen bool) []placed {
+	t := &sh.shapes
+	t.Palette, t.Chain, t.Base = pal, nil, dml.RunProps{}
+	if ink.IsSet() {
+		t.Base.Ink = dml.Fill{Paint: dml.PaintSolid, Color: ink}
+	}
+	// What the text is seen against: the shape's fill if it is one plain
+	// colour, the sheet if it has none.
+	switch fill.Paint {
+	case dml.PaintSolid:
+		t.Behind, t.Lit = pal.Opaque(fill, nil)
+	case dml.PaintOther:
+		t.Lit = false
+	default:
+		t.Behind, t.Lit = theme.White, true
+	}
+	t.Later, t.Styles, t.Link, t.SlideNumber = false, sh.wb.opts.Spans, nil, ""
+	t.Read(s)
+	sh.removed += t.Removed
+	t.Removed = 0
+	for i := range t.Paras {
+		p := &t.Paras[i]
+		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(t.Buf[p.Start:p.End]), Spans: p.Spans, Hidden: p.Hidden}
+		if p.Listed {
+			b.Kind, b.Level, b.Ordered, b.Marker = gofastcore.KindListItem, uint8(p.Level+1), p.Ordered, p.Marker
 		}
-		text := sh.out[:0]
-		var spans []gofastcore.Span
-		para := s.Depth()
-		for s.Next() != xmlscan.EOF && s.Depth() >= para {
-			if s.Kind() != xmlscan.Start || s.Depth() != para+1 {
-				continue
-			}
-			switch {
-			case s.Is(ns.Draw, "br"):
-				text = append(text, '\n')
-			case s.Is(ns.Draw, "r"), s.Is(ns.Draw, "fld"):
-				start := len(text)
-				var reasons gofastcore.Hidden
-				run := s.Depth()
-				for s.Next() != xmlscan.EOF && s.Depth() >= run {
-					if s.Kind() != xmlscan.Start || s.Depth() != run+1 {
-						continue
-					}
-					switch {
-					case s.Is(ns.Draw, "rPr"):
-						// Sizes are in hundredths of a point.
-						if size, ok := intAttr(s, "sz"); ok && float64(size)/100 < gofastcore.HiddenTinySize {
-							reasons |= gofastcore.HiddenTiny
-						}
-						props := s.Depth()
-						for s.Next() != xmlscan.EOF && s.Depth() >= props {
-							if s.Kind() != xmlscan.Start || s.Depth() != props+1 {
-								continue
-							}
-							if s.Is(ns.Draw, "solidFill") {
-								ink := drawingColor(s, th)
-								if ink.known && behind.known && gofastcore.LowContrast(ink.color.R, ink.color.G, ink.color.B, behind.color.R, behind.color.G, behind.color.B) {
-									reasons |= gofastcore.HiddenLowContrast
-								}
-							} else {
-								s.Skip()
-							}
-						}
-					case s.Is(ns.Draw, "t"):
-						sh.raw = s.AppendText(sh.raw[:0])
-						var removed int
-						text, removed = clean.Append(text, sh.raw, clean.Ligatures)
-						sh.removed += removed
-					default:
-						s.Skip()
-					}
-				}
-				if reasons != 0 && len(text) > start {
-					spans = append(spans, gofastcore.Span{Start: start, End: len(text), Hidden: reasons})
-				}
-			default:
-				s.Skip()
-			}
-		}
-		sh.out = text
-		// Trimmed, with the marked ranges moved to match.
-		from, to := 0, len(text)
-		for to > 0 {
-			r, size := utf8.DecodeLastRune(text[:to])
-			if !unicode.IsSpace(r) {
-				break
-			}
-			to -= size
-		}
-		for from < to {
-			r, size := utf8.DecodeRune(text[from:to])
-			if !unicode.IsSpace(r) {
-				break
-			}
-			from += size
-		}
-		if from == to {
-			continue
-		}
-		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(text[from:to])}
-		b.Spans, b.Hidden = hidden.Settle(spans, from, to, text)
 		if unseen {
 			// All of it, whatever is true of parts.
 			b.Hidden |= gofastcore.HiddenInvisible

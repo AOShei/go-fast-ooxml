@@ -301,6 +301,15 @@ func (p *Package) HasContentType(ct string) bool {
 // Remaining returns how many decompressed bytes may still be read.
 func (p *Package) Remaining() int64 { return max(p.budget.Load(), 0) }
 
+// Budget returns the decompression budget as it stands, and Restore puts
+// it back to a value Budget returned. They are for a reader that has to
+// read a stretch of the package again and must find the limit where it
+// found it the first time.
+func (p *Package) Budget() int64 { return p.budget.Load() }
+
+// Restore sets the decompression budget. See Budget.
+func (p *Package) Restore(budget int64) { p.budget.Store(budget) }
+
 // Open returns a reader for a part's decompressed content. Every byte read
 // is charged to the package's budget, and a read that goes over it fails
 // with ErrBudget, so no part can expand without bound however small it is
@@ -398,12 +407,18 @@ func RelsName(source string) string {
 // package when source is "". A part without a relationships part has none,
 // which is not an error.
 func (p *Package) Rels(source string) ([]Rel, error) {
+	var s xmlscan.Scanner
+	return p.RelsWith(source, &s)
+}
+
+// RelsWith is Rels using the caller's scanner, which a caller that reads
+// the relationships of many parts keeps, with its buffers.
+func (p *Package) RelsWith(source string, s *xmlscan.Scanner) ([]Rel, error) {
 	name := RelsName(source)
 	if !p.Has(name) {
 		return nil, nil
 	}
-	var s xmlscan.Scanner
-	c, err := p.Scan(name, &s, scanOptions)
+	c, err := p.Scan(name, s, scanOptions)
 	if err != nil {
 		return nil, err
 	}

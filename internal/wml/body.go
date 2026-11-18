@@ -9,6 +9,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
@@ -954,7 +955,12 @@ func (p *parser) symbol() {
 	if r == utf8.RuneError {
 		p.r.unmapped++
 	}
-	p.text = utf8.AppendRune(p.text, r)
+	// Through the same door as all other text, so that what holds for
+	// text holds for a character given by number.
+	var buf [utf8.UTFMax]byte
+	var removed int
+	p.text, removed = clean.Append(p.text, buf[:utf8.EncodeRune(buf[:], r)], p.para.flags)
+	p.r.removed += removed
 }
 
 // noteRef handles a reference to a footnote or endnote: the note becomes a
@@ -1003,7 +1009,7 @@ func (p *parser) deletion() {
 	author, _ := s.Attr(ns.Word, "author")
 	date, _ := s.Attr(ns.Word, "date")
 	attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteDeletion}
-	if a := p.clean(author, clean.Trim); a != "" {
+	if a := p.clean(author, clean.Prose); a != "" {
 		attrs[gofastcore.AttrAuthor] = a
 	}
 	if d := p.clean(date, clean.Trim); d != "" {
@@ -1077,20 +1083,17 @@ func (p *parser) drawing() {
 		case s.Is(ns.WordShape, "spPr"):
 			shapeProps = s.Depth()
 		case shapeProps > 0 && s.Depth() == shapeProps+1 && s.Space() == ns.Draw:
-			switch string(s.Local()) {
-			case "solidFill":
-				fill, ownFill = drawingColor(s, p.r.theme), true
-			case "noFill":
-				fill, ownFill = color{}, true
-			case "gradFill", "pattFill", "blipFill", "grpFill":
-				fill, ownFill = unknown, true
-			case "ln":
+			if f, ok := dml.ReadFill(s); ok {
+				fill, ownFill = p.r.drawingFill(f), true
+			} else if s.Is(ns.Draw, "ln") {
 				s.Skip() // the outline has a fill of its own
 			}
 		case s.Is(ns.Draw, "fillRef"):
-			// The fill the shape's style gives it, unless it has its own.
-			if idx, ok := s.Attr(xmlscan.NoSpace, "idx"); ok && string(idx) != "0" && !ownFill {
-				fill = drawingColor(s, p.r.theme)
+			// The fill the shape's style gives it, unless it has its own:
+			// one of the theme's fill styles, in a colour.
+			if idx, ok := s.Attr(xmlscan.NoSpace, "idx"); ok && !ownFill {
+				n, _ := atoi(idx)
+				fill = p.r.drawingFill(p.r.drawn.StyleFill(n, dml.ReadColor(s)))
 			}
 		case s.Is(ns.VML, "fill"):
 			fill = vmlFillElement(s, fill)

@@ -80,11 +80,11 @@ func TestExtractIdentifiesTheFormat(t *testing.T) {
 		if err := doc.Validate(); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
-		// Until a format's content is extracted, the document must say so
-		// loudly. Word and Excel are read; PowerPoint is not yet.
-		unread := doc.Parts[0].Has(gofastcore.WarnPartFailed) && warned(doc, gofastooxml.WarnNotImplemented)
-		if unread != (c.format == "pptx") {
-			t.Errorf("%s: unread content reported = %v", name, unread)
+		// The content of all three formats is read: an empty document is
+		// an empty file, not one that was not read. (The macro-enabled
+		// workbook here is a stub that lists no sheets, and says so.)
+		if name != "macro-enabled excel" && (doc.Parts[0].Has(gofastcore.WarnPartFailed) || len(doc.Warnings) > 0) {
+			t.Errorf("%s: part warnings %v, document warnings %v", name, doc.Parts[0].Warnings, doc.Warnings)
 		}
 	}
 }
