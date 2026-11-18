@@ -1,8 +1,10 @@
 package wml
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
@@ -22,10 +24,22 @@ type parser struct {
 	name string             // the part being read
 	rels map[string]opc.Rel // its relationships, by id
 
-	text  []byte             // text of the paragraphs being built, innermost last
-	after []gofastcore.Block // blocks that follow the paragraph or table in progress
-	cell  *cellProps         // properties of the table cell being read, if any
-	row   *rowProps
+	text    []byte             // text of the paragraphs being built, innermost last
+	spans   []gofastcore.Span  // their spans, offsets counted from each paragraph's start
+	scratch []byte             // for cleaning a piece of text
+	para    paraState          // the paragraph being read
+	after   []gofastcore.Block // blocks that follow the paragraph or table in progress
+
+	box color       // the fill of the text box being read; unset outside one
+	tbl *tableState // the table being read
+
+	href      string // target of the hyperlink being read, when links are asked for
+	hrefDepth int    // depth of its element
+	instr     []byte // the code of the field being read
+	inInstr   bool
+	fieldHref string     // target of the HYPERLINK field whose result is being read
+	cell      *cellProps // properties of the table cell being read, if any
+	row       *rowProps
 
 	tables   int // tables being read; notes wait until the outermost is out
 	produced int // text and images emitted so far, for alternate content
@@ -45,23 +59,40 @@ type alternate struct {
 type paraProps struct {
 	style   *style
 	styleID string
-	numID   int  // -1 not set, 0 none
-	ilvl    int8 // -1 not set
-	outline int8 // -1 not set, 9 body text
-	header  bool // carries section properties (their references were read)
+	numID   int   // -1 not set, 0 none
+	ilvl    int8  // -1 not set
+	outline int8  // -1 not set, 9 body text
+	shade   color // shading behind the paragraph
 }
+
+// paraState is what the runs of the paragraph being read need to know.
+type paraState struct {
+	start     int               // where its text begins in parser.text
+	spanStart int               // where its spans begin in parser.spans
+	base      *runProps         // the formatting its style and the defaults give its text
+	own       uint8             // the on/off properties its style switches on, apart from the defaults
+	hidden    gofastcore.Hidden // why text with only that formatting cannot be seen, if so
+	behind    color             // what lies behind its text
+	flags     clean.Flags       // how its text is cleaned
+}
+
+var noFormatting runProps
 
 type cellProps struct {
 	span     int
 	vMerge   int8 // 0 none, 1 restart, 2 continue
 	text     []byte
 	hasBlock bool
+	shade    color             // shading behind the cell
+	cnf      int               // conditions of the table's style the cell says apply to it
+	hidden   gofastcore.Hidden // reasons any of its text cannot be seen
 }
 
 type rowProps struct {
 	header     bool
 	deleted    bool
 	gridBefore int
+	clipped    bool // an exact height too small to show a line of text
 }
 
 func (r *reader) newParser(name string, rels map[string]opc.Rel) *parser {
@@ -94,8 +125,23 @@ func (p *parser) document(out *[]gofastcore.Block) {
 			p.flush(func(b gofastcore.Block) { p.emitBody(out, b) })
 			continue
 		}
+		if s.Depth() == 2 && s.Is(ns.Word, "background") {
+			// The page colour. Word shows it only when the document's
+			// settings say so. A child element makes it a gradient or a
+			// picture, which is not a colour to judge text against.
+			c := readColor(s, "color", "themeColor", p.r.theme)
+			for s.Next() != xmlscan.EOF && s.Depth() >= 2 {
+				if s.Kind() == xmlscan.Start {
+					c = unknown
+				}
+			}
+			if p.r.showBackground && c.set && !c.auto {
+				p.r.page = c
+			}
+			continue
+		}
 		if s.Depth() >= 2 {
-			s.Skip() // the page background and the like
+			s.Skip()
 		}
 	}
 }
@@ -103,7 +149,8 @@ func (p *parser) document(out *[]gofastcore.Block) {
 // emitBody appends a block to the body. Consecutive code paragraphs are
 // one block of code.
 func (p *parser) emitBody(out *[]gofastcore.Block, b gofastcore.Block) {
-	if n := len(*out); n > 0 && b.Kind == gofastcore.KindCode && (*out)[n-1].Kind == gofastcore.KindCode {
+	if n := len(*out); n > 0 && b.Kind == gofastcore.KindCode && (*out)[n-1].Kind == gofastcore.KindCode &&
+		b.Hidden == 0 && (*out)[n-1].Hidden == 0 && b.Spans == nil && (*out)[n-1].Spans == nil {
 		(*out)[n-1].Text += "\n" + b.Text
 		return
 	}
@@ -218,11 +265,19 @@ func (p *parser) container(emit func(gofastcore.Block)) {
 }
 
 // section reads section properties for the headers and footers they name.
+// A first-page header is shown only if the section has a different first
+// page; an even-page one only if the document has different odd and even
+// pages, which is a setting of the document.
 func (p *parser) section() {
 	s := &p.s
+	titlePage := false
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
+			continue
+		}
+		if s.Depth() == depth+1 && s.Is(ns.Word, "titlePg") {
+			titlePage = onOff(s)
 			continue
 		}
 		header := s.Is(ns.Word, "headerReference")
@@ -233,20 +288,39 @@ func (p *parser) section() {
 			continue
 		}
 		id, _ := s.Attr(ns.Rel, "id")
+		typ, _ := s.Attr(ns.Word, "type")
 		rel, ok := p.rels[string(id)]
 		if !ok || rel.External {
 			continue
 		}
-		if header {
-			p.r.headers = append(p.r.headers, rel.Target)
-		} else {
-			p.r.footers = append(p.r.footers, rel.Target)
+		ref := furnitureRef{name: rel.Target, header: header, shown: true}
+		switch string(typ) {
+		case "even":
+			ref.even = true
+		case "first":
+			ref.shown = false
+			which := 0
+			if header {
+				which = 1
+			}
+			p.r.firstPage[which] = len(p.r.furniture) + 1
+		}
+		p.r.furniture = append(p.r.furniture, ref)
+	}
+	// A section with a different first page shows the first-page header
+	// and footer it names or, naming none, the ones it inherits from the
+	// sections before it.
+	if titlePage {
+		for _, i := range p.r.firstPage {
+			if i > 0 {
+				p.r.furniture[i-1].shown = true
+			}
 		}
 	}
 }
 
 // readParaProps reads w:pPr. p is nil when the properties are a style's.
-func readParaProps(s *xmlscan.Scanner, pp *paraProps, p *parser) {
+func readParaProps(s *xmlscan.Scanner, pp *paraProps, p *parser, theme map[string]color) {
 	pp.numID, pp.ilvl, pp.outline = -1, -1, -1
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
@@ -267,6 +341,8 @@ func readParaProps(s *xmlscan.Scanner, pp *paraProps, p *parser) {
 			if v, ok := intAttr(s, "val"); ok && v <= 9 {
 				pp.outline = int8(v)
 			}
+		case "shd":
+			pp.shade = readShade(s, theme)
 		case "numPr":
 			inner := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= inner {
@@ -311,15 +387,34 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 	if p.r.styles != nil {
 		pp.style = p.r.styles.def
 	}
-	start := len(p.text)
+	// A paragraph can sit inside another's run, in a text box; the outer
+	// one's state is put back when this one is done.
+	outer, outerHref, outerDepth := p.para, p.href, p.hrefDepth
+	p.para = paraState{start: len(p.text), spanStart: len(p.spans)}
+	p.href, p.hrefDepth = "", 0
+	p.format(&pp)
 	depth := s.Depth()
 	for {
 		k := s.Next()
 		if k == xmlscan.EOF || (k == xmlscan.End && s.Depth() < depth) {
 			break
 		}
+		if k == xmlscan.End && p.hrefDepth > 0 && s.Depth() < p.hrefDepth {
+			p.href, p.hrefDepth = "", 0 // the hyperlink has ended
+		}
 		if k != xmlscan.Start {
 			continue
+		}
+		if p.r.opts.Spans && s.Is(ns.Word, "hyperlink") {
+			p.href, p.hrefDepth = p.linkTarget(), s.Depth()
+		}
+		if p.r.opts.Spans && s.Is(ns.Word, "fldSimple") {
+			// A field written in one piece: its code is an attribute.
+			if code, ok := s.Attr(ns.Word, "instr"); ok {
+				if target := fieldLink(code); target != "" {
+					p.href, p.hrefDepth = target, s.Depth()
+				}
+			}
 		}
 		if transparent, skip := p.wrapper(); transparent {
 			continue
@@ -333,7 +428,8 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 			case "r":
 				p.run(false)
 			case "pPr":
-				readParaProps(s, &pp, p)
+				readParaProps(s, &pp, p, p.r.theme)
+				p.format(&pp)
 			case "del":
 				p.deletion()
 			case "moveFrom":
@@ -345,14 +441,17 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 		case ns.Math:
 			// An equation: its characters are kept in order, its layout
 			// (fractions, exponents) is not reconstructed.
+			start := len(p.text)
 			p.text = s.AppendText(p.text)
+			p.tidy(start)
 		default:
 			s.Skip()
 		}
 	}
-	raw := p.text[start:]
-	p.text = p.text[:start]
-	b, ok := p.block(&pp, raw)
+	b, ok := p.block(&pp)
+	p.text = p.text[:p.para.start]
+	p.spans = p.spans[:p.para.spanStart]
+	p.para, p.href, p.hrefDepth = outer, outerHref, outerDepth
 	if !ok {
 		return
 	}
@@ -363,8 +462,130 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 	emit(b)
 }
 
-// block turns a paragraph's properties and text into a block.
-func (p *parser) block(pp *paraProps, raw []byte) (gofastcore.Block, bool) {
+// format works out what the paragraph's properties mean for its runs: the
+// formatting they inherit, what lies behind them, and how their text is
+// cleaned. It is called again when the properties are read, since they
+// are the paragraph's first child.
+func (p *parser) format(pp *paraProps) {
+	st := &p.para
+	st.base, st.flags = &noFormatting, clean.Ligatures
+	if p.r.styles != nil {
+		st.base = &p.r.styles.defaults
+	}
+	st.behind = pp.shade
+	st.own = 0
+	if pp.style != nil {
+		st.base, st.own = &pp.style.run, pp.style.own
+		if pp.style.role == roleCode {
+			st.flags = clean.Verbatim
+		}
+		if !st.behind.set || st.behind.auto {
+			st.behind = pp.style.shade
+		}
+	}
+	if !st.behind.set || st.behind.auto {
+		st.behind = p.backdrop()
+	}
+	st.hidden = st.base.hiddenReasons(st.behind)
+}
+
+// backdrop returns what lies behind a paragraph that has no shading of
+// its own. Nearest first: its table cell's shading, set on the cell or by
+// the table's style; the fill of the text box it is in; the page.
+func (p *parser) backdrop() color {
+	if p.cell != nil {
+		if p.cell.shade.set && !p.cell.shade.auto {
+			return p.cell.shade
+		}
+		if p.tbl != nil {
+			if c, ok := p.tbl.styleShade(p.cell.cnf); ok {
+				return c
+			}
+			if p.tbl.shade.set && !p.tbl.shade.auto {
+				return p.tbl.shade
+			}
+		}
+	}
+	if p.box.set {
+		return p.box
+	}
+	return p.r.page
+}
+
+// hideWhole records that all of a block is hidden for the given reasons.
+// The reasons then belong to the block, not to parts of it.
+func hideWhole(b *gofastcore.Block, reasons gofastcore.Hidden) {
+	b.Hidden |= reasons
+	if b.Table != nil {
+		kept := b.Table.Hidden[:0]
+		for _, h := range b.Table.Hidden {
+			if h.Hidden &^= reasons; h.Hidden != 0 {
+				kept = append(kept, h)
+			}
+		}
+		if b.Table.Hidden = kept; len(kept) == 0 {
+			b.Table.Hidden = nil
+		}
+	}
+	kept := b.Spans[:0]
+	for _, sp := range b.Spans {
+		if sp.Hidden &^= reasons; sp.Hidden != 0 || sp.Style != 0 || sp.Href != "" {
+			kept = append(kept, sp)
+		}
+	}
+	if b.Spans = kept; len(kept) == 0 {
+		b.Spans = nil
+	}
+}
+
+// tidy cleans the text appended since start, in place: valid UTF-8, no
+// control characters, ligatures expanded in prose. Cleaning each piece as
+// it arrives keeps the offsets of the pieces true.
+func (p *parser) tidy(start int) {
+	piece := p.text[start:]
+	if clean.Plain(piece) {
+		return
+	}
+	var removed int
+	p.scratch, removed = clean.Append(p.scratch[:0], piece, p.para.flags)
+	p.r.removed += removed
+	p.text = append(p.text[:start], p.scratch...)
+}
+
+// linkTarget returns where the w:hyperlink element being read points: an
+// address outside the document, or a place inside it as "#name".
+func (p *parser) linkTarget() string {
+	s := &p.s
+	if id, ok := s.Attr(ns.Rel, "id"); ok {
+		if rel, found := p.rels[string(id)]; found && rel.External {
+			return clean.Label(rel.Target)
+		}
+	}
+	if anchor, ok := s.Attr(ns.Word, "anchor"); ok && len(anchor) > 0 {
+		return "#" + clean.Label(string(anchor))
+	}
+	return ""
+}
+
+// span records the formatting of the text of the current paragraph from
+// start to the end of what has been read, joining it to the span before
+// if that one ends where this begins and says the same.
+func (p *parser) span(start int, style gofastcore.Style, href string, hidden gofastcore.Hidden) {
+	from, to := start-p.para.start, len(p.text)-p.para.start
+	if to <= from {
+		return
+	}
+	if n := len(p.spans); n > p.para.spanStart {
+		if last := &p.spans[n-1]; last.End == from && last.Style == style && last.Href == href && last.Hidden == hidden {
+			last.End = to
+			return
+		}
+	}
+	p.spans = append(p.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Hidden: hidden})
+}
+
+// block turns the paragraph that has just been read into a block.
+func (p *parser) block(pp *paraProps) (gofastcore.Block, bool) {
 	st := pp.style
 	outline, numID, ilvl, kind := pp.outline, pp.numID, pp.ilvl, roleNone
 	if st != nil {
@@ -379,18 +600,25 @@ func (p *parser) block(pp *paraProps, raw []byte) (gofastcore.Block, bool) {
 		}
 		kind = st.role
 	}
-	flags := clean.Prose
-	if kind == roleCode {
-		flags = clean.Verbatim
-	}
-	text := p.clean(raw, flags)
-	if kind == roleCode {
-		text = strings.TrimRight(text, " \t\n")
-		if strings.TrimSpace(text) == "" {
-			text = ""
+	// The text was cleaned as it was read; what is left is to trim it.
+	// Code keeps its indentation.
+	raw := p.text[p.para.start:]
+	from, to := 0, len(raw)
+	for to > 0 {
+		r, size := utf8.DecodeLastRune(raw[:to])
+		if !unicode.IsSpace(r) {
+			break
 		}
+		to -= size
 	}
-	if text == "" {
+	for kind != roleCode && from < to {
+		r, size := utf8.DecodeRune(raw[from:to])
+		if !unicode.IsSpace(r) {
+			break
+		}
+		from += size
+	}
+	if from == to {
 		// An empty paragraph is spacing. A numbered one still counts in
 		// its list, as it does in Word.
 		if numID > 0 {
@@ -399,7 +627,8 @@ func (p *parser) block(pp *paraProps, raw []byte) (gofastcore.Block, bool) {
 		return gofastcore.Block{}, false
 	}
 
-	b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text}
+	b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(raw[from:to])}
+	b.Spans, b.Hidden = settle(p.spans[p.para.spanStart:], from, to, raw)
 	var marker string
 	var ordered, listed bool
 	if numID > 0 {
@@ -438,6 +667,60 @@ func (p *parser) block(pp *paraProps, raw []byte) (gofastcore.Block, bool) {
 	return b, true
 }
 
+// settle turns the spans collected while a paragraph was read into the
+// spans and hidden reasons of its block. The spans are moved to the
+// trimmed text, raw[from:to]. A reason that covers all of the text becomes
+// a reason of the whole block, which is how the model says it; one that
+// covers part stays on its spans.
+func settle(collected []gofastcore.Span, from, to int, raw []byte) ([]gofastcore.Span, gofastcore.Hidden) {
+	if len(collected) == 0 {
+		return nil, 0
+	}
+	var all gofastcore.Hidden
+	spans := make([]gofastcore.Span, 0, len(collected))
+	for _, sp := range collected {
+		sp.Start, sp.End = max(sp.Start, from)-from, min(sp.End, to)-from
+		if sp.Start < sp.End {
+			spans = append(spans, sp)
+			all |= sp.Hidden
+		}
+	}
+	text := raw[from:to]
+	whole := all
+	for bit := gofastcore.Hidden(1); bit != 0 && bit <= all; bit <<= 1 {
+		if all&bit == 0 {
+			continue
+		}
+		// The reason covers the text if nothing but white space lies
+		// outside the spans that carry it.
+		at := 0
+		for _, sp := range spans {
+			if sp.Hidden&bit == 0 {
+				continue
+			}
+			if len(bytes.TrimSpace(text[at:sp.Start])) > 0 {
+				whole &^= bit
+				break
+			}
+			at = sp.End
+		}
+		if whole&bit != 0 && len(bytes.TrimSpace(text[at:])) > 0 {
+			whole &^= bit
+		}
+	}
+	kept := spans[:0]
+	for _, sp := range spans {
+		sp.Hidden &^= whole
+		if sp.Hidden != 0 || sp.Style != 0 || sp.Href != "" {
+			kept = append(kept, sp)
+		}
+	}
+	if len(kept) == 0 {
+		kept = nil
+	}
+	return kept, all
+}
+
 // label advances the paragraph's list and returns its label.
 func (p *parser) label(pp *paraProps, numID int, ilvl int8) (marker string, ordered, ok bool) {
 	level := int(ilvl)
@@ -455,11 +738,13 @@ func (p *parser) label(pp *paraProps, numID int, ilvl int8) (marker string, orde
 // inside a tracked deletion, where the text is in w:delText.
 func (p *parser) run(deleted bool) {
 	s := &p.s
+	start, hung := len(p.text), len(p.after)
+	var direct runProps
 	depth := s.Depth()
 	for {
 		k := s.Next()
 		if k == xmlscan.EOF || (k == xmlscan.End && s.Depth() < depth) {
-			return
+			break
 		}
 		if k != xmlscan.Start {
 			continue
@@ -475,6 +760,8 @@ func (p *parser) run(deleted bool) {
 			continue
 		}
 		switch string(s.Local()) {
+		case "rPr":
+			readRunProps(s, &direct, p.r.theme)
 		case "t":
 			if deleted {
 				s.Skip()
@@ -492,7 +779,7 @@ func (p *parser) run(deleted bool) {
 		case "br", "cr":
 			p.text = append(p.text, '\n')
 		case "noBreakHyphen":
-			p.text = append(p.text, "‑"...)
+			p.text = append(p.text, "\u2011"...)
 		case "softHyphen":
 			p.text = append(p.text, "\u00AD"...)
 		case "sym":
@@ -507,12 +794,104 @@ func (p *parser) run(deleted bool) {
 			p.commentRef()
 		case "drawing", "pict", "object":
 			p.drawing()
+		case "fldChar":
+			// A field: its code, then what it displays. The code of a
+			// HYPERLINK field says where the displayed text leads.
+			typ, _ := s.Attr(ns.Word, "fldCharType")
+			switch string(typ) {
+			case "begin":
+				p.inInstr, p.instr, p.fieldHref = true, p.instr[:0], ""
+			case "separate":
+				p.inInstr, p.fieldHref = false, fieldLink(p.instr)
+			case "end":
+				p.inInstr, p.fieldHref = false, ""
+			}
+		case "instrText":
+			if p.inInstr && p.r.opts.Spans && len(p.instr) < 2048 {
+				p.instr = s.AppendText(p.instr)
+			} else {
+				s.Skip()
+			}
 		default:
-			// Run properties, field codes (w:instrText), and marks with
-			// no text of their own.
+			// Marks with no text of their own.
 			s.Skip()
 		}
 	}
+	if deleted || len(p.text) == start && len(p.after) == hung {
+		return
+	}
+	// Everything the run added is cleaned here, in one place, before its
+	// extent is recorded.
+	p.tidy(start)
+	// What the run's formatting means for its text. A run that sets
+	// nothing of its own has its paragraph's answer.
+	hidden := p.para.hidden
+	var style gofastcore.Style
+	href := ""
+	if p.r.opts.Spans {
+		if href = p.href; href == "" {
+			href = p.fieldHref
+		}
+	}
+	if !direct.empty() {
+		if c := p.r.styles.char(direct.style); c != nil {
+			// Hidden by the character style and by the paragraph's style
+			// both is shown: the two cancel. The run's own setting, and
+			// the document defaults, are not part of that.
+			cancels := direct.has&propVanish == 0 && c.is(propVanish) && p.para.own&propVanish != 0 &&
+				!p.r.styles.defaults.is(propVanish)
+			direct.under(c)
+			if cancels {
+				direct.setFlag(propVanish, false)
+			}
+		}
+		if p.r.opts.Spans {
+			style = direct.inline()
+		}
+		direct.under(p.para.base)
+		hidden = direct.hiddenReasons(p.para.behind)
+	}
+	// What hangs on a hidden run is hidden with it: the footnote whose
+	// reference it holds, the text box or picture anchored in it. A
+	// comment is not; it is shown in the margin whatever it is about.
+	if hidden&gofastcore.HiddenInvisible != 0 {
+		for i := hung; i < len(p.after); i++ {
+			if b := &p.after[i]; b.Kind != gofastcore.KindNote {
+				hideWhole(b, gofastcore.HiddenInvisible)
+			}
+		}
+	}
+	if hidden != 0 || style != 0 || href != "" {
+		p.span(start, style, href, hidden)
+	}
+}
+
+// fieldLink returns the target of a HYPERLINK field from its code, such as
+// HYPERLINK "https://example.org" or HYPERLINK \l "bookmark", or "".
+func fieldLink(code []byte) string {
+	fields := strings.Fields(string(code))
+	if len(fields) < 2 || !strings.EqualFold(fields[0], "HYPERLINK") {
+		return ""
+	}
+	local := false
+	for _, f := range fields[1:] {
+		switch {
+		case f == `\l`:
+			local = true
+		case strings.HasPrefix(f, `\`):
+			// another switch, with or without a value
+		case strings.HasPrefix(f, `"`):
+			target := clean.Label(strings.Trim(f, `"`))
+			if target == "" {
+				continue
+			}
+			if local {
+				return "#" + target
+			}
+			return target
+		}
+	}
+	return ""
 }
 
 // runText appends the content of w:t.
@@ -641,7 +1020,7 @@ func (p *parser) noteRef(notes map[int]note, counter *int, format string) {
 	key := format + strconv.Itoa(id)
 	if n, found := notes[id]; ok && found && n.text != "" && !p.r.usedNotes[key] {
 		p.r.usedNotes[key] = true
-		p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: n.text})
+		p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: n.text, Spans: n.spans, Hidden: n.hidden})
 		p.produced++
 	}
 }
@@ -661,7 +1040,7 @@ func (p *parser) commentRef() {
 	if n.date != "" {
 		attrs[gofastcore.AttrDate] = n.date
 	}
-	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: n.text, Attrs: attrs})
+	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: n.text, Spans: n.spans, Hidden: n.hidden, Attrs: attrs})
 }
 
 // deletion reads w:del inside a paragraph: text removed by a tracked
@@ -708,6 +1087,18 @@ func (p *parser) drawing() {
 	s := &p.s
 	var alt, target string
 	var external bool
+	// A text box of a fixed size shows no more than fits in it. One
+	// smaller than a line of text in either direction shows nothing.
+	width, height := -1.0, -1.0 // in points; -1 unknown
+	autofit := false
+	boxes := len(p.after)
+	hasBox := false
+	// The fill of the shape being read, which is what the text of its
+	// text box is seen against. Unset is no fill.
+	var fill color
+	shapes := 0      // shapes seen: sizes are only understood for one alone
+	shapeProps := 0  // depth of the shape's properties while they are read
+	ownFill := false // the shape sets its fill itself, not through its style
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -723,7 +1114,33 @@ func (p *parser) drawing() {
 			s.Skip()
 			continue
 		}
+		if shapeProps > 0 && s.Depth() <= shapeProps {
+			shapeProps = 0
+		}
 		switch {
+		case s.Is(ns.WordShape, "wsp"):
+			fill, ownFill, shapeProps = color{}, false, 0
+			shapes++
+		case s.Is(ns.WordShape, "spPr"):
+			shapeProps = s.Depth()
+		case shapeProps > 0 && s.Depth() == shapeProps+1 && s.Space() == ns.Draw:
+			switch string(s.Local()) {
+			case "solidFill":
+				fill, ownFill = drawingColor(s, p.r.theme), true
+			case "noFill":
+				fill, ownFill = color{}, true
+			case "gradFill", "pattFill", "blipFill", "grpFill":
+				fill, ownFill = unknown, true
+			case "ln":
+				s.Skip() // the outline has a fill of its own
+			}
+		case s.Is(ns.Draw, "fillRef"):
+			// The fill the shape's style gives it, unless it has its own.
+			if idx, ok := s.Attr(xmlscan.NoSpace, "idx"); ok && string(idx) != "0" && !ownFill {
+				fill = drawingColor(s, p.r.theme)
+			}
+		case s.Is(ns.VML, "fill"):
+			fill = vmlFillElement(s, fill)
 		case s.Is(ns.WordDraw, "docPr"):
 			if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && len(v) > 0 {
 				alt = p.clean(v, clean.Prose)
@@ -747,17 +1164,48 @@ func (p *parser) drawing() {
 			if v, ok := s.Attr(ns.Office, "title"); ok && alt == "" {
 				alt = p.clean(v, clean.Prose)
 			}
-		case s.Is(ns.VML, "shape"):
+		case s.Is(ns.VML, "shape"), s.Is(ns.VML, "rect"), s.Is(ns.VML, "roundrect"), s.Is(ns.VML, "oval"):
 			if v, ok := s.Attr(xmlscan.NoSpace, "alt"); ok && alt == "" {
 				alt = p.clean(v, clean.Prose)
 			}
+			if v, ok := s.Attr(xmlscan.NoSpace, "style"); ok {
+				width, height = vmlSize(v)
+				autofit = autofit || bytes.Contains(v, []byte("mso-fit-shape-to-text:t"))
+			}
+			fill = vmlFill(s)
+			shapes++
+		case s.Is(ns.WordDraw, "extent"):
+			// Sizes are in EMU: 12,700 to the point.
+			if cx, ok := emuAttr(s, "cx"); ok {
+				width = cx
+			}
+			if cy, ok := emuAttr(s, "cy"); ok {
+				height = cy
+			}
+		case s.Is(ns.Draw, "spAutoFit"):
+			autofit = true // the box grows to fit its text
 		case s.Is(ns.Word, "txbxContent"):
 			// A text box: its paragraphs follow the one it hangs on.
+			hasBox = true
+			if !fill.set {
+				fill = p.backdrop() // nothing of its own: what the box sits on shows through
+			}
+			outerBox, outerCell, outerTable := p.box, p.cell, p.tbl
+			p.box, p.cell, p.tbl = fill, nil, nil
 			p.container(func(b gofastcore.Block) { p.after = append(p.after, b) })
+			p.box, p.cell, p.tbl = outerBox, outerCell, outerTable
+			fill = color{}
 		case s.Is(ns.Chart, "chart"):
 			p.r.unread["chart"]++
 		case s.Is(ns.Diagram, "relIds"):
 			p.r.unread["diagram"]++
+		}
+	}
+	if hasBox && shapes <= 1 && !autofit && (width >= 0 && width < gofastcore.HiddenTinySize || height >= 0 && height < gofastcore.HiddenTinySize) {
+		for i := boxes; i < len(p.after); i++ {
+			if b := &p.after[i]; b.Kind != gofastcore.KindImage {
+				hideWhole(b, gofastcore.HiddenClipped)
+			}
 		}
 	}
 	if target == "" || p.r.opts.Images == gofastcore.ImagesNone {
@@ -778,6 +1226,16 @@ func (p *parser) drawing() {
 	p.after = append(p.after, p.r.imageBlock(target, alt))
 }
 
+// emuAttr reads a length attribute given in EMU and returns it in points.
+func emuAttr(s *xmlscan.Scanner, name string) (float64, bool) {
+	v, ok := s.Attr(xmlscan.NoSpace, name)
+	if !ok {
+		return 0, false
+	}
+	n, ok := atoi(v)
+	return float64(n) / 12700, ok
+}
+
 // cellProps reads w:tcPr.
 func (p *parser) cellProps() {
 	s := &p.s
@@ -796,6 +1254,10 @@ func (p *parser) cellProps() {
 			if v, ok := s.Attr(ns.Word, "val"); ok && string(v) == "restart" {
 				p.cell.vMerge = 1
 			}
+		case s.Is(ns.Word, "shd"):
+			p.cell.shade = readShade(s, p.r.theme)
+		case s.Is(ns.Word, "cnfStyle"):
+			p.cell.cnf = readCnf(s)
 		default:
 			s.Skip()
 		}
@@ -810,13 +1272,16 @@ type tableCell struct {
 	text   string
 	span   int
 	vMerge int8
+	hidden gofastcore.Hidden
 }
 
 // table reads w:tbl into a table block.
 func (p *parser) table(emit func(gofastcore.Block)) {
 	s := &p.s
 	p.tables++
-	savedCell, savedRow := p.cell, p.row
+	savedCell, savedRow, savedTable := p.cell, p.row, p.tbl
+	state := tableState{}
+	p.tbl, p.cell = &state, nil
 	var rows [][]tableCell
 	var before []int
 	headerRows, counting := 0, true
@@ -835,14 +1300,44 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 			s.Skip()
 			continue
 		}
+		if s.Is(ns.Word, "tblPr") {
+			// What decides the shading behind the table's cells.
+			inner := s.Depth()
+			for s.Next() != xmlscan.EOF && s.Depth() >= inner {
+				if s.Kind() != xmlscan.Start || s.Depth() != inner+1 {
+					continue
+				}
+				switch {
+				case s.Is(ns.Word, "tblStyle"):
+					if v, ok := s.Attr(ns.Word, "val"); ok && p.r.styles != nil {
+						state.style = p.r.styles.tables[string(v)]
+					}
+				case s.Is(ns.Word, "tblLook"):
+					state.look = readLook(s)
+				case s.Is(ns.Word, "shd"):
+					state.shade = readShade(s, p.r.theme)
+				default:
+					s.Skip()
+				}
+			}
+			continue
+		}
 		if !s.Is(ns.Word, "tr") {
 			s.Skip()
 			continue
 		}
+		state.row = len(rows)
 		row, props := p.tableRow()
 		if props.deleted {
 			p.r.deleted++
 			continue
+		}
+		if props.clipped {
+			for i := range row {
+				if row[i].text != "" {
+					row[i].hidden |= gofastcore.HiddenClipped
+				}
+			}
 		}
 		if counting && props.header {
 			headerRows++
@@ -852,7 +1347,7 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 		rows = append(rows, row)
 		before = append(before, props.gridBefore)
 	}
-	p.cell, p.row = savedCell, savedRow
+	p.cell, p.row, p.tbl = savedCell, savedRow, savedTable
 	p.tables--
 
 	// Lay the cells out on a grid.
@@ -879,22 +1374,38 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 	if cols > maxColumns || len(rows)*cols > 16*cells+4096 {
 		p.r.flattened++
 		for _, row := range rows {
-			var sb strings.Builder
+			var line []byte
+			var spans []gofastcore.Span
 			for i, c := range row {
 				if i > 0 {
-					sb.WriteByte('\t')
+					line = append(line, '\t')
 				}
-				sb.WriteString(strings.ReplaceAll(c.text, "\n", " "))
+				at := len(line)
+				line = append(line, strings.ReplaceAll(c.text, "\n", " ")...)
+				if c.hidden != 0 {
+					spans = append(spans, gofastcore.Span{Start: at, End: len(line), Hidden: c.hidden})
+				}
 			}
-			if text := strings.TrimSpace(sb.String()); text != "" {
+			from, to := 0, len(line)
+			for from < to && (line[from] == ' ' || line[from] == '\t') {
+				from++
+			}
+			for to > from && (line[to-1] == ' ' || line[to-1] == '\t') {
+				to--
+			}
+			if from < to {
 				p.produced++
-				emit(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text})
+				b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(line[from:to])}
+				b.Spans, b.Hidden = settle(spans, from, to, line)
+				emit(b)
 			}
 		}
 		return
 	}
 	t := &gofastcore.Table{HeaderRows: min(headerRows, len(rows)), Rows: make([][]string, len(rows))}
-	open := make([]int, cols) // per column: index in t.Merges of the vertical merge running through it, plus one
+	var hidden gofastcore.Hidden
+	open := make([]int, cols)   // per column: index in t.Merges of the vertical merge running through it, plus one
+	marked := make([]int, cols) // per column: index in t.Hidden of the entry of that merge's first cell, plus one
 	for r, row := range rows {
 		t.Rows[r] = make([]string, cols)
 		col := before[r]
@@ -913,11 +1424,26 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 						*top += "\n"
 					}
 					*top += c.text
+					if c.hidden != 0 {
+						// The text has joined the merge's first cell, and
+						// so does what is said of it.
+						if marked[col] == 0 {
+							t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: m.Row, Col: m.Col, RowSpan: 1, ColSpan: 1})
+							marked[col] = len(t.Hidden)
+						}
+						t.Hidden[marked[col]-1].Hidden |= c.hidden
+						hidden |= c.hidden
+					}
 				}
 			default:
 				t.Rows[r][col] = c.text
 				for k := col; k < col+c.span && k < cols; k++ {
-					open[k] = 0
+					open[k], marked[k] = 0, 0
+				}
+				if c.hidden != 0 && c.text != "" {
+					t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: r, Col: col, RowSpan: 1, ColSpan: 1, Hidden: c.hidden})
+					marked[col] = len(t.Hidden)
+					hidden |= c.hidden
 				}
 				if c.vMerge == 1 || c.span > 1 {
 					t.Merges = append(t.Merges, gofastcore.Merge{Row: r, Col: col, RowSpan: 1, ColSpan: min(c.span, cols-col)})
@@ -932,7 +1458,7 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 		}
 		// A column this row did not reach ends any merge running through it.
 		for k := col; k < cols; k++ {
-			open[k] = 0
+			open[k], marked[k] = 0, 0
 		}
 	}
 	// A merge of one cell is not a merge.
@@ -947,7 +1473,7 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 		t.Merges = nil
 	}
 	p.produced++
-	emit(gofastcore.Block{Kind: gofastcore.KindTable, Table: t})
+	emit(gofastcore.Block{Kind: gofastcore.KindTable, Table: t, Hidden: hidden})
 }
 
 // tableRow reads w:tr.
@@ -955,6 +1481,9 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 	s := &p.s
 	var row []tableCell
 	var props rowProps
+	if p.tbl != nil {
+		p.tbl.col, p.tbl.rowCnf = 0, 0
+	}
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -988,6 +1517,20 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 				case s.Is(ns.Word, "gridBefore"):
 					if v, ok := intAttr(s, "val"); ok {
 						props.gridBefore = min(v, 1024)
+						if p.tbl != nil {
+							p.tbl.col = props.gridBefore
+						}
+					}
+				case s.Is(ns.Word, "cnfStyle"):
+					if p.tbl != nil {
+						p.tbl.rowCnf = readCnf(s)
+					}
+				case s.Is(ns.Word, "trHeight"):
+					// A row of an exact height shows no more than fits in
+					// it. Heights are in twentieths of a point.
+					rule, _ := s.Attr(ns.Word, "hRule")
+					if v, ok := intAttr(s, "val"); ok && string(rule) == "exact" && float64(v)/20 < gofastcore.HiddenTinySize {
+						props.clipped = true
 					}
 				default:
 					s.Skip()
@@ -1006,9 +1549,15 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 				}
 				cell.text = append(cell.text, text...)
 				cell.hasBlock = true
+				// A cell is text without parts, so it is flagged as a
+				// whole when any of its text is hidden.
+				cell.hidden |= b.Hidden
 			})
 			p.cell = nil
-			row = append(row, tableCell{text: string(cell.text), span: cell.span, vMerge: cell.vMerge})
+			if p.tbl != nil {
+				p.tbl.col += cell.span
+			}
+			row = append(row, tableCell{text: string(cell.text), span: cell.span, vMerge: cell.vMerge, hidden: cell.hidden})
 		default:
 			s.Skip()
 		}

@@ -40,7 +40,8 @@ const (
 //	                          is read under the name in its header, and the
 //	                          first of two with one name is taken
 //	text.tracked_changes      a Word document has tracked changes
-//	text.hidden               text a reader cannot see
+//	text.hidden               text a reader cannot see; the blocks, spans
+//	                          and table cells concerned say why
 //	structure.heading_level_clamped
 const (
 	// WarnPropertiesDamaged: a document-properties part could not be read
@@ -166,7 +167,8 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	doc.Source.Name = opts.Name
 	doc.Source.Size = size
 	// Invisible characters are checked for in everything that is
-	// extracted. The other hidden-text checks arrive with the formats.
+	// extracted. A format's reader adds the checks it makes: the Word
+	// reader's are listed at wml.HiddenChecked.
 	doc.HiddenChecked = gofastcore.HiddenChars
 
 	meta, err := props.Read(pkg)

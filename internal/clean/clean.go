@@ -10,6 +10,7 @@
 package clean
 
 import (
+	"bytes"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -37,22 +38,36 @@ var ligatures = [...]string{"ff", "fi", "fl", "ffi", "ffl", "st", "st"}
 // flags, and the number of control characters it had to remove.
 func String(b []byte, flags Flags) (s string, removed int) {
 	// The usual case needs no work: printable ASCII with nothing to trim.
-	plain := true
-	for _, c := range b {
-		if c >= 0x80 || (c < 0x20 && c != '\n' && c != '\t') || c == 0x7F {
-			plain = false
-			break
-		}
-	}
-	if plain {
+	if Plain(b) {
 		if flags&Trim != 0 {
 			return string(trimASCII(b)), 0
 		}
 		return string(b), 0
 	}
+	out, removed := Append(make([]byte, 0, len(b)), b, flags)
+	if flags&Trim != 0 {
+		return string(bytes.TrimFunc(out, unicode.IsSpace)), removed
+	}
+	return string(out), removed
+}
 
-	var sb strings.Builder
-	sb.Grow(len(b))
+// Plain reports whether b is printable ASCII, with line feeds and tabs:
+// text that obeys the conventions as it stands, apart from trimming.
+func Plain(b []byte) bool {
+	for _, c := range b {
+		if c >= 0x80 || (c < 0x20 && c != '\n' && c != '\t') || c == 0x7F {
+			return false
+		}
+	}
+	return true
+}
+
+// Append appends b to dst in the form the conventions ask for, and returns
+// the extended slice and the number of control characters it removed. It
+// does not trim: a caller that builds a paragraph out of pieces trims the
+// whole once, and the offsets of the pieces stay true until then.
+func Append(dst, b []byte, flags Flags) ([]byte, int) {
+	removed := 0
 	for i := 0; i < len(b); {
 		c := b[i]
 		if c < 0x80 {
@@ -64,13 +79,13 @@ func String(b []byte, flags Flags) (s string, removed int) {
 				if i < len(b) && b[i] == '\n' {
 					i++
 				}
-				sb.WriteByte('\n')
+				dst = append(dst, '\n')
 			case c == '\v' || c == '\f':
-				sb.WriteByte('\n') // line and page separators are line ends
+				dst = append(dst, '\n') // line and page separators are line ends
 			case (c < 0x20 && c != '\n' && c != '\t') || c == 0x7F:
 				removed++
 			default:
-				sb.WriteByte(c)
+				dst = append(dst, c)
 			}
 			continue
 		}
@@ -78,22 +93,18 @@ func String(b []byte, flags Flags) (s string, removed int) {
 		i += size
 		switch {
 		case r == utf8.RuneError && size == 1:
-			sb.WriteRune(utf8.RuneError) // an invalid byte
+			dst = utf8.AppendRune(dst, utf8.RuneError) // an invalid byte
 		case r == 0x85 || r == 0x2028 || r == 0x2029:
-			sb.WriteByte('\n') // next line, line separator, paragraph separator
+			dst = append(dst, '\n') // next line, line separator, paragraph separator
 		case r < 0xA0:
 			removed++ // a C1 control character
 		case flags&Ligatures != 0 && r >= 0xFB00 && r <= 0xFB06:
-			sb.WriteString(ligatures[r-0xFB00])
+			dst = append(dst, ligatures[r-0xFB00]...)
 		default:
-			sb.WriteRune(r)
+			dst = utf8.AppendRune(dst, r)
 		}
 	}
-	s = sb.String()
-	if flags&Trim != 0 {
-		s = strings.TrimFunc(s, unicode.IsSpace)
-	}
-	return s, removed
+	return dst, removed
 }
 
 // maxLabel bounds a label. Names and messages are short; a longer one is

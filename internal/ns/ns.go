@@ -104,6 +104,7 @@ const (
 	RelAltChunk  = "aFChunk"
 	RelChart     = "chart"
 	RelDiagram   = "diagramData"
+	RelTheme     = "theme"
 )
 
 // IsRel reports whether a relationship type URI is of one of the given
