@@ -23,10 +23,24 @@ type cellStyle struct {
 	general bool              // the format is General
 	hidden  gofastcore.Hidden // why text in such a cell cannot be seen
 	symbol  symbol.Font       // the cell's font, if it is a symbol font: its text is codes
+
+	// The colour of its text, if its font says one (inkAuto: says it is
+	// automatic), and its fill: 0 none, 1 fillColor, 2 not one colour or
+	// not known. A table's style gives what these do not.
+	inkSet, inkAuto bool
+	ink             theme.Color
+	fill            uint8
+	fillColor       theme.Color
 }
 
 type styleSheet struct {
 	styles []cellStyle
+	// For tables: the formats (dxfs) the workbook's table styles use,
+	// its own table styles, and the theme and palette to resolve the
+	// colours of the built-in ones.
+	dxfs    []look
+	custom  map[string]*customStyle
+	resolve func(colorRef) (theme.Color, bool)
 }
 
 var plainStyle = cellStyle{format: numfmt.General(), general: true}
@@ -98,6 +112,12 @@ type fillInfo struct {
 // readStyles reads a styles part.
 func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 	codes := map[int]string{}
+	type dxfRef struct {
+		ink, fill colorRef
+		fillKind  uint8
+	}
+	var dxfs []dxfRef
+	var custom map[string]*customStyle
 	var fonts []fontInfo
 	var fills []fillInfo
 	type xf struct{ format, font, fill int }
@@ -196,6 +216,16 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 				x.fill, _ = intAttr(s, "fillId")
 				xfs = append(xfs, x)
 			}
+		case "dxfs":
+			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+				if s.Kind() == xmlscan.Start && s.Depth() == depth+1 && s.Is(ns.Sheet, "dxf") && len(dxfs) < maxStyles {
+					var d dxfRef
+					d.ink, d.fill, d.fillKind = readDxf(s)
+					dxfs = append(dxfs, d)
+				}
+			}
+		case "tableStyles":
+			custom = readTableStyles(s)
 		case "colors":
 			// A workbook can replace the 56 colours of the old palette.
 			var custom []theme.Color
@@ -236,7 +266,21 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 		return theme.Tint(rgb, c.tint), true
 	}
 	formats := map[int]*numfmt.Format{}
-	st := &styleSheet{styles: make([]cellStyle, len(xfs))}
+	st := &styleSheet{styles: make([]cellStyle, len(xfs)), custom: custom, resolve: resolve}
+	for _, d := range dxfs {
+		var l look
+		if c, ok := resolve(d.ink); ok {
+			l.inkSet, l.ink = true, c
+		}
+		if l.fill = d.fillKind; l.fill == 1 {
+			if c, ok := resolve(d.fill); ok {
+				l.fillColor = c
+			} else {
+				l.fill = 2
+			}
+		}
+		st.dxfs = append(st.dxfs, l)
+	}
 	for i, x := range xfs {
 		f, ok := formats[x.format]
 		if !ok {
@@ -251,6 +295,24 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 		if x.font >= 0 && x.font < len(fonts) {
 			font := fonts[x.font]
 			cs.symbol = font.symbol
+			if c, ok := resolve(font.color); ok {
+				cs.inkSet, cs.ink = true, c
+			}
+			cs.inkAuto = font.color.kind == 1
+		}
+		if x.fill >= 0 && x.fill < len(fills) {
+			switch fill := fills[x.fill]; fill.kind {
+			case 1:
+				cs.fill = 2
+				if c, ok := resolve(fill.color); ok {
+					cs.fill, cs.fillColor = 1, c
+				}
+			case 2:
+				cs.fill = 2
+			}
+		}
+		if x.font >= 0 && x.font < len(fonts) {
+			font := fonts[x.font]
 			if font.size > 0 && font.size < gofastcore.HiddenTinySize {
 				cs.hidden |= gofastcore.HiddenTiny
 			}

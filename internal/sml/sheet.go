@@ -29,6 +29,7 @@ type cell struct {
 	text   string
 	row    int32 // from 0
 	col    int32
+	style  int32             // its style, for a table's style to be judged against
 	hidden gofastcore.Hidden // why its text cannot be seen, where the cell itself is the reason
 }
 
@@ -383,10 +384,13 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 				typ = 'd'
 			}
 		}
-		style := &plainStyle
+		style, styleIndex := &plainStyle, int32(-1)
 		if v, ok := s.Attr(xmlscan.NoSpace, "s"); ok {
 			if i, ok := atoi(v); ok {
 				style = sh.wb.styles.style(i)
+				if style != &plainStyle {
+					styleIndex = int32(i)
+				}
 			}
 		}
 		// The value: v, or an inline string; a formula is not read.
@@ -435,7 +439,7 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 			ordered = false
 		}
 		textBytes += int64(len(text))
-		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, hidden: hidden | style.hidden})
+		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, style: styleIndex, hidden: hidden | style.hidden})
 	}
 	if !ordered {
 		sh.unsorted = true

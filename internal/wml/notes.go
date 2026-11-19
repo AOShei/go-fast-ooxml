@@ -45,7 +45,7 @@ const placeholder = "\x00"
 func readNotePr(s *xmlscan.Scanner) notePr {
 	var pr notePr
 	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() > depth {
+	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start || s.Depth() != depth+1 {
 			continue
 		}

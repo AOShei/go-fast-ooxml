@@ -19,7 +19,11 @@ import (
 type declaredTable struct {
 	at         rect
 	headerRows int
+	totalRows  int
 	name       string // the name Excel shows for it
+	// Its style, and which of the style's elements it shows.
+	style                                              string
+	firstColumn, lastColumn, rowStripes, columnStripes bool
 }
 
 // declared reads the sheet's table parts.
@@ -53,6 +57,21 @@ func (sh *sheet) declared() []declaredTable {
 				}
 				if n, ok := intAttr(s, "headerRowCount"); ok {
 					t.headerRows = min(n, 1)
+				}
+				if n, ok := intAttr(s, "totalsRowCount"); ok && n > 0 {
+					t.totalRows = min(n, 1)
+				}
+				// Its style is in a child element.
+				depth := s.Depth()
+				for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+					if s.Kind() != xmlscan.Start || s.Depth() != depth+1 || !s.Is(ns.Sheet, "tableStyleInfo") {
+						continue
+					}
+					v, _ := s.Attr(xmlscan.NoSpace, "name")
+					t.style = string(v)
+					on := func(name string) bool { v, ok := s.Attr(xmlscan.NoSpace, name); return ok && isTrue(v) }
+					t.firstColumn, t.lastColumn = on("showFirstColumn"), on("showLastColumn")
+					t.rowStripes, t.columnStripes = on("showRowStripes"), on("showColumnStripes")
 				}
 				out = append(out, t)
 				return

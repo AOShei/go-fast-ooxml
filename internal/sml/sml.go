@@ -412,7 +412,9 @@ func (sh *sheet) content() (sawImage bool) {
 	sh.failed(sh.s.Err())
 	sh.s = xmlscan.Scanner{} // its window is no longer needed
 
-	blocks := sh.tablesOf(sh.declared())
+	declared := sh.declared()
+	sh.applyTableStyles(declared)
+	blocks := sh.tablesOf(declared)
 	blocks = append(blocks, sh.comments()...)
 	for _, target := range sh.drawings {
 		var saw bool
