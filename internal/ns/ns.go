@@ -38,6 +38,10 @@ const (
 	SheetDraw                                              // xdr: drawings on a worksheet
 	Threaded                                               // threaded comments and their authors
 	Pres2018                                               // p188: PowerPoint's threaded comments
+	ChartEx                                                // cx: the charts Office added in 2016
+	Chart2012                                              // c15: extensions of charts, among them series filtered out
+	ChartDraw                                              // cdr: shapes drawn on a chart
+	DiagramDraw                                            // dsp: the drawing Office made of a SmartArt diagram
 )
 
 // Spaces is the table handed to every scanner.
@@ -82,6 +86,11 @@ var Spaces = map[string]xmlscan.Space{
 	"http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing":                   SheetDraw,
 	"http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments":   Threaded,
 	"http://schemas.microsoft.com/office/powerpoint/2018/8/main":                Pres2018,
+	"http://schemas.microsoft.com/office/drawing/2014/chartex":                  ChartEx,
+	"http://schemas.microsoft.com/office/drawing/2012/chart":                    Chart2012,
+	"http://schemas.openxmlformats.org/drawingml/2006/chartDrawing":             ChartDraw,
+	"http://purl.oclc.org/ooxml/drawingml/chartDrawing":                         ChartDraw,
+	"http://schemas.microsoft.com/office/drawing/2008/diagram":                  DiagramDraw,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part
@@ -110,8 +119,12 @@ const (
 	RelPackage   = "package"
 	RelAltChunk  = "aFChunk"
 	RelChart     = "chart"
+	RelChartEx   = "chartEx"
+	RelChartUser = "chartUserShapes"
 	RelDiagram   = "diagramData"
-	RelTheme     = "theme"
+	// The drawing of a SmartArt diagram, which its data model names.
+	RelDiagramDrawing = "diagramDrawing"
+	RelTheme          = "theme"
 
 	RelWorksheet       = "worksheet"
 	RelChartsheet      = "chartsheet"

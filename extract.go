@@ -71,7 +71,7 @@ const (
 	// first two for workbooks and presentations as well.
 
 	// WarnUnreadContent: the document holds content of a kind this version
-	// does not read: a chart, a diagram, a sound or video clip.
+	// does not read: a sound or video clip, an Excel dialog sheet.
 	WarnUnreadContent = wml.WarnUnreadContent
 	// WarnPartDamaged: a supporting part (styles, numbering, notes, a
 	// header) could not be read to its end; what was read is used.

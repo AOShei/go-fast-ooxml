@@ -68,8 +68,8 @@ func sheetCells(t testing.TB, part *gofastcore.Part) (cells map[cellAt]string, u
 	cells, unseen = map[cellAt]string{}, map[cellAt]bool{}
 	for i := range part.Blocks {
 		b := &part.Blocks[i]
-		if b.Table == nil {
-			continue
+		if b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
+			continue // a chart's data is not cells of the sheet
 		}
 		origin := parseA1(t, b.Loc.Range)
 		for r, row := range b.Table.Rows {
@@ -453,8 +453,8 @@ func TestExcelHiddenSurvey(t *testing.T) {
 				continue
 			}
 			for _, b := range part.Blocks {
-				if b.Table == nil {
-					if b.Hidden != 0 {
+				if b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
+					if b.Table == nil && b.Hidden != 0 {
 						note("shape text: "+b.Hidden.String(), b.Loc.Range, b.Text, 1)
 					}
 					continue

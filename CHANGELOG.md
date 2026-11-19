@@ -47,6 +47,14 @@ when the work planned before the release is done.
   hidden.
 - Excel's drop-down lists as `note` blocks of type `choices` at their
   cells: the values, one per line, or the reference they are taken from.
+- Charts in all three formats, both kinds, as a caption with the title
+  and tables of their data with role `chart`, the chart's type, name and
+  axis titles; series a filter leaves out, flagged invisible; Excel chart
+  sheets; the workbook a chart embeds as an embedded file.
+- SmartArt in all three formats: the text of each node as list items in
+  the model's order and nesting, placed and judged for hidden text by the
+  drawing Office made of it; nodes the layout draws nowhere flagged
+  invisible.
 - `Open`, `OpenBytes`, `OpenReaderAt` and `File`: a part at a time
   (`Parts`, `Part`), a sheet in bands of rows (`Rows`), embedded files
   (`Children`), without holding the document.
@@ -76,6 +84,6 @@ when the work planned before the release is done.
 
 ### Not in this release
 
-- Chart data, pivot tables, SmartArt text, the binary workbook format
+- Pivot tables, the binary workbook format
   (`.xlsb`), and the legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files encrypted for a certificate or protected by rights management.

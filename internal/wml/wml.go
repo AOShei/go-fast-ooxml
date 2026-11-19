@@ -25,7 +25,8 @@ import (
 // gofastcore. Each states a fact.
 const (
 	// WarnUnreadContent: the document holds content of a kind this version
-	// does not read: a chart, a diagram.
+	// does not read. Word's charts and diagrams are read; the code is the
+	// one the other formats give.
 	WarnUnreadContent = warn.UnreadContent
 	// WarnControlCharsRemoved: see the package gofastooxml.
 	WarnControlCharsRemoved = warn.ControlCharsRemoved
@@ -110,10 +111,10 @@ type reader struct {
 	flattened         int  // tables written as text
 	clamped           int  // headings deeper than six levels
 	sawImage          bool // the body has a picture, whether or not pictures are extracted
-	unread            map[string]int
 	external          int
 	budget            bool                   // the decompression budget ran out
 	text              *gofastcore.TextBudget // what the document may still hold of text
+	charts            []opc.Rel              // what the charts read embed: their workbooks
 	textCut           bool                   // and that it ran out
 }
 
@@ -132,7 +133,6 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		images:        map[string]*gofastcore.Image{},
 		delivered:     map[string]bool{},
 		children:      map[string]bool{},
-		unread:        map[string]int{},
 		page:          white,
 	}
 	rels, err := pkg.Rels(main)
@@ -247,7 +247,8 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindFooter, shown[f.name])...)
 		}
 	}
-	r.embedded(rels)
+	// The workbooks the charts embed are files the document embeds.
+	r.embedded(append(rels[:len(rels):len(rels)], r.charts...))
 	r.finish()
 }
 
@@ -621,15 +622,6 @@ func (r *reader) finish() {
 	}
 	if r.external > 0 {
 		r.doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputExternalReference, fmt.Sprintf("%d, not counting hyperlinks; nothing was fetched", r.external))
-	}
-	if len(r.unread) > 0 {
-		var kinds []string
-		for _, k := range []string{"chart", "diagram"} {
-			if n := r.unread[k]; n > 0 {
-				kinds = append(kinds, strconv.Itoa(n)+" "+k)
-			}
-		}
-		r.doc.Warn(gofastcore.SeverityWarning, WarnUnreadContent, strings.Join(kinds, ", "))
 	}
 	part.MarkHidden()
 	r.doc.Parts = append(r.doc.Parts, *part)

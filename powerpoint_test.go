@@ -1,9 +1,14 @@
 package gofastooxml_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
+	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -100,6 +105,7 @@ func TestPowerPointCorpus(t *testing.T) {
 			t.Errorf("%s: %d slides, python-pptx reads %d", f.Name, len(doc.Parts), len(theirs))
 			continue
 		}
+		smartArt := diagramTexts(data)
 		var body, all, pyBody, pyAll strings.Builder
 		for k, sl := range theirs {
 			part := &doc.Parts[k]
@@ -124,6 +130,10 @@ func TestPowerPointCorpus(t *testing.T) {
 					continue // python-pptx does not give alternative text
 				case b.Kind == gofastcore.KindNote && b.Attrs[gofastcore.AttrNoteType] != gofastcore.NoteSpeaker:
 					continue // nor comments
+				case b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart, b.Kind == gofastcore.KindCaption:
+					continue // nor charts, compared by TestChartsAsOracles
+				case b.Kind == gofastcore.KindListItem && smartArt[b.Text]:
+					continue // nor SmartArt, compared by TestSmartArtAsLibreOffice
 				case b.Table != nil:
 					var sb strings.Builder
 					for _, row := range b.Table.Rows {
@@ -240,4 +250,35 @@ func TestPowerPointHiddenSurvey(t *testing.T) {
 		t.Logf("%-40s %5d blocks in %3d files", what, blocks[what], inFiles[what])
 	}
 	t.Logf("%d of %d presentations have hidden text; %d slides were not checked to the end", flagged, files, unchecked)
+}
+
+// diagramTexts returns the paragraphs of the SmartArt data models of a
+// package: text python-pptx does not read.
+func diagramTexts(data []byte) map[string]bool {
+	out := map[string]bool{}
+	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return out
+	}
+	para := regexp.MustCompile(`(?s)<a:p>.*?</a:p>`)
+	run := regexp.MustCompile(`(?s)<a:t>(.*?)</a:t>`)
+	for _, f := range z.File {
+		if !strings.Contains(f.Name, "diagrams/data") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		xmlData, _ := io.ReadAll(io.LimitReader(rc, 16<<20))
+		rc.Close()
+		for _, p := range para.FindAll(xmlData, -1) {
+			var b strings.Builder
+			for _, m := range run.FindAllSubmatch(p, -1) {
+				b.WriteString(html.UnescapeString(string(m[1])))
+			}
+			out[strings.TrimSpace(b.String())] = true
+		}
+	}
+	return out
 }

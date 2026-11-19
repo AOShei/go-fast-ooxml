@@ -271,7 +271,7 @@ func (b *Book) Read(ctx context.Context, index int) *unit.Result {
 // result is what reading the sheet gave.
 func (sh *sheet) result() *unit.Result {
 	return &unit.Result{Part: sh.part, Tally: unit.Tally{
-		Unread: sh.unread, Damaged: sh.damaged, Macros: sh.macros, Rels: sh.list,
+		Unread: sh.unread, Damaged: sh.damaged, Macros: sh.macros, Rels: append(sh.list[:len(sh.list):len(sh.list)], sh.charts...),
 		Limited: sh.budget || sh.cut != "" && sh.cut != "cancelled",
 	}}
 }
@@ -330,8 +330,11 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 func (wb *workbook) sheet(ctx context.Context, index int, ref sheetRef, budget bool) *sheet {
 	sh, readable := wb.start(ctx, index, ref, budget)
 	sawImage := false
-	if readable {
+	switch {
+	case readable:
 		sawImage = sh.content()
+	case sh.chartSheet:
+		sawImage = sh.chartContent()
 	}
 	sh.limits()
 	sh.finish(sawImage)
@@ -365,7 +368,9 @@ func (wb *workbook) start(ctx context.Context, index int, ref sheetRef, budget b
 		}
 		switch ref.kind {
 		case ns.RelChartsheet:
-			sh.unread["chart"]++
+			// A sheet that is a chart: what is on it is read from its
+			// drawing.
+			sh.chartSheet = true
 		case ns.RelMacrosheet, ns.RelIntlMacrosheet:
 			// A sheet of macros in the language Excel had before VBA. It
 			// is a sheet of cells like any other: what the cells show is
@@ -453,6 +458,26 @@ func (sh *sheet) content() (sawImage bool) {
 	// The tables hold the text now; the list of cells is not needed while
 	// the other sheets are read.
 	sh.cells, sh.raw, sh.out = nil, nil, nil
+	return sawImage
+}
+
+// chartContent reads a chart sheet: the drawing it holds, which has the
+// chart, and anything drawn beside it.
+func (sh *sheet) chartContent() (sawImage bool) {
+	var blocks []placed
+	for _, rel := range sh.list {
+		if rel.External || !ns.IsRel(rel.Type, ns.RelDrawing) || len(blocks) > 1<<16 {
+			continue
+		}
+		var saw bool
+		blocks, saw = sh.drawing(rel.Target, blocks)
+		sawImage = sawImage || saw
+	}
+	// A chart sheet has no cells: its blocks have no place on one.
+	for i := range blocks {
+		blocks[i].block.Loc.Range = ""
+	}
+	sh.part.Blocks = sh.arrange(blocks)
 	return sawImage
 }
 
