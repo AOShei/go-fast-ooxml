@@ -47,7 +47,8 @@ when the work planned before the release is done.
 ### Safety
 
 - Limits on input size, decompressed bytes, the text a document may hold
-  (link targets included, as often as they are written), archive members,
+  (link targets included, as often as they are written, and a cost for
+  every block and every table cell), archive members,
   cells and password-hashing rounds; no crash, hang or unbounded
   allocation on any input. See `SECURITY.md`.
 - A file cut short, which has lost the directory of its archive, is read

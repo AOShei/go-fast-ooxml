@@ -317,7 +317,7 @@ func (wb *workbook) sheet(ctx context.Context, index int, ref sheetRef, budget b
 func (wb *workbook) start(ctx context.Context, index int, ref sheetRef, budget bool) (sh *sheet, readable bool) {
 	sh = &sheet{wb: wb, ctx: ctx, name: ref.target, budget: budget, unread: map[string]int{}}
 	sh.room = gofastcore.TextBudgetFrom(ctx)
-	sh.shapes.Budget = sh.room
+	sh.shapes.Budget, sh.shapes.Cost = sh.room, gofastcore.BlockCost
 	part := &sh.part
 	part.Kind, part.Number, part.Name = gofastcore.PartSheet, index+1, ref.name
 	if ref.hidden {

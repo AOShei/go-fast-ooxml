@@ -78,7 +78,7 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 			sh.part.MarkHidden()
 		}
 		band, sh.part = sh.part, whole
-		sh.noValue, sh.split, sh.removed, sh.unmapped = 0, 0, 0, 0
+		sh.noValue, sh.split, sh.removed, sh.unmapped, sh.pending = 0, 0, 0, 0, 0
 		emitted = true
 		if !yield(band) {
 			stopped = true

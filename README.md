@@ -97,7 +97,11 @@ with warnings that say what could not.
   default, counted as often as it occurs and together with the files
   embedded in it. A small file can say a long text many times (one string
   that every cell refers to); the part that reaches the limit is cut off
-  there with `limit.exceeded`. The targets of links count as text does,
+  there with `limit.exceeded`. Every block counts 128 bytes besides its
+  text, and every cell of a table 16, empty or not (core's `BlockCost` and
+  `CellCost`): a file decides how many there are as freely as how long a
+  string is. A table with no room for all its rows keeps those that fit.
+  The targets of links count as text does,
   each time a link is written: one address may be linked to any number of
   times. An address is kept whole up to 8 KiB. The other limits are in
   [`SECURITY.md`](SECURITY.md).

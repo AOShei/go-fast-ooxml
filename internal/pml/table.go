@@ -7,6 +7,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -312,7 +313,9 @@ func (pg *page) table(sh *props) {
 					}
 					switch {
 					case s.Is(ns.Draw, "txBody"):
+						t.Cost = 0 // a cell: charged with the table
 						t.Read(s)
+						t.Cost = gofastcore.BlockCost
 						pg.programs += t.Programs
 						t.Programs = 0
 						switch len(t.Paras) {
@@ -415,6 +418,34 @@ func (pg *page) table(sh *props) {
 		for len(rows[r]) < cols {
 			rows[r] = append(rows[r], "")
 		}
+	}
+	// The table is a block, and each of its cells takes room, filled or
+	// not. A table the slide has no room for in full keeps the rows that
+	// fit, and the reading of the slide ends there.
+	fit := warn.FitRows(pg.text.Budget, len(rows), cols)
+	if fit > 0 {
+		pg.text.Taken += int64(gofastcore.BlockCost + gofastcore.CellCost*fit*cols)
+	}
+	if fit < len(rows) {
+		pg.s.Abort(warn.ErrText)
+		if fit == 0 {
+			return
+		}
+		rows = rows[:fit]
+		kept := merges[:0]
+		for _, m := range merges {
+			if m.Row < fit {
+				kept = append(kept, m)
+			}
+		}
+		merges = kept
+		keptNotes := notes[:0]
+		for _, cn := range notes {
+			if int(cn.row) < fit {
+				keptNotes = append(keptNotes, cn)
+			}
+		}
+		notes = keptNotes
 	}
 	tb := &gofastcore.Table{Rows: rows}
 	if look.firstRow {

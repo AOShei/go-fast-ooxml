@@ -306,10 +306,7 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	l.staticBytes = 0
 	for i := range l.static {
 		b := &l.static[i]
-		l.staticBytes += len(b.Text) + len(b.Attrs["href"])
-		for _, sp := range b.Spans {
-			l.staticBytes += len(sp.Href) // written with every slide, as the text is
-		}
+		l.staticBytes += blockBytes(b)
 		if found := gofastcore.InvisibleChars(b.Text); found != nil {
 			b.Spans = append(b.Spans[:len(b.Spans):len(b.Spans)], found...)
 			b.Hidden |= gofastcore.HiddenChars
@@ -509,10 +506,7 @@ func (pg *page) addPaper(blocks []gofastcore.Block, which int, own [2]bool, room
 				continue
 			}
 			kept = append(kept, b)
-			bytes += len(b.Text)
-			for _, sp := range b.Spans {
-				bytes += len(sp.Href)
-			}
+			bytes += blockBytes(&b)
 		}
 		paper = kept
 	}
@@ -581,10 +575,7 @@ func (p *presentation) readPaper(which int) (blocks []gofastcore.Block, from []i
 		bytes := 0
 		for i := range blocks {
 			b := &blocks[i]
-			bytes += len(b.Text)
-			for _, sp := range b.Spans {
-				bytes += len(sp.Href)
-			}
+			bytes += blockBytes(b)
 			// Marked once here: the blocks are shared by every slide.
 			if found := gofastcore.InvisibleChars(b.Text); found != nil {
 				b.Spans = append(b.Spans[:len(b.Spans):len(b.Spans)], found...)
@@ -594,4 +585,22 @@ func (p *presentation) readPaper(which int) (blocks []gofastcore.Block, from []i
 		p.paper[which], p.paperFrom[which], p.paperBytes[which] = blocks, from, bytes
 	})
 	return p.paper[which], p.paperFrom[which], p.paperBytes[which]
+}
+
+// blockBytes is what a block a slide repeats from its layout, master or
+// notes master takes from the text budget each time: BlockCost, its text,
+// its links, and the cells of a table.
+func blockBytes(b *gofastcore.Block) int {
+	n := gofastcore.BlockCost + len(b.Text) + len(b.Attrs["href"])
+	for _, sp := range b.Spans {
+		n += len(sp.Href)
+	}
+	if b.Table != nil && len(b.Table.Rows) > 0 {
+		for _, row := range b.Table.Rows {
+			for _, c := range row {
+				n += gofastcore.CellCost + len(c)
+			}
+		}
+	}
+	return n
 }

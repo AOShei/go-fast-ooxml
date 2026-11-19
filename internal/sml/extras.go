@@ -119,6 +119,12 @@ func (sh *sheet) comments() []placed {
 		if len(text) == 0 {
 			return
 		}
+		if !sh.room.Take(gofastcore.BlockCost + len(text)) {
+			if sh.cut == "" {
+				sh.cut = "the limit on the amount of text was reached"
+			}
+			return
+		}
 		b := gofastcore.Block{Kind: gofastcore.KindNote, Text: string(text), Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteComment}}
 		if author != "" {
 			b.Attrs[gofastcore.AttrAuthor] = author
@@ -315,7 +321,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 				// alternative text and, if the picture is not in the
 				// file, its address, which like a link's may be given
 				// any number of times.
-				said := len(alt)
+				said := gofastcore.BlockCost + len(alt)
 				if rel.External {
 					said += len(rel.Target)
 				}

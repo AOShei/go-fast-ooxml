@@ -35,6 +35,30 @@ func documentText(doc *gofastcore.Document) (n int) {
 	return n
 }
 
+// documentCost returns what a document takes from the text budget by
+// core's rule: its text and the text of its tables' cells, link targets,
+// gofastcore.BlockCost for every block and gofastcore.CellCost for every
+// cell, with the documents embedded in it.
+func documentCost(doc *gofastcore.Document) (n int) {
+	doc.Walk(func(d *gofastcore.Document, _ int) bool {
+		for _, b := range d.AllBlocks() {
+			n += gofastcore.BlockCost + len(b.Text) + len(b.Attrs["href"])
+			for _, sp := range b.Spans {
+				n += len(sp.Href)
+			}
+			if b.Table != nil {
+				for _, row := range b.Table.Rows {
+					for _, cell := range row {
+						n += gofastcore.CellCost + len(cell)
+					}
+				}
+			}
+		}
+		return true
+	})
+	return n
+}
+
 // cutForText reports whether a part of the document says it was cut off
 // at the limit on text.
 func cutForText(doc *gofastcore.Document) bool {
@@ -82,7 +106,7 @@ func TestTextLimit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		all := documentText(whole)
+		all := documentCost(whole)
 		if cutForText(whole) || all < 50_000 {
 			t.Fatalf("%s: %d bytes of text with the default limit, cut %v", name, all, cutForText(whole))
 		}
@@ -94,16 +118,16 @@ func TestTextLimit(t *testing.T) {
 					t.Fatalf("%s, limit %d: %v", name, limit, err)
 				}
 				ooxmltest.CheckDocument(t, doc)
-				got := documentText(doc)
+				got := documentCost(doc)
 				switch {
 				case limit < 0 || limit >= all:
 					if got != all || cutForText(doc) {
 						t.Errorf("%s, limit %d: %d bytes of %d, cut %v", name, limit, got, all, cutForText(doc))
 					}
 				case got > limit || !cutForText(doc):
-					t.Errorf("%s, limit %d: %d bytes of text, cut %v", name, limit, got, cutForText(doc))
+					t.Errorf("%s, limit %d: %d bytes taken, cut %v", name, limit, got, cutForText(doc))
 				case limit >= 10_000 && got < limit/2:
-					t.Errorf("%s, limit %d: only %d bytes of text kept", name, limit, got)
+					t.Errorf("%s, limit %d: only %d bytes taken", name, limit, got)
 				}
 				if json := asJSON(t, doc); first == "" {
 					first = json
@@ -128,7 +152,7 @@ func TestTextLimitWithinOneParagraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	ooxmltest.CheckDocument(t, doc)
-	if got := documentText(doc); got > 100_000 || !cutForText(doc) {
+	if got := documentCost(doc); got > 100_000 || !cutForText(doc) {
 		t.Errorf("%d bytes of text, cut %v", got, cutForText(doc))
 	}
 }
@@ -158,7 +182,7 @@ func TestTextLimitCountsWhatEverySlideRepeats(t *testing.T) {
 			t.Fatal(err)
 		}
 		ooxmltest.CheckDocument(t, doc)
-		if got := documentText(doc); got > 1<<20 || got < 1<<19 || !cutForText(doc) {
+		if got := documentCost(doc); got > 1<<20 || got < 1<<19 || !cutForText(doc) {
 			t.Errorf("%d workers: %d bytes of text, cut %v", workers, got, cutForText(doc))
 		}
 		if json := asJSON(t, doc); first == "" {
@@ -205,8 +229,8 @@ func TestTextLimitIsSharedWithEmbeddedFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		ooxmltest.CheckDocument(t, doc)
-		if got := documentText(doc); got > limit || got < limit*9/10 {
-			t.Errorf("%d workers: %d bytes of text in the document and its embedded files, limit %d", workers, got, limit)
+		if got := documentCost(doc); got > limit || got < limit*9/10 {
+			t.Errorf("%d workers: %d bytes taken by the document and its embedded files, limit %d", workers, got, limit)
 		}
 		// The first four are whole, the fifth is cut off where the text
 		// ran out, and the rest are listed or empty, each saying why.
@@ -236,8 +260,8 @@ func TestTextLimitIsSharedWithEmbeddedFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := documentText(doc); got > limit || got < limit*9/10 {
-			t.Errorf("reading %d: %d bytes of text", reading, got)
+		if got := documentCost(doc); got > limit || got < limit*9/10 {
+			t.Errorf("reading %d: %d bytes taken", reading, got)
 		}
 	}
 }
@@ -495,7 +519,7 @@ func TestTextLimitCountsLinkTargets(t *testing.T) {
 				t.Fatalf("%s: %v", c.name, err)
 			}
 			ooxmltest.CheckDocument(t, doc)
-			if got := documentText(doc) + documentLinks(doc); got > limit || got < limit/2 || !cutForText(doc) {
+			if got := documentCost(doc); got > limit || got < limit/2 || !cutForText(doc) {
 				t.Errorf("%s, %d workers: %d bytes of text and link targets, cut %v", c.name, workers, got, cutForText(doc))
 			}
 			if json := asJSON(t, doc); first == "" {
