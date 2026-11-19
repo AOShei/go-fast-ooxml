@@ -91,6 +91,7 @@ type shared struct {
 
 	tableOnce  sync.Once
 	tables     map[string]*tableStyle
+	presets    map[string]*tableStyle // PowerPoint's built-in styles that tables have named, under mu
 	authorOnce sync.Once
 	authors    map[string]string
 }

@@ -386,10 +386,13 @@ flagged. What this means for a reviewer:
   includes text over a picture, over a shape that is not a rectangle, or
   over the edge of one: only a rectangle of one colour that lies under all
   of the text's shape is taken as what the text is seen against.
-- **Tables in PowerPoint whose style is not in the file.** Office has
-  table styles built in, and a file may name one without defining it (files
-  written by python-pptx do). What such a style gives a cell is not known,
-  so text there is judged only against a fill the cell itself states.
+- **Table styles that are not known.** Office has table styles built in,
+  and a file may name one without defining it (Excel always does; files
+  written by python-pptx do too). Excel's 60 are taken from the standard;
+  of PowerPoint's 74, the 52 whose definitions PowerPoint wrote into the
+  files of the test corpus are known. Where a table's style is neither in
+  the file nor known, text in it is judged only against a fill the cell
+  itself states.
 - **What a slide looks like during the show.** Animations are not played.
   Text that an animation reveals, hides or moves is judged where the slide
   stores it.

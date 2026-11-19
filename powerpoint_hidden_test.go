@@ -318,10 +318,15 @@ func TestPowerPointHiddenTextInTables(t *testing.T) {
 		// A table with no style: its cells show what is behind the table.
 		tableFrame(3, 10, 200, 600, 60, `<a:tblPr/>`,
 			trow(cell(colored(white, "White on the slide")), cell(plain("Black on the slide")), filledCell(solid(white), colored("FDFDFD", "Nearly white on white")))) +
-		// A table with a style the file does not define, as python-pptx
-		// writes: what its cells look like is not known.
+		// A table with one of PowerPoint's built-in styles that the file
+		// names and does not define, as python-pptx writes: PowerPoint's
+		// own definition says the header is filled with accent 1.
 		tableFrame(4, 10, 300, 600, 60, `<a:tblPr firstRow="1"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr>`,
-			trow(cell(colored(white, "White in a table whose style is not in the file")), filledCell(solid(white), colored(white, "White on a cell filled white")))) +
+			trow(cell(colored(white, "White on the built-in style's header")), cell(colored("4472C4", "Accent 1 on accent 1")), filledCell(solid(white), colored(white, "White on a cell filled white")))) +
+		// A table with a style neither the file nor PowerPoint has: what
+		// its cells look like is not known.
+		tableFrame(6, 10, 480, 600, 60, `<a:tblPr firstRow="1"><a:tableStyleId>{00000000-0000-0000-0000-000000000000}</a:tableStyleId></a:tblPr>`,
+			trow(cell(colored(white, "White in a table whose style is not known")))) +
 		// A table in which every cell is hidden the same way.
 		tableFrame(5, 10, 400, 600, 60, `<a:tblPr/>`, trow(cell(colored(white, "All")), cell(colored(white, "white"))))})
 	pkg.Rel("ppt/presentation.xml", ooxmltest.RelTableStyle, "tableStyles.xml")
@@ -332,8 +337,9 @@ func TestPowerPointHiddenTextInTables(t *testing.T) {
 		`  table hidden=invisible+tiny+low_contrast header=1 [["Header: light on dark, from the style" "Navy on the header's navy"] ["Body: dark on light" "The band's own colour"] ["White on the white band" "Dark text on a cell filled black"] ["Visible. Tiny." "No fill"]]`+
 			` hidden(0,1 low_contrast) hidden(1,1 low_contrast) hidden(2,0 low_contrast) hidden(2,1 low_contrast) hidden(3,0 tiny) hidden(3,1 invisible)`,
 		`  table hidden=low_contrast [["White on the slide" "Black on the slide" "Nearly white on white"]] hidden(0,0 low_contrast) hidden(0,2 low_contrast)`,
-		`  table hidden=low_contrast header=1 [["White in a table whose style is not in the file" "White on a cell filled white"]] hidden(0,1 low_contrast)`,
+		`  table hidden=low_contrast header=1 [["White on the built-in style's header" "Accent 1 on accent 1" "White on a cell filled white"]] hidden(0,1 low_contrast) hidden(0,2 low_contrast)`,
 		`  table hidden=low_contrast [["All" "white"]]`,
+		`  table header=1 [["White in a table whose style is not known"]]`,
 	)
 }
 

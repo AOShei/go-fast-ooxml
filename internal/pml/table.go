@@ -38,83 +38,106 @@ type tableStyle struct {
 // maxTableStyles bounds the table styles kept from a presentation.
 const maxTableStyles = 1024
 
-// tableStyle returns the table style with the given identifier, or nil
-// if the presentation does not define it. Office has styles built in
-// that a file may name without defining; what those look like is not
-// known here.
+// tableStyle returns the table style with the given identifier: the
+// presentation's own definition, or, for one of PowerPoint's built-in
+// styles that the file names without defining, PowerPoint's (see
+// presetstyles.go). It returns nil for a style neither knows.
 func (p *presentation) tableStyle(id string) *tableStyle {
 	p.tableOnce.Do(func() {
 		tables := map[string]*tableStyle{}
-		p.load(p.tablePart, func(s *xmlscan.Scanner) {
-			var cur *tableStyle
-			part, level := -1, 0
-			for s.Next() != xmlscan.EOF {
+		p.load(p.tablePart, func(s *xmlscan.Scanner) { readTableStyles(s, tables) })
+		p.tables = tables
+	})
+	if st, own := p.tables[id]; own {
+		return st
+	}
+	xml, ok := presetTableStyles[id]
+	if !ok {
+		return nil
+	}
+	// A built-in style is read when a table first names it.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if st, ok := p.presets[id]; ok {
+		return st
+	}
+	if p.presets == nil {
+		p.presets = map[string]*tableStyle{}
+	}
+	var s xmlscan.Scanner
+	s.ResetBytes([]byte(`<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`+xml+`</a:tblStyleLst>`), scanOptions)
+	readTableStyles(&s, p.presets)
+	return p.presets[id]
+}
+
+// readTableStyles reads the table styles of a tableStyles part (or of a
+// list of them) into tables, by identifier.
+func readTableStyles(s *xmlscan.Scanner, tables map[string]*tableStyle) {
+	var cur *tableStyle
+	part, level := -1, 0
+	for s.Next() != xmlscan.EOF {
+		if s.Kind() != xmlscan.Start {
+			continue
+		}
+		switch {
+		case s.Is(ns.Draw, "tblStyle"):
+			cur, level, part = nil, s.Depth(), -1
+			if v, ok := s.Attr(xmlscan.NoSpace, "styleId"); ok && len(v) <= 64 && len(tables) < maxTableStyles {
+				cur = &tableStyle{}
+				tables[string(v)] = cur
+			} else {
+				s.Skip()
+			}
+		case cur == nil:
+		case s.Depth() == level+1:
+			part = -1
+			for i, name := range partNames {
+				if s.Space() == ns.Draw && string(s.Local()) == name {
+					part = i
+				}
+			}
+			if part < 0 {
+				s.Skip()
+			}
+		case part < 0:
+			s.Skip()
+		case s.Is(ns.Draw, "tcTxStyle"):
+			// The colour of the text is the colour element that is
+			// its child; the font reference has one of its own.
+			depth := s.Depth()
+			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 				if s.Kind() != xmlscan.Start {
 					continue
 				}
-				switch {
-				case s.Is(ns.Draw, "tblStyle"):
-					cur, level, part = nil, s.Depth(), -1
-					if v, ok := s.Attr(xmlscan.NoSpace, "styleId"); ok && len(v) <= 64 && len(tables) < maxTableStyles {
-						cur = &tableStyle{}
-						tables[string(v)] = cur
-					} else {
-						s.Skip()
-					}
-				case cur == nil:
-				case s.Depth() == level+1:
-					part = -1
-					for i, name := range partNames {
-						if s.Space() == ns.Draw && string(s.Local()) == name {
-							part = i
-						}
-					}
-					if part < 0 {
-						s.Skip()
-					}
-				case part < 0:
+				if s.Is(ns.Draw, "fontRef") || s.Is(ns.Draw, "font") {
 					s.Skip()
-				case s.Is(ns.Draw, "tcTxStyle"):
-					// The colour of the text is the colour element that is
-					// its child; the font reference has one of its own.
-					depth := s.Depth()
-					for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-						if s.Kind() != xmlscan.Start {
-							continue
-						}
-						if s.Is(ns.Draw, "fontRef") || s.Is(ns.Draw, "font") {
-							s.Skip()
-							continue
-						}
-						if c := dml.ReadColorElement(s); !cur.ink[part].IsSet() {
-							cur.ink[part] = c
-						}
-					}
-				case s.Is(ns.Draw, "fill"):
-					depth := s.Depth()
-					for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-						if s.Kind() != xmlscan.Start {
-							continue
-						}
-						if f, ok := dml.ReadFill(s); ok {
-							if cur.fill[part].Paint == dml.PaintUnset {
-								cur.fill[part] = f
-							}
-							continue
-						}
-						s.Skip()
-					}
-				case s.Is(ns.Draw, "fillRef"):
-					cur.fill[part] = dml.Fill{Paint: dml.PaintOther} // a fill style of the theme
-					s.Skip()
-				case s.Is(ns.Draw, "tcBdr"):
-					s.Skip() // the borders have fills of their own
+					continue
+				}
+				if c := dml.ReadColorElement(s); !cur.ink[part].IsSet() {
+					cur.ink[part] = c
 				}
 			}
-		})
-		p.tables = tables
-	})
-	return p.tables[id]
+		case s.Is(ns.Draw, "fill"):
+			depth := s.Depth()
+			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+				if s.Kind() != xmlscan.Start {
+					continue
+				}
+				if f, ok := dml.ReadFill(s); ok {
+					if cur.fill[part].Paint == dml.PaintUnset {
+						cur.fill[part] = f
+					}
+					continue
+				}
+				s.Skip()
+			}
+		case s.Is(ns.Draw, "fillRef"):
+			cur.fill[part] = dml.Fill{Paint: dml.PaintOther} // a fill style of the theme
+			s.Skip()
+		case s.Is(ns.Draw, "tcBdr"):
+			s.Skip() // the borders have fills of their own
+		}
+	}
 }
 
 // tableLook is what a table says of itself: which special rows and
