@@ -145,12 +145,17 @@ func FuzzXlsx(f *testing.F) {
 			`<row hidden="1"><c s="2"><v>5</v></c><c s="4"><v>1.5</v></c><c s="5"><v>0.75</v></c><c s="6" t="str"><v>7</v></c></row>`,
 			`<cols><col min="2" max="3" hidden="1"/></cols><mergeCells><mergeCell ref="A1:B2"/></mergeCells><tableParts><tablePart r:id="rId1"/></tableParts><drawing r:id="rId3"/>`),
 		sheet(xlRow(5, xlNum("XFD5", "1"))+xlRow(1048576, xlNum("A1048576", "2"))+xlRow(3, xlNum("B3", "3"), xlNum("A3", "4"), xlNum("A3", "5")), ``),
+		// Formulas of every kind, and links.
+		sheet(xlRow(1, `<c r="A1"><f t="shared" ref="A1:A3" si="0">B1*$C$1+'x y'!D1</f><v>1</v></c>`, `<c r="B1"><f t="array" ref="B1:B2">C1:C2*2</f><v>2</v></c>`,
+			`<c r="C1" s="3"><f t="dataTable" ref="C1:D2" dt2D="1" r1="E1" r2="F1"/><v>3</v></c>`, `<c r="D1" t="str"><f>"x"&amp;A1</f><v>x1</v></c>`)+
+			xlRow(2, `<c r="A2"><f t="shared" si="0"/><v>4</v></c>`, `<c r="B2"><f t="shared" si="9"/><v>5</v></c>`, `<c r="C2" t="e"><v>#REF!</v></c>`),
+			`<hyperlinks><hyperlink ref="A1:B2" r:id="rId9"/><hyperlink ref="D1" location="Sheet2!A1"/><hyperlink ref="A1:XFD1048576" location="x"/></hyperlinks>`),
 		sheet(xlRow(1, xlNum("A1", "1"), xlNum("C1", "2"), xlNum("E1", "3"))+xlRow(3, xlNum("B3", "4"))+xlRow(4, xlNum("D4", "1e308"), xlNum("E4", "-0"), xlNum("F4", "abc")), ``),
 	} {
 		f.Add(s, styles, strs, drawing)
 		f.Add(s, symbolStyles, strs, drawing)
 	}
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Cells: true, Spans: true}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
 	f.Fuzz(func(t *testing.T, sheet, styles, strs, drawing []byte) {
 		pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S"}, ooxmltest.Sheet{Name: "T", State: "hidden", Data: xlRow(1, `<c r="A1" t="s"><v>1</v></c>`)})

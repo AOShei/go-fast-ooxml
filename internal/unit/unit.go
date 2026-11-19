@@ -52,6 +52,9 @@ type Tally struct {
 type Source interface {
 	// Len returns the number of parts.
 	Len() int
+	// Stored returns the index of the stored part (gofastcore.PartStored),
+	// which is the last, or -1 if the document has none.
+	Stored() int
 	// Noun names a part of this format, in the plural: "sheets".
 	Noun() string
 	// HiddenChecked returns the reasons for hidden text that the reader

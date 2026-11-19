@@ -683,7 +683,8 @@ func TestExcelWorkersGiveTheSameResult(t *testing.T) {
 
 func TestExcelOtherKindsOfSheet(t *testing.T) {
 	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Data", Data: xlRow(1, xlNum("A1", "1"))}, ooxmltest.Sheet{Name: "Empty"})
-	// A sheet of old-style macros: its cells are read like any sheet's.
+	// A sheet of old-style macros: its cells are read like any sheet's,
+	// and its formulas, which are its code, are stored and flagged.
 	macro := pkg.Rel("xl/workbook.xml", "http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet", "macrosheets/sheet1.xml")
 	pkg.Add("xl/macrosheets/sheet1.xml", "application/vnd.ms-excel.macrosheet+xml",
 		`<xm:macrosheet xmlns="`+ooxmltest.NSSheet+`" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData>`+
@@ -704,6 +705,9 @@ func TestExcelOtherKindsOfSheet(t *testing.T) {
 		`sheet 4 "Gone"`,
 		`sheet 5 "No part named"`,
 		`sheet 6 "Macros"`, `  table A1:B1 inferred [["Auto_Open" "0"]]`,
+		// The macro sheet's code is in the stored part, flagged.
+		`stored 7 "" hidden=invisible`,
+		"  code  \"B1\\t=EXEC(\\\"calc.exe\\\")\" hidden=invisible language=excel4 name=Macros stored=macro",
 	)
 	if !warned(doc, gofastcore.WarnInputActiveContent) {
 		t.Errorf("the macro sheet is not reported: %+v", doc.Warnings)
