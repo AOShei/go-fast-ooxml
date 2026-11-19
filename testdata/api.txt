@@ -5,6 +5,7 @@ const (
 	DefaultMaxDecodedBytes	= 2 << 30
 	DefaultMaxArchiveMembers	= 100_000
 	DefaultMaxCells	= 20_000_000
+	DefaultMaxSpinCount	= 1_000_000
 )
 const (
 	WarnPropertiesDamaged	= "ooxml.properties_damaged"
@@ -15,6 +16,8 @@ const (
 	WarnTableFlattened	= wml.WarnTableFlattened
 	WarnFormulaNoValue	= warn.FormulaNoValue
 	WarnRegionSplit	= warn.RegionSplit
+	WarnDecrypted	= "ooxml.decrypted"
+	WarnIntegrityMismatch	= "ooxml.integrity_mismatch"
 	WarnHiddenUnchecked	= warn.HiddenUnchecked
 )
 func Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error)
@@ -23,6 +26,7 @@ func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*g
 type Extractor struct {
 	MaxArchiveMembers	int
 	MaxCells	int64
+	MaxSpinCount	int
 }
 func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error)
 func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error)

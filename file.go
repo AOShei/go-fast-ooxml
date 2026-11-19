@@ -40,18 +40,20 @@ import (
 // over one pass: one call of Document, Part or Children, or one run
 // through Parts or Rows. Passes that run at the same time share it.
 type File struct {
-	e       Extractor
-	opts    gofastcore.Options
-	r       io.ReaderAt
-	size    int64
-	closer  io.Closer
-	source  gofastcore.Source
-	meta    gofastcore.Metadata
-	opened  []gofastcore.Warning // warnings about the document known when it was opened
-	checked gofastcore.Hidden
-	parts   int
-	noun    string
-	sheets  []Sheet
+	e        Extractor
+	opts     gofastcore.Options
+	r        io.ReaderAt // the file
+	size     int64
+	body     io.ReaderAt // the package: the file, or what it decrypts to
+	bodySize int64
+	closer   io.Closer
+	source   gofastcore.Source
+	meta     gofastcore.Metadata
+	opened   []gofastcore.Warning // warnings about the document known when it was opened
+	checked  gofastcore.Hidden
+	parts    int
+	noun     string
+	sheets   []Sheet
 
 	mu      sync.Mutex
 	sess    *session            // the reading in use
@@ -96,6 +98,10 @@ func OpenReaderAt(r io.ReaderAt, size int64, opts *gofastcore.Options) (*File, e
 // Open opens the named file. The file name is recorded as the source
 // name unless opts.Name is set. Close the File when done with it.
 func (e *Extractor) Open(path string, opts *gofastcore.Options) (*File, error) {
+	return e.openFile(context.Background(), path, opts)
+}
+
+func (e *Extractor) openFile(ctx context.Context, path string, opts *gofastcore.Options) (*File, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -112,7 +118,7 @@ func (e *Extractor) Open(path string, opts *gofastcore.Options) (*File, error) {
 	if o.Name == "" {
 		o.Name = path
 	}
-	f, err := e.OpenReaderAt(file, info.Size(), &o)
+	f, err := e.open(ctx, file, info.Size(), &o)
 	if err != nil {
 		file.Close()
 		return nil, err
@@ -130,13 +136,32 @@ func (e *Extractor) OpenBytes(data []byte, opts *gofastcore.Options) (*File, err
 // OpenReaderAt opens a file of the given size read through r, which must
 // stay readable until the File is closed. The errors are those of
 // Extract.
+//
+// A password-protected file is opened with Options.Password. Trying a
+// password takes as long as the file's encryption is made to take: a
+// tenth of a second is usual.
 func (e *Extractor) OpenReaderAt(r io.ReaderAt, size int64, opts *gofastcore.Options) (*File, error) {
-	f := &File{r: r, size: size, tallies: map[int]*unit.Tally{}}
+	return e.open(context.Background(), r, size, opts)
+}
+
+func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*File, error) {
+	f := &File{r: r, size: size, body: r, bodySize: size, tallies: map[int]*unit.Tally{}}
 	if e != nil {
 		f.e = *e
 	}
 	if opts != nil {
 		f.opts = *opts
+	}
+	if limit := gofastcore.ResolveLimit(f.opts.Limits.MaxInputBytes, DefaultMaxInputBytes); size > limit {
+		return nil, fmt.Errorf("gofastooxml: input is %d bytes, limit is %d: %w", size, limit, gofastcore.ErrLimitExceeded)
+	}
+	if size < 4 {
+		return nil, fmt.Errorf("gofastooxml: input is %d bytes: %w", size, gofastcore.ErrMalformed)
+	}
+	// A compound file is a password-protected package, which is opened
+	// here, or a file of the formats before these, which is not read.
+	if err := f.unlock(ctx); err != nil {
+		return nil, err
 	}
 	sess, err := f.open(true)
 	if err != nil {
@@ -158,17 +183,8 @@ func (e *Extractor) OpenReaderAt(r io.ReaderAt, size int64, opts *gofastcore.Opt
 // meets every limit where the first did.
 func (f *File) open(first bool) (*session, error) {
 	opts := &f.opts
-	if limit := gofastcore.ResolveLimit(opts.Limits.MaxInputBytes, DefaultMaxInputBytes); f.size > limit {
-		return nil, fmt.Errorf("gofastooxml: input is %d bytes, limit is %d: %w", f.size, limit, gofastcore.ErrLimitExceeded)
-	}
-	if f.size < 4 {
-		return nil, fmt.Errorf("gofastooxml: input is %d bytes: %w", f.size, gofastcore.ErrMalformed)
-	}
-	if reason := compoundFile(f.r, f.size); reason != "" {
-		return nil, fmt.Errorf("gofastooxml: %s: %w", reason, gofastcore.ErrUnsupported)
-	}
 	members := int(gofastcore.ResolveLimit(int64(f.e.MaxArchiveMembers), DefaultMaxArchiveMembers))
-	pkg, err := opc.Open(f.r, f.size, opc.Limits{
+	pkg, err := opc.Open(f.body, f.bodySize, opc.Limits{
 		MaxDecodedBytes: gofastcore.ResolveLimit(opts.Limits.MaxDecodedBytes, DefaultMaxDecodedBytes),
 		MaxMembers:      members,
 	})

@@ -35,6 +35,9 @@ type File struct {
 	Variant string `json:"variant,omitempty"`
 	// Note says what the file is for, or what is unusual about it.
 	Note string `json:"note,omitempty"`
+	// Password opens the file, if it is encrypted
+	// (testdata/encrypted.json).
+	Password string `json:"password,omitempty"`
 }
 
 // LoadManifest reads testdata/<name> under the repository root.

@@ -19,6 +19,10 @@ import (
 // Seeds are the builder's presets and every committed fixture.
 func FuzzOpen(f *testing.F) {
 	f.Add([]byte{})
+	// Encrypted files, which are compound files: the fuzzer changes the
+	// container, the encryption information and the package.
+	f.Add(ooxmltest.Encrypt(ooxmltest.Docx(ooxmltest.Para("x")).Bytes(), "VelvetSweatshop", ooxmltest.Encryption{SpinCount: 2}))
+	f.Add(ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 600)}))
 	f.Add([]byte("PK\x03\x04"))
 	f.Add(ooxmltest.Docx(ooxmltest.Para("seed")).WithCore(`<dc:title>t</dc:title>`).Bytes())
 	f.Add(ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: `<row r="1">` + ooxmltest.InlineCell("A1", "seed") + `</row>`}).Bytes())
@@ -26,10 +30,12 @@ func FuzzOpen(f *testing.F) {
 	for _, file := range ooxmltest.LoadManifest(f, "fixtures.json") {
 		f.Add(file.Read(f, false))
 	}
-	// A small budget keeps a fuzzed decompression bomb cheap.
+	// A small budget keeps a fuzzed decompression bomb cheap, and a low
+	// bound on the rounds of hashing keeps a fuzzed password check cheap.
 	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}}
+	e := &gofastooxml.Extractor{MaxSpinCount: 2000}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		doc, err := gofastooxml.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
+		doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
 		checkOutcome(t, "fuzz input", doc, err)
 	})
 }

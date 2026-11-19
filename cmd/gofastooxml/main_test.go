@@ -256,6 +256,26 @@ func TestOptions(t *testing.T) {
 	}
 }
 
+func TestPassword(t *testing.T) {
+	path := filepath.Join(ooxmltest.Root(t), "testdata", "encrypted", "basic-docx.agile.docx")
+	stdout, stderr, status := command(t, "-password", "correct horse", path)
+	if status != 0 || stderr != "" {
+		t.Fatalf("status %d: %s", status, stderr)
+	}
+	doc := documents(t, stdout)[0]
+	if doc.Source.Format != "docx" || !strings.Contains(doc.Text(), "Quarterly Report") || len(doc.Warnings) != 1 || doc.Warnings[0].Code != "ooxml.decrypted" {
+		t.Errorf("format %q, warnings %v", doc.Source.Format, doc.Warnings)
+	}
+	// Without the password, or with another, the file is not read, and
+	// the reason is the one a person needs.
+	for password, want := range map[string]string{"": "password required", "guess": "wrong password"} {
+		stdout, stderr, status := command(t, "-password", password, path)
+		if status != 1 || stdout != "" || !strings.Contains(stderr, want) {
+			t.Errorf("password %q: status %d, standard error %q", password, status, stderr)
+		}
+	}
+}
+
 func TestUsageErrors(t *testing.T) {
 	file := fixture(t, "lists.docx")
 	for name, args := range map[string][]string{

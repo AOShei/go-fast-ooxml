@@ -1,0 +1,27 @@
+cpu: AMD Ryzen 9 9900X 12-Core Processor            
+BenchmarkExtract/large.xlsx/single-24         	       2	 588350481 ns/op	  33.83 MB/s	410915952 B/op	    8236 allocs/op
+BenchmarkExtract/large.xlsx/single-24         	       2	 586512490 ns/op	  33.94 MB/s	410899516 B/op	    8196 allocs/op
+BenchmarkExtract/large.xlsx/single-24         	       2	 590906666 ns/op	  33.68 MB/s	410899548 B/op	    8198 allocs/op
+BenchmarkExtract/large.xlsx/all-24            	       6	 173320997 ns/op	 114.84 MB/s	410911342 B/op	    8206 allocs/op
+BenchmarkExtract/large.xlsx/all-24            	       6	 176377593 ns/op	 112.85 MB/s	410850204 B/op	    8195 allocs/op
+BenchmarkExtract/large.xlsx/all-24            	       6	 177551286 ns/op	 112.10 MB/s	410873513 B/op	    8198 allocs/op
+BenchmarkEncrypted/password/agile-24          	      87	  12608124 ns/op
+BenchmarkEncrypted/password/agile-24          	      96	  12538565 ns/op
+BenchmarkEncrypted/password/agile-24          	      90	  12656421 ns/op
+BenchmarkEncrypted/password/standard-24       	     453	   2628565 ns/op
+BenchmarkEncrypted/password/standard-24       	     457	   2615136 ns/op
+BenchmarkEncrypted/password/standard-24       	     456	   2623681 ns/op
+BenchmarkEncrypted/large.xlsx/agile/single-24 	       2	 629315581 ns/op	  31.88 MB/s
+BenchmarkEncrypted/large.xlsx/agile/single-24 	       2	 629863656 ns/op	  31.86 MB/s
+BenchmarkEncrypted/large.xlsx/agile/single-24 	       2	 633131052 ns/op	  31.69 MB/s
+BenchmarkEncrypted/large.xlsx/agile/all-24    	       5	 202714792 ns/op	  98.98 MB/s
+BenchmarkEncrypted/large.xlsx/agile/all-24    	       5	 203489563 ns/op	  98.61 MB/s
+BenchmarkEncrypted/large.xlsx/agile/all-24    	       5	 202531586 ns/op	  99.07 MB/s
+BenchmarkEncrypted/large.xlsx/standard/single-24         	       2	 594521624 ns/op	  33.75 MB/s
+BenchmarkEncrypted/large.xlsx/standard/single-24         	       2	 600334550 ns/op	  33.42 MB/s
+BenchmarkEncrypted/large.xlsx/standard/single-24         	       2	 593098342 ns/op	  33.83 MB/s
+BenchmarkEncrypted/large.xlsx/standard/all-24            	       6	 173851379 ns/op	 115.41 MB/s
+BenchmarkEncrypted/large.xlsx/standard/all-24            	       6	 175379825 ns/op	 114.40 MB/s
+BenchmarkEncrypted/large.xlsx/standard/all-24            	       6	 176176165 ns/op	 113.89 MB/s
+PASS
+ok  	github.com/AOShei/go-fast-ooxml	27.387s

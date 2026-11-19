@@ -12,6 +12,7 @@ measured against, and they double as test oracles.
 | markitdown | all three | comparison |
 | LibreOffice (headless) | all three | oracle: text export with computed list numbering, CSV export with formatted cell values; second producer of every fixture |
 | pandoc | Word | oracle for heading levels |
+| msoffcrypto-tool | all three, encrypted | oracle for decryption: the bytes an encrypted file decrypts to; producer of an encrypted fixture |
 
 ## Setting up
 
@@ -37,6 +38,7 @@ test whose tool is missing skips itself.
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
 | `excel.txt` | `go test -run '^$' -bench 'Extract/large.xlsx' -benchmem -count 3 .` | Excel extraction on the large generated workbook (2 million cells, 100 MB of XML), with one worker and with all |
 | `powerpoint.txt` | `go test -run '^$' -bench 'Extract/large.pptx' -benchmem -count 3 .` | PowerPoint extraction on the large generated presentation (1,500 slides), with one worker and with all |
+| `encrypted.txt` | `go test -run '^$' -bench 'Encrypted\|Extract/large.xlsx' -count 3 .` | What encryption adds: the check of a password, and the large workbook encrypted beside the same workbook unencrypted, in one run |
 | `xmlscan.txt` | `go test -run '^$' -bench . -count 3 ./internal/xmlscan` | The library's XML tokenizer against `encoding/xml` on the XML of the large generated files. Compare the two within one run: the ratio holds when the machine is busy, the absolute numbers do not |
 
 Timings come from one machine and compare tools on that machine only.
@@ -165,7 +167,39 @@ sheets, 159,654 cells).
 
 Every file of the corpus goes through the command
 (`go test ./cmd/gofastooxml`), with the files embedded in it extracted too:
-737 give a valid document and 46 are refused with a reason.
+740 give a valid document and 48 are refused with a reason (legacy binary
+files, files that need a password, files that are not packages).
+
+## Encrypted files
+
+Fourteen files are decrypted both by this library and by msoffcrypto-tool
+(`TestDecryptionAgainstMsoffcrypto`): the nine files of the corpus that
+Microsoft Office encrypted, of both schemes; the three fixtures in
+`testdata/encrypted`, encrypted by LibreOffice and by msoffcrypto-tool; and
+two the test encrypts itself. Eleven decrypt to the same bytes with both.
+The other three msoffcrypto-tool does not open, and what this library
+decrypts from them is a package that reads to its end:
+
+| File | Why the tool does not open it |
+|---|---|
+| `bug53475-password-is-pass.docx` | An AES-256 key from a SHA-1 hash: the hash has to be lengthened, which the tool does not do |
+| `protected_agile.docx` | The value a password is checked against is a SHA-1 hash, 20 bytes stored in 32; the tool compares all 32 |
+| `extenxls_pwd123.xlsx` | The compound file states the encrypted stream longer than the sectors it gives it; the package inside is whole |
+
+What encryption costs (`bench/encrypted.txt`; the encrypted and the
+unencrypted workbook are timed in one run, since the machine was busy):
+
+| | Unencrypted | Standard scheme | Agile scheme |
+|---|---|---|---|
+| Checking a password | | 2.6 ms (50,000 rounds of SHA-1) | 12.6 ms (100,000 rounds of SHA-512) |
+| `large.xlsx`, one worker | 0.59 s | 0.60 s | 0.63 s |
+| `large.xlsx`, all workers | 0.176 s | 0.175 s | 0.203 s |
+
+The agile scheme's extra 30 to 40 ms on this file of 20 MB is the check of
+the password, the keyed hash over the whole encrypted file, and the
+decrypting. A file of 32 MB with a small document in it is read with a
+peak heap under 1 MB (`TestEncryptedFileIsNotHeldDecrypted`): the package
+is decrypted as it is read, not held.
 
 ## PowerPoint accuracy on the corpus
 

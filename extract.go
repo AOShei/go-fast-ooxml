@@ -1,9 +1,7 @@
 package gofastooxml
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +28,10 @@ const (
 	// of the file, so this is what bounds the memory a workbook can ask
 	// for.
 	DefaultMaxCells = 20_000_000
+	// DefaultMaxSpinCount bounds the rounds of hashing an encrypted file
+	// may ask for to turn a password into a key. Office writes 100,000;
+	// the number is the file's to choose, and each round costs time.
+	DefaultMaxSpinCount = 1_000_000
 )
 
 // Warning codes specific to this library. Each states a fact about the
@@ -88,6 +90,18 @@ const (
 	// table of one row instead.
 	WarnRegionSplit = warn.RegionSplit
 
+	// The codes below are raised when a password-protected file is opened.
+
+	// WarnDecrypted: the file was encrypted and has been decrypted, with
+	// the password given or with the password Excel uses when none is
+	// set. The message names the scheme.
+	WarnDecrypted = "ooxml.decrypted"
+	// WarnIntegrityMismatch: the encrypted file carries a keyed hash of
+	// itself, and the file is not what that hash was made of: it was
+	// changed after it was encrypted, or damaged. What it decrypts to is
+	// extracted all the same.
+	WarnIntegrityMismatch = "ooxml.integrity_mismatch"
+
 	// The code below is raised while a PowerPoint presentation is read.
 
 	// WarnHiddenUnchecked: a slide has more overlapping shapes than the
@@ -110,6 +124,11 @@ type Extractor struct {
 	// limit.exceeded warning. Zero means DefaultMaxCells; negative means
 	// no limit.
 	MaxCells int64
+	// MaxSpinCount bounds the rounds of hashing a password-protected
+	// file may ask for when a password is tried. A file that asks for
+	// more is refused with ErrLimitExceeded. Zero means
+	// DefaultMaxSpinCount; negative means no limit.
+	MaxSpinCount int
 }
 
 var _ gofastcore.Extractor = (*Extractor)(nil)
@@ -137,7 +156,7 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	f, err := e.Open(path, opts)
+	f, err := e.openFile(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +172,10 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 //   - ErrMalformed: not a zip archive, or a package too damaged to
 //     identify.
 //   - ErrUnsupported: a zip archive or package that is not a Word, Excel
-//     or PowerPoint file; an encrypted or legacy binary Office file.
+//     or PowerPoint file; a legacy binary Office file; a file encrypted
+//     in a way other than with a password.
+//   - ErrPasswordRequired, ErrWrongPassword: the file is encrypted, and
+//     Options.Password is empty or does not open it.
 //   - ErrLimitExceeded: the input is larger than Limits.MaxInputBytes, or
 //     a limit was reached before anything could be read.
 //   - ErrNoPartsSelected: Options.Parts selects none of the document's
@@ -164,7 +186,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	f, err := e.OpenReaderAt(r, size, opts)
+	f, err := e.open(ctx, r, size, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -212,42 +234,4 @@ func hiddenInMetadata(m *gofastcore.Metadata) bool {
 		}
 	}
 	return false
-}
-
-var compoundSignature = []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
-
-// encryptedPackage is the name of the stream that holds an encrypted Office
-// Open XML file inside a compound file, in UTF-16.
-var encryptedPackage = []byte("E\x00n\x00c\x00r\x00y\x00p\x00t\x00e\x00d\x00P\x00a\x00c\x00k\x00a\x00g\x00e\x00")
-
-// compoundFile reports why the input cannot be read if it is a compound
-// (OLE) file and not a zip archive, and "" otherwise. A password-protected
-// Word, Excel or PowerPoint file is stored that way, and so are the legacy
-// binary formats.
-func compoundFile(r io.ReaderAt, size int64) string {
-	var head [512]byte
-	n, _ := r.ReadAt(head[:min(int64(len(head)), size)], 0)
-	if n < len(compoundSignature) || !bytes.Equal(head[:len(compoundSignature)], compoundSignature) {
-		return ""
-	}
-	const legacy = "compound file: a legacy binary Office format (.doc, .xls, .ppt), which this library does not read"
-	if n < 52 {
-		return legacy
-	}
-	// The directory lists the streams. Look for the encrypted package in
-	// its first sectors.
-	shift := binary.LittleEndian.Uint16(head[30:32])
-	first := binary.LittleEndian.Uint32(head[48:52])
-	if shift < 7 || shift > 16 || first > 1<<24 {
-		return legacy
-	}
-	offset := (int64(first) + 1) << shift
-	if offset >= size {
-		return legacy
-	}
-	dir := make([]byte, min(int64(4)<<shift, size-offset))
-	if m, _ := r.ReadAt(dir, offset); bytes.Contains(dir[:m], encryptedPackage) {
-		return "encrypted Office document: password-protected files are not supported in this version"
-	}
-	return legacy
 }
