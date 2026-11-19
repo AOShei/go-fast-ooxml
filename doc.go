@@ -17,6 +17,8 @@
 // is; File.Rows does the same within a sheet too long to hold. The
 // command is in cmd/gofastooxml.
 //
-// The package is under construction and nothing is released:
-// password-protected files are still to come.
+// A file encrypted with a password is opened with Options.Password; see
+// the README for what is and is not read.
+//
+// The package is under construction and nothing is released.
 package gofastooxml

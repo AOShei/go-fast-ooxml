@@ -20,11 +20,10 @@ import (
 // speed targets are set on. They are made by testdata/gen/gen.py --large
 // and are not tracked; the benchmark skips a file that is absent.
 //
-// MB/s is of the file as stored. PowerPoint content is not extracted yet,
-// so its number is for identifying the file and reading its properties
-// only. "single" is one worker; "all" is as many as there are processors,
-// which matters where a file has parts that can be read side by side: the
-// sheets of a workbook.
+// MB/s is of the file as stored. "single" is one worker; "all" is as many
+// as there are processors, which matters where a file has parts that can
+// be read side by side: the sheets of a workbook, the slides of a
+// presentation.
 func BenchmarkExtract(b *testing.B) {
 	for _, name := range []string{"large.docx", "large.xlsx", "large.pptx"} {
 		data, err := os.ReadFile(filepath.Join(ooxmltest.Root(b), "testdata", "corpus", "generated", name))
@@ -118,6 +117,55 @@ func TestLargeWorkbookMemory(t *testing.T) {
 		t.Logf("workers %d: %d cells, peak heap %d MB", workers, cells, peak>>20)
 		if peak > ceiling {
 			t.Errorf("workers %d: peak heap %d MB is over the ceiling of %d MB", workers, peak>>20, ceiling>>20)
+		}
+	}
+}
+
+// BenchmarkEncrypted times what encryption adds. "password" is opening a
+// small encrypted file, which is the check of the password: as many
+// rounds of hashing as the file asks for, 100,000 as Office writes for
+// the agile scheme and 50,000 for the standard one. The others extract
+// the large generated workbook encrypted, to set beside
+// BenchmarkExtract/large.xlsx: the difference is the decrypting.
+func BenchmarkEncrypted(b *testing.B) {
+	small := ooxmltest.Docx(ooxmltest.Para("x")).Bytes()
+	opts := &gofastcore.Options{Password: "a password"}
+	for name, how := range map[string]ooxmltest.Encryption{
+		"password/agile":    {SpinCount: 100_000},
+		"password/standard": {Standard: true},
+	} {
+		data := ooxmltest.Encrypt(small, "a password", how)
+		b.Run(name, func(b *testing.B) {
+			for b.Loop() {
+				if _, err := gofastooxml.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+	large, err := os.ReadFile(filepath.Join(ooxmltest.Root(b), "testdata", "corpus", "generated", "large.xlsx"))
+	if err != nil {
+		b.Skipf("large.xlsx is not generated: %v", err)
+	}
+	for name, how := range map[string]ooxmltest.Encryption{
+		"large.xlsx/agile":    {SpinCount: 100_000},
+		"large.xlsx/standard": {Standard: true},
+	} {
+		data := ooxmltest.Encrypt(large, "a password", how)
+		for _, mode := range []struct {
+			name    string
+			workers int
+		}{{"single", 1}, {"all", 0}} {
+			b.Run(name+"/"+mode.name, func(b *testing.B) {
+				with := *opts
+				with.Workers = mode.workers
+				b.SetBytes(int64(len(data)))
+				for b.Loop() {
+					if _, err := gofastooxml.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), &with); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
 		}
 	}
 }

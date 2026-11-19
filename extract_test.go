@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"io"
 	"math/rand"
@@ -225,19 +224,6 @@ func TestExtractSurvivesDamagedProperties(t *testing.T) {
 	}
 }
 
-func compound(streamName string) []byte {
-	// The smallest compound file that says where its directory is: a
-	// 512-byte header and one directory sector.
-	b := make([]byte, 1024)
-	copy(b, []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1})
-	binary.LittleEndian.PutUint16(b[30:], 9) // 512-byte sectors
-	binary.LittleEndian.PutUint32(b[48:], 0) // the directory is sector 0
-	for i, c := range streamName {
-		binary.LittleEndian.PutUint16(b[512+64+2*i:], uint16(c))
-	}
-	return b
-}
-
 func TestExtractErrors(t *testing.T) {
 	zipOf := func(names ...string) []byte {
 		var buf bytes.Buffer
@@ -266,9 +252,11 @@ func TestExtractErrors(t *testing.T) {
 		{"plain zip", zipOf("readme.txt"), gofastcore.ErrUnsupported, "not an Office Open XML package"},
 		{"opendocument", zipOf("mimetype", "content.xml", "META-INF/manifest.xml"), gofastcore.ErrUnsupported, "not an Office Open XML package"},
 		{"other office package", visio.Bytes(), gofastcore.ErrUnsupported, "no Word, Excel or PowerPoint"},
-		{"legacy binary", compound("WordDocument"), gofastcore.ErrUnsupported, "legacy binary"},
-		{"password protected", compound("EncryptedPackage"), gofastcore.ErrUnsupported, "encrypted"},
-		{"compound header only", compound("")[:40], gofastcore.ErrUnsupported, "legacy binary"},
+		{"legacy binary", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000), "1Table": make([]byte, 100)}), gofastcore.ErrUnsupported, "legacy binary"},
+		{"password protected", ooxmltest.Encrypt(ooxmltest.Docx("").Bytes(), "a password", ooxmltest.Encryption{}), gofastcore.ErrPasswordRequired, "encrypted"},
+		{"rights managed", ooxmltest.Compound(map[string][]byte{"\x06DataSpaces/DataSpaceMap": make([]byte, 100), "\x09DRMContent": make([]byte, 5000)}), gofastcore.ErrUnsupported, "rights management"},
+		{"compound header only", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)})[:40], gofastcore.ErrMalformed, "compound file"},
+		{"compound file cut short", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)})[:700], gofastcore.ErrMalformed, "compound file"},
 	}
 	for _, c := range cases {
 		doc, err := extract(t, c.data, nil)
@@ -386,7 +374,8 @@ func checkOutcome(t testing.TB, what string, doc *gofastcore.Document, err error
 		if doc != nil {
 			t.Errorf("%s: both a document and an error (%v)", what, err)
 		}
-		if !errors.Is(err, gofastcore.ErrMalformed) && !errors.Is(err, gofastcore.ErrUnsupported) && !errors.Is(err, gofastcore.ErrLimitExceeded) {
+		if !errors.Is(err, gofastcore.ErrMalformed) && !errors.Is(err, gofastcore.ErrUnsupported) && !errors.Is(err, gofastcore.ErrLimitExceeded) &&
+			!errors.Is(err, gofastcore.ErrPasswordRequired) && !errors.Is(err, gofastcore.ErrWrongPassword) {
 			t.Errorf("%s: error does not wrap a shared error: %v", what, err)
 		}
 	case doc == nil:

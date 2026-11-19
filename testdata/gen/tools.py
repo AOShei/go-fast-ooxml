@@ -191,6 +191,43 @@ def python_pptx_slides(path):
     return json.dumps(out, ensure_ascii=False)
 
 
+# The passwords of the encrypted files in the corpus and of the encrypted
+# fixtures. They are test passwords, published with the files.
+PASSWORDS = ["VelvetSweatshop", "pass", "solrcell", "tika", "correct horse", "s3cret", "p\u00e4ssw\u00f6rd \u00fc", "secret", "Test001!!", "pwd123", "this is a test"]
+
+
+def msoffcrypto_decrypt(path):
+    """Decrypt a password-protected file with msoffcrypto-tool, trying the
+    known test passwords, and report as JSON which password opened it and the
+    SHA-256 and length of what it decrypts to. It is the oracle for
+    decryption: this library must decrypt to the same bytes.
+    """
+    import hashlib
+    import io
+    import json
+
+    import msoffcrypto
+
+    refused, failed = "no password tried", ""
+    for password in PASSWORDS:
+        with open(path, "rb") as f:
+            office = msoffcrypto.OfficeFile(f)
+            try:
+                office.load_key(password=password, verify_password=True)
+            except Exception as e:
+                refused = f"{type(e).__name__}: {e}"
+                continue
+            try:
+                out = io.BytesIO()
+                office.decrypt(out)
+            except Exception as e:  # the password was taken, and decrypting failed
+                failed = f"{type(e).__name__}: {e}"
+                continue
+        data = out.getvalue()
+        return json.dumps({"password": password, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
+    raise ValueError("no known password opens it: " + (failed or refused))
+
+
 _markitdown = None
 
 
@@ -219,6 +256,7 @@ TOOLS = {
 ORACLES = {
     "openpyxl-cells": ("openpyxl", openpyxl_cells, {"xlsx"}),
     "python-pptx-slides": ("python-pptx", python_pptx_slides, {"pptx"}),
+    "msoffcrypto-decrypt": ("msoffcrypto-tool", msoffcrypto_decrypt, {"docx", "xlsx", "pptx"}),
 }
 
 

@@ -2950,6 +2950,56 @@
   "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)"
  },
  {
+  "name": "poi/poifs/60320-protected.xlsx",
+  "format": "xlsx",
+  "path": "corpus/poi/poifs/60320-protected.xlsx",
+  "url": "https://raw.githubusercontent.com/apache/poi/f66927954a29cf1f5b86614fdf1816e6321c8aea/test-data/poifs/60320-protected.xlsx",
+  "sha256": "deed30663d59c44ea36728f81c8428ed5ff85373b30f4e4c92974d0f8b3e5329",
+  "size": 15872,
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "compound file, not a zip package: encrypted or legacy format"
+ },
+ {
+  "name": "poi/poifs/extenxls_pwd123.xlsx",
+  "format": "xlsx",
+  "path": "corpus/poi/poifs/extenxls_pwd123.xlsx",
+  "url": "https://raw.githubusercontent.com/apache/poi/f66927954a29cf1f5b86614fdf1816e6321c8aea/test-data/poifs/extenxls_pwd123.xlsx",
+  "sha256": "24d908d34dd5248de420962ff88ff46fe1f5b6800ed1e00b88b04e98b4b390a4",
+  "size": 10240,
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "compound file, not a zip package: encrypted or legacy format"
+ },
+ {
+  "name": "poi/poifs/protect.xlsx",
+  "format": "xlsx",
+  "path": "corpus/poi/poifs/protect.xlsx",
+  "url": "https://raw.githubusercontent.com/apache/poi/f66927954a29cf1f5b86614fdf1816e6321c8aea/test-data/poifs/protect.xlsx",
+  "sha256": "b0b9fc98374334f39f3ebde005894ae9be69bbaed11788b54ae1dafb954e980d",
+  "size": 12968,
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "compound file, not a zip package: encrypted or legacy format"
+ },
+ {
+  "name": "poi/poifs/protected_agile.docx",
+  "format": "docx",
+  "path": "corpus/poi/poifs/protected_agile.docx",
+  "url": "https://raw.githubusercontent.com/apache/poi/f66927954a29cf1f5b86614fdf1816e6321c8aea/test-data/poifs/protected_agile.docx",
+  "sha256": "39ae9e6928ad91fa82a54d1aeac665337801ff73071bdfebd0e10d533e4b3cd9",
+  "size": 19456,
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "compound file, not a zip package: encrypted or legacy format"
+ },
+ {
+  "name": "poi/poifs/protected_sha512.xlsx",
+  "format": "xlsx",
+  "path": "corpus/poi/poifs/protected_sha512.xlsx",
+  "url": "https://raw.githubusercontent.com/apache/poi/f66927954a29cf1f5b86614fdf1816e6321c8aea/test-data/poifs/protected_sha512.xlsx",
+  "sha256": "2a86a49c40cdb0e3568fbee2554dd02a19b3901d81bd89e190584662ff135561",
+  "size": 14336,
+  "licence": "Apache-2.0 (Apache POI test data, commit f66927954a29)",
+  "note": "compound file, not a zip package: encrypted or legacy format"
+ },
+ {
   "name": "poi/slideshow/2411-Performance_Up.pptx",
   "format": "pptx",
   "path": "corpus/poi/slideshow/2411-Performance_Up.pptx",

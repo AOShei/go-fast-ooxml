@@ -317,7 +317,8 @@ func TestFileErrors(t *testing.T) {
 	}{
 		"not a zip":          {[]byte("plain text, not an archive"), gofastcore.ErrMalformed},
 		"too short":          {[]byte("PK"), gofastcore.ErrMalformed},
-		"a legacy .doc":      {append([]byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}, make([]byte, 600)...), gofastcore.ErrUnsupported},
+		"a legacy .doc":      {ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)}), gofastcore.ErrUnsupported},
+		"an encrypted file":  {ooxmltest.Encrypt(data, "p", ooxmltest.Encryption{SpinCount: 10}), gofastcore.ErrPasswordRequired},
 		"a zip of something": {ooxmltest.NewPackage().Add("readme.txt", "text/plain", "hello").Bytes(), gofastcore.ErrUnsupported},
 	} {
 		if _, err := gofastooxml.OpenBytes(c.data, nil); !errors.Is(err, c.want) {

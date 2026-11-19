@@ -89,7 +89,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		images   = flags.String("images", "none", "pictures: none, meta (where and how large) or data (their bytes too)")
 		spans    = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
 		workers  = flags.Int("workers", 0, "sheets or slides read at a time (0: one for each CPU)")
-		password = flags.String("password", "", "password of an encrypted file")
+		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
+		maxSpin  = flags.Int("max-spin-count", 0, "rounds of hashing an encrypted file may ask for to try a password (0: the default, 1 million; -1: no limit)")
 		maxCells = flags.Int64("max-cells", 0, "cells kept from a workbook or from the tables of a presentation (0: the default, 20 million; -1: no limit)")
 		maxBytes = flags.Int64("max-decoded-bytes", 0, "decompressed bytes read from a file (0: the default, 2 GiB; -1: no limit)")
 		quiet    = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
@@ -149,7 +150,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		opts.Parts = gofastcore.PartRange{First: a, Last: b}
 	}
-	extractor := &gofastooxml.Extractor{MaxCells: *maxCells}
+	extractor := &gofastooxml.Extractor{MaxCells: *maxCells, MaxSpinCount: *maxSpin}
 	// A file embedded in a document is read too if it is an Office file.
 	opts.Child = func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
 		return extractor.Extract(ctx, r, size, o)

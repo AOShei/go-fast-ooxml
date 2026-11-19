@@ -46,7 +46,7 @@ FORMATS = {
 }
 
 POI_REPO = "apache/poi"
-POI_DIRS = ("document", "spreadsheet", "slideshow", "openxml4j", "xmldsign", "integration")
+POI_DIRS = ("document", "spreadsheet", "slideshow", "openxml4j", "xmldsign", "integration", "poifs")
 GOVUK_API = "https://data.gov.uk/api/action/package_search"
 GOVUK_WANT = {"DOCX": 70, "XLSX": 90, "PPTX": 40}
 

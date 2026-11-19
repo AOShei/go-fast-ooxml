@@ -94,7 +94,8 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 | `-furniture`, `-part-markers` | In Markdown and text: include running headers and footers; mark where each part begins |
 | `-workers n` | Sheets or slides read at a time |
 | `-max-cells n`, `-max-decoded-bytes n` | The limits; `-1` for none |
-| `-password p` | For encrypted files, which this version does not read yet |
+| `-password p` | The password of an encrypted file, and of encrypted files embedded in it |
+| `-max-spin-count n` | Rounds of hashing an encrypted file may ask for when a password is tried |
 | `-quiet`, `-version` | |
 
 Only documents go to standard output. A file that cannot be read is
@@ -102,6 +103,45 @@ reported on standard error and makes the exit status 1; the other inputs
 are still read. Unless `-quiet` is given, a line on standard error names
 the files that have hidden text or a warning of severity error. Office
 files embedded in a document are extracted too, into its `children`.
+
+## Password-protected files
+
+A file encrypted with a password is opened with `Options.Password`:
+
+```go
+doc, err := gofastooxml.ExtractFile(ctx, "accounts.xlsx", &gofastcore.Options{Password: "..."})
+```
+
+Both ways Office has of encrypting with a password are read: the one of
+Office 2007 ("standard": AES, SHA-1), which LibreOffice still writes, and
+the one of Office 2010 and later ("agile": AES-128, 192 or 256 with SHA-1,
+SHA-256, SHA-384 or SHA-512). The document is the one the file would give
+unencrypted, with an `ooxml.decrypted` warning that names the scheme.
+
+- **The password is verified before anything is decrypted.** Without one
+  the error is `ErrPasswordRequired`; with one that does not open the file,
+  `ErrWrongPassword`.
+- **Excel's own password is tried without being asked for.** A workbook
+  that is protected, but has no password to open it, is encrypted by Excel
+  with a fixed password that Excel itself tries silently. Such a file
+  opens with no password given, and the warning says that is how.
+- **Nothing is held decrypted.** The package is decrypted piece by piece
+  as the parts are read, also from several workers at once.
+- **A file that was changed after it was encrypted says so.** The agile
+  scheme stores a keyed hash of the encrypted file; where it does not
+  match, the document carries `ooxml.integrity_mismatch`, and is extracted
+  all the same.
+- **What a wrong guess costs is the file's to say**, as rounds of hashing:
+  Office writes 100,000, about a hundredth of a second. `Extractor.MaxSpinCount`
+  bounds it (a million by default); a file that asks for more is refused
+  with `ErrLimitExceeded`. The check stops when the context is cancelled.
+- An encrypted file embedded in a document is opened with the same
+  password; if that does not open it, it is listed with `child.encrypted`.
+
+**Not read:** files protected by rights management or encrypted for a
+certificate, ciphers other than AES, and the legacy binary formats
+(`.doc`, `.xls`, `.ppt`), which share the container of encrypted files:
+each is refused with `ErrUnsupported` and a message that says which it is.
 
 ## Excel workbooks
 
@@ -312,6 +352,8 @@ yellow text on a white page is under its threshold and is flagged.
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting and what lies behind text |
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes |
+| `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
+| `internal/crypt` | The two password encryption schemes of Office: reading the encryption information, verifying a password, decrypting the package as it is read |
 | `internal/numfmt` | Number formats: what a cell displays for the value it holds |
 | `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables and table styles, reading order, what covers what, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
@@ -320,9 +362,10 @@ yellow text on a white page is under its threshold and is flagged.
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |
 | `testdata/fixtures`, `testdata/expect`, `testdata/fixtures.json` | Small generated files with exactly known content, the expected result of each in the shared model's JSON form, and their manifest |
 | `testdata/gen` | The fixture generator and the adapters for the comparison tools |
+| `testdata/encrypted`, `testdata/encrypted.json` | Fixtures encrypted by msoffcrypto-tool and by LibreOffice, with their passwords |
 | `testdata/api.txt` | The exported declarations of the package; a test fails when they change |
 | `testdata/numfmt` | What LibreOffice displays for 6,048 pairs of a number format and a value: the table the number-format engine is held to |
-| `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 783 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |
+| `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 788 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |
 | `bench` | Baseline measurements of the tools in use today; see `bench/README.md` |
 
 ## Running the tests
