@@ -193,6 +193,9 @@ func (f *File) open(first bool) (*session, error) {
 	}
 	main, format, mime, err := pkg.Main()
 	if err != nil {
+		if pkg.Recovered() != nil {
+			err = opc.ErrCutOff // the part that says what the file is was lost with its end
+		}
 		return nil, wrap(err)
 	}
 	meta, err := props.Read(pkg)
@@ -213,6 +216,15 @@ func (f *File) open(first bool) (*session, error) {
 		}
 		if hiddenInMetadata(&f.meta) {
 			warn(gofastcore.SeverityWarning, gofastcore.WarnTextHidden, "document properties contain invisible characters")
+		}
+		if rec := pkg.Recovered(); rec != nil {
+			message := fmt.Sprintf("the archive's directory cannot be read: the file is cut short or damaged. %d members were found by their own headers", rec.Members)
+			if rec.Cut != "" {
+				message += "; the last, " + clean.Label(rec.Cut) + ", breaks off"
+			} else {
+				message += "; any that followed are lost"
+			}
+			warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired, message)
 		}
 		if n := pkg.Ambiguous(); n > 0 {
 			warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous,

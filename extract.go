@@ -44,6 +44,9 @@ const (
 //	                          that starts a program or runs a macro
 //	input.external_reference  a remote template, a linked picture, object
 //	                          or media clip, a link to another workbook
+//	input.repaired            the archive's directory could not be read (the
+//	                          file is cut short); the members were found
+//	                          by their own headers, as far as they go
 //	input.ambiguous           the archive names a member twice, in two ways,
 //	                          or has two members with one name; each member
 //	                          is read under the name in its header, and the

@@ -24,6 +24,11 @@ func FuzzOpen(f *testing.F) {
 	f.Add(ooxmltest.Encrypt(ooxmltest.Docx(ooxmltest.Para("x")).Bytes(), "VelvetSweatshop", ooxmltest.Encryption{SpinCount: 2}))
 	f.Add(ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 600)}))
 	f.Add([]byte("PK\x03\x04"))
+	// Files cut short: without their directory, and inside a member.
+	// They are read by the members' own headers.
+	whole := ooxmltest.Docx(ooxmltest.Para("cut short")).Bytes()
+	f.Add(whole[:directoryAt(f, whole)])
+	f.Add(whole[:directoryAt(f, whole)*2/3])
 	f.Add(ooxmltest.Docx(ooxmltest.Para("seed")).WithCore(`<dc:title>t</dc:title>`).Bytes())
 	f.Add(ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: `<row r="1">` + ooxmltest.InlineCell("A1", "seed") + `</row>`}).Bytes())
 	f.Add(ooxmltest.Pptx(ooxmltest.Slide{Shapes: ooxmltest.TextShape(2, 0, 0, 100, 20, "seed")}).Bytes())

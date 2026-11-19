@@ -175,7 +175,7 @@ func TestMain(t *testing.T) {
 
 // rawZip builds an archive member by member, for cases the package builder
 // does not produce.
-func rawZip(t *testing.T, add func(w *zip.Writer)) []byte {
+func rawZip(t testing.TB, add func(w *zip.Writer)) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
