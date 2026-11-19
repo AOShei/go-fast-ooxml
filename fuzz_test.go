@@ -63,6 +63,11 @@ func FuzzDocx(f *testing.F) {
 		`<w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:inline><wp:docPr descr="alt"/><a:graphic><a:graphicData><wps:wsp><wps:txbx><w:txbxContent>` +
 			ooxmltest.Para("box") + `</w:txbxContent></wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice><mc:Fallback><w:pict/></mc:Fallback></mc:AlternateContent></w:r></w:p>`,
 		`<w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rId1"/></w:sectPr></w:pPr></w:p><w:sdt><w:sdtContent>` + ooxmltest.Para("x") + `</w:sdtContent></w:sdt>`,
+		// Text in symbol fonts, and notes numbered by their sections.
+		`<w:p><w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr><w:t>J\u00fc\uf0ff</w:t><w:footnoteReference w:id="2"/></w:r>` +
+			`<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi"/></w:rPr><w:t>a</w:t></w:r></w:p>` +
+			`<w:p><w:pPr><w:sectPr><w:footnotePr><w:numFmt w:val="chicago"/><w:numStart w:val="3"/><w:numRestart w:val="eachSect"/></w:footnotePr></w:sectPr></w:pPr></w:p>` +
+			`<w:p><w:r><w:footnoteReference w:id="2"/><w:endnoteReference w:id="2"/></w:r></w:p><w:sectPr><w:endnotePr><w:numFmt w:val="upperLetter"/></w:endnotePr></w:sectPr>`,
 	} {
 		f.Add(wrap(body), styles, numbering, []byte(ooxmltest.Para("note")))
 	}
@@ -127,7 +132,10 @@ func FuzzXlsx(f *testing.F) {
 		[]string{`<sz val="1"/><color rgb="FFFFFFFF"/>`, `<color theme="1" tint="0.5"/>`, `<color indexed="9"/>`},
 		[]string{solidFill("1F3864"), `<gradientFill/>`},
 		`numFmtId="0"`, `numFmtId="164" fontId="1" fillId="2"`, `numFmtId="165"`, `numFmtId="14" fontId="2"`, `numFmtId="166" fontId="3" fillId="3"`, `numFmtId="167"`, `numFmtId="49"`) +
-		`<colors><indexedColors><rgbColor rgb="00112233"/></indexedColors></colors></styleSheet>`)
+		`<colors><indexedColors><rgbColor rgb="00112233"/></indexedColors></colors>` +
+		`<dxfs count="2"><dxf><font><color theme="0"/></font><fill><patternFill><bgColor rgb="FF000000"/></patternFill></fill></dxf><dxf><fill><patternFill patternType="gray125"/></fill></dxf></dxfs>` +
+		`<tableStyles count="1"><tableStyle name="TableStyleMedium2" pivot="0"><tableStyleElement type="headerRow" dxfId="0"/><tableStyleElement type="secondRowStripe" dxfId="1" size="2"/></tableStyle></tableStyles></styleSheet>`)
+	symbolStyles := bytes.Replace(styles, []byte(`<sz val="1"/><color rgb="FFFFFFFF"/>`), []byte(`<sz val="11"/><color rgb="FFFFFFFF"/><name val="Wingdings"/>`), 1)
 	strs := []byte(`<sst xmlns="` + ooxmltest.NSSheet + `"><si><t>one</t></si><si><r><t>two</t></r><rPh><t>x</t></rPh></si><si><t>a_x000D_b</t></si></sst>`)
 	drawing := []byte(drawingHeader + `<xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row></xdr:from><xdr:sp><xdr:nvSpPr><xdr:cNvPr id="1" name="s" descr="d" hidden="1"/></xdr:nvSpPr>` +
 		`<xdr:spPr><a:solidFill><a:srgbClr val="000000"/></a:solidFill></xdr:spPr><xdr:txBody><a:p><a:r><a:rPr sz="100"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:rPr><a:t>t</a:t></a:r><a:br/></a:p></xdr:txBody></xdr:sp>` +
@@ -140,6 +148,7 @@ func FuzzXlsx(f *testing.F) {
 		sheet(xlRow(1, xlNum("A1", "1"), xlNum("C1", "2"), xlNum("E1", "3"))+xlRow(3, xlNum("B3", "4"))+xlRow(4, xlNum("D4", "1e308"), xlNum("E4", "-0"), xlNum("F4", "abc")), ``),
 	} {
 		f.Add(s, styles, strs, drawing)
+		f.Add(s, symbolStyles, strs, drawing)
 	}
 	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
@@ -151,7 +160,8 @@ func FuzzXlsx(f *testing.F) {
 		pkg.Rel("xl/workbook.xml", ooxmltest.RelSharedStrings, "sharedStrings.xml")
 		pkg.AddBytes("xl/sharedStrings.xml", ooxmltest.CTSharedStrings, strs)
 		pkg.Rel(firstSheet, relBase+"table", "../tables/table1.xml")
-		pkg.Add("xl/tables/table1.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" ref="A1:C3"/>`)
+		pkg.Add("xl/tables/table1.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" ref="A1:C3" displayName="T" totalsRowCount="1"><tableColumns count="3"/>`+
+			`<tableStyleInfo name="TableStyleMedium2" showFirstColumn="1" showLastColumn="1" showRowStripes="1" showColumnStripes="1"/></table>`)
 		pkg.Rel(firstSheet, relBase+"comments", "../comments1.xml")
 		pkg.AddBytes("xl/comments1.xml", ctComments, drawing)
 		pkg.Rel(firstSheet, relBase+"drawing", "../drawings/drawing1.xml")
@@ -262,10 +272,18 @@ func FuzzPptx(f *testing.F) {
 			`<a:tcStyle><a:tcBdr><a:left><a:ln>` + solid("FFFFFF") + `</a:ln></a:left></a:tcBdr><a:fill>` + solid("DDEBF7") + `</a:fill></a:tcStyle></a:wholeTbl>` +
 			`<a:lastCol><a:tcStyle><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef></a:tcStyle></a:lastCol></a:tblStyle></a:tblStyleLst>`),
 		[]byte(`<p:cmAuthorLst` + ooxmltest.PresNS + `><p:cmAuthor id="0" name="Ada"/></p:cmAuthorLst>`),
+		// A notes master: its header, footer and own text; what it hides.
+		part("notesMaster", "", "", ooxmltest.Shape(2, ph("hdr", 1), "", ooxmltest.TextBody(dpara("", plain("head"))))+
+			ooxmltest.Shape(3, ph("ftr", 2), "", ooxmltest.TextBody(dpara("", drun("", `<a:latin typeface="Wingdings"/>`, "J"))))+
+			ooxmltest.Shape(4, ph("body", 3), "", ooxmltest.TextBody(dpara("", plain("prompt"))))+box(5, 0, 0, 10, 10, "", dpara("", plain("own")))+picture(6, "rId5", "logo", 0, 0, 5, 5, ""),
+			`<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:hf hdr="0" ftr="false"/>`),
 	}
 	for _, extra := range extras {
 		f.Add(slide, layout, master, extra)
 	}
+	// A table in one of PowerPoint's built-in styles, which the file
+	// does not define.
+	f.Add(bytes.Replace(slide, []byte(style), []byte("{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"), 1), layout, master, extras[0])
 	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Spans: true}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
 	picture := jpegBytes(f, 2, 2)
@@ -285,7 +303,10 @@ func FuzzPptx(f *testing.F) {
 		pkg.Rel(first, relBase+"comments", "../comments/comment1.xml")
 		pkg.Rel("ppt/presentation.xml", ooxmltest.RelTableStyle, "tableStyles.xml")
 		pkg.Rel("ppt/presentation.xml", relBase+"commentAuthors", "commentAuthors.xml")
-		for _, name := range []string{"ppt/notesSlides/notesSlide1.xml", "ppt/comments/comment1.xml", "ppt/tableStyles.xml", "ppt/commentAuthors.xml"} {
+		pkg.Rel("ppt/presentation.xml", relBase+"notesMaster", "notesMasters/notesMaster1.xml")
+		pkg.Rel("ppt/presentation.xml", relBase+"handoutMaster", "handoutMasters/handoutMaster1.xml")
+		for _, name := range []string{"ppt/notesSlides/notesSlide1.xml", "ppt/comments/comment1.xml", "ppt/tableStyles.xml", "ppt/commentAuthors.xml",
+			"ppt/notesMasters/notesMaster1.xml", "ppt/handoutMasters/handoutMaster1.xml"} {
 			pkg.AddBytes(name, "application/xml", extra)
 		}
 		data := pkg.Bytes()
