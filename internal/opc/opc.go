@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -62,7 +63,9 @@ type Rel struct {
 	ID   string
 	Type string
 	// Target is a part name in canonical form, or, when External is set,
-	// the URL or path exactly as written.
+	// the URL or path as written, made fit to appear in the output
+	// (clean.Address). It is cleaned here, once: every link to it then
+	// holds the same string.
 	Target   string
 	External bool
 }
@@ -481,7 +484,7 @@ func (p *Package) RelsWith(source string, s *xmlscan.Scanner) ([]Rel, error) {
 			mode, _ := s.Attr(xmlscan.NoSpace, "TargetMode")
 			r := Rel{ID: string(id), Type: string(typ), External: string(mode) == "External"}
 			if r.External {
-				r.Target = string(target)
+				r.Target = clean.Address(string(target))
 			} else {
 				r.Target = Resolve(source, string(target))
 			}

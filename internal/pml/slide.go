@@ -289,6 +289,9 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	for i := range l.static {
 		b := &l.static[i]
 		l.staticBytes += len(b.Text)
+		for _, sp := range b.Spans {
+			l.staticBytes += len(sp.Href) // written with every slide, as the text is
+		}
 		if found := gofastcore.InvisibleChars(b.Text); found != nil {
 			b.Spans = append(b.Spans[:len(b.Spans):len(b.Spans)], found...)
 			b.Hidden |= gofastcore.HiddenChars

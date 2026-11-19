@@ -676,6 +676,15 @@ func (t *Text) run(s *xmlscan.Scanner, paraStart, level int, slideNumber bool) f
 				return shown
 			}
 		}
+		// One address may be linked to any number of times: it counts
+		// against the text the document may hold each time it is written.
+		if href != "" {
+			if !t.Budget.Take(len(href)) {
+				s.Abort(warn.ErrText)
+				return shown
+			}
+			t.Taken += int64(len(href))
+		}
 		t.spans = append(t.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Hidden: reasons})
 	}
 	return shown

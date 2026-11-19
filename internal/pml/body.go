@@ -4,10 +4,10 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -157,6 +157,18 @@ func (pg *page) body(sh *props) (title bool) {
 }
 
 // pic reads a picture (p:pic).
+// said counts what a picture says, its alternative text or its address,
+// against the text the document may hold, and reports whether there was
+// room; if not, the reading of the page ends.
+func (pg *page) said(n int) bool {
+	if !pg.text.Budget.Take(n) {
+		pg.s.Abort(warn.ErrText)
+		return false
+	}
+	pg.text.Taken += int64(n)
+	return true
+}
+
 func (pg *page) pic(g *group) {
 	s := &pg.s
 	var sh props
@@ -206,10 +218,16 @@ func (pg *page) pic(g *group) {
 		switch {
 		case pg.p.opts.Images == gofastcore.ImagesNone:
 			pg.sawImage = true
+		case !pg.said(len(sh.alt)):
+			return
 		case rel.External:
-			// A picture that is not in the file: named, not fetched.
+			// A picture that is not in the file: named, not fetched. Its
+			// address counts as a link's does.
+			if !pg.said(len(rel.Target)) {
+				return
+			}
 			pg.blocks = append(pg.blocks, gofastcore.Block{Kind: gofastcore.KindImage, Text: sh.alt, Image: &gofastcore.Image{},
-				Attrs: map[string]string{"href": clean.Label(rel.Target)}})
+				Attrs: map[string]string{"href": rel.Target}})
 		default:
 			found, err := pg.p.image(rel.Target)
 			pg.fail(rel.Target, err, false)

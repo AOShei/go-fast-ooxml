@@ -43,9 +43,10 @@ v0.1.0 tag.
 
 ### Safety
 
-- Limits on input size, decompressed bytes, the text a document may hold,
-  archive members, cells and password-hashing rounds; no crash, hang or
-  unbounded allocation on any input. See `SECURITY.md`.
+- Limits on input size, decompressed bytes, the text a document may hold
+  (link targets included, as often as they are written), archive members,
+  cells and password-hashing rounds; no crash, hang or unbounded
+  allocation on any input. See `SECURITY.md`.
 - A file cut short, which has lost the directory of its archive, is read
   by its members' own headers as far as they go, and says so
   (`input.repaired`).

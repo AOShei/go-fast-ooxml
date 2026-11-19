@@ -358,7 +358,7 @@ func (pg *page) reset() {
 	if pg.link == nil {
 		pg.link = func(id []byte) string {
 			if rel, ok := pg.rels[string(id)]; ok && rel.External {
-				return clean.Label(rel.Target)
+				return rel.Target // cleaned when the relationships were read
 			}
 			return ""
 		}

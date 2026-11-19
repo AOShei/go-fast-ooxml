@@ -580,7 +580,7 @@ func (p *parser) linkTarget() string {
 	s := &p.s
 	if id, ok := s.Attr(ns.Rel, "id"); ok {
 		if rel, found := p.rels[string(id)]; found && rel.External {
-			return clean.Label(rel.Target)
+			return rel.Target // cleaned when the relationships were read
 		}
 	}
 	if anchor, ok := s.Attr(ns.Word, "anchor"); ok && len(anchor) > 0 {
@@ -602,6 +602,12 @@ func (p *parser) span(start int, style gofastcore.Style, href string, hidden gof
 			last.End = to
 			return
 		}
+	}
+	// One address may be linked to any number of times: it counts against
+	// the text the document may hold each time it is written.
+	if href != "" && !p.r.text.Take(len(href)) {
+		p.s.Abort(warn.ErrText)
+		return
 	}
 	p.spans = append(p.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Hidden: hidden})
 }
@@ -862,7 +868,7 @@ func fieldLink(code []byte) string {
 		case strings.HasPrefix(f, `\`):
 			// another switch, with or without a value
 		case strings.HasPrefix(f, `"`):
-			target := clean.Label(strings.Trim(f, `"`))
+			target := clean.Address(strings.Trim(f, `"`))
 			if target == "" {
 				continue
 			}
@@ -1203,11 +1209,22 @@ func (p *parser) drawing() {
 		return
 	}
 	p.produced++
+	// What a picture says counts as text does: its alternative text and,
+	// if the picture is not in the file, its address, which like a
+	// link's may be given any number of times.
+	said := len(alt)
+	if external {
+		said += len(target)
+	}
+	if !p.r.text.Take(said) {
+		p.s.Abort(warn.ErrText)
+		return
+	}
 	if external {
 		// A picture that is not in the file: named, not fetched.
 		p.after = append(p.after, gofastcore.Block{
 			Kind: gofastcore.KindImage, Text: alt, Image: &gofastcore.Image{},
-			Attrs: map[string]string{"href": clean.Label(target)},
+			Attrs: map[string]string{"href": target},
 		})
 		return
 	}

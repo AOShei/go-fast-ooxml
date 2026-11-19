@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml"
@@ -352,5 +353,196 @@ func TestDecompressionLimitIsSharedWithEmbeddedFiles(t *testing.T) {
 		} else if json != first {
 			t.Errorf("the document differs with %d workers", workers)
 		}
+	}
+}
+
+// documentLinks returns the bytes of the link targets a document holds,
+// each counted as often as it is written.
+func documentLinks(doc *gofastcore.Document) (n int) {
+	for _, b := range doc.AllBlocks() {
+		n += len(b.Attrs["href"])
+		for _, sp := range b.Spans {
+			n += len(sp.Href)
+		}
+	}
+	return n
+}
+
+// The address of a link is stored once, with the relationships of a
+// part, and written with every link to it: a file of a few kilobytes
+// with thousands of links to one long address would otherwise write
+// megabytes the limit on text never saw. Link targets count as text
+// does: on the links of a text, also where every slide repeats a link of
+// its master, and on pictures that are linked and not in the file. The
+// result is the same for any number of workers.
+func TestTextLimitCountsLinkTargets(t *testing.T) {
+	address := "https://example.com/" + strings.Repeat("a", 2000)
+	const links = 2000
+	wordBody := func(pkg *ooxmltest.Package, body string) *ooxmltest.Package {
+		return pkg.Add("word/document.xml", ooxmltest.CTDocument, `<w:document`+ooxmltest.WordNS+`><w:body>`+body+`</w:body></w:document>`)
+	}
+	relID := func(pkg *ooxmltest.Package, source, typ, id string) {
+		for pkg.ExternalRel(source, typ, address) != id {
+		}
+	}
+
+	// Word: a hundred paragraphs of twenty links.
+	docx := ooxmltest.Docx("")
+	link := docx.ExternalRel("word/document.xml", ooxmltest.RelHyperlink, address)
+	var body strings.Builder
+	for range links / 20 {
+		var p strings.Builder
+		for range 20 {
+			p.WriteString(`<w:hyperlink r:id="` + link + `">` + run(text("here")) + `</w:hyperlink>` + run(text(" or ")))
+		}
+		body.WriteString(para(p.String()))
+	}
+	wordBody(docx, body.String())
+
+	// Word: pictures that are somewhere else.
+	linkedPictures := ooxmltest.Docx("")
+	at := linkedPictures.ExternalRel("word/document.xml", ooxmltest.RelImage, address)
+	body.Reset()
+	for range links {
+		body.WriteString(para(run(`<w:pict><v:shape alt="A picture"><v:imagedata r:id="` + at + `"/></v:shape></w:pict>`)))
+	}
+	wordBody(linkedPictures, body.String())
+
+	// PowerPoint: a hundred slides of twenty links.
+	linked := func(n int) string {
+		runs := make([]string, 0, 2*n)
+		for range n {
+			runs = append(runs, drun("", `<a:hlinkClick r:id="rId7"/>`, "here"), plain(" or "))
+		}
+		return dpara("", runs...)
+	}
+	slides := make([]ooxmltest.Slide, links/20)
+	for i := range slides {
+		slides[i].Shapes = box(2, 10, 10, 600, 300, "", linked(20))
+	}
+	pptx := deck(slides...)
+	for i := range slides {
+		relID(pptx, fmt.Sprintf("ppt/slides/slide%d.xml", i+1), ooxmltest.RelHyperlink, "rId7")
+	}
+
+	// PowerPoint: twenty links on the master, shown by every slide.
+	for i := range slides {
+		slides[i].Shapes = ooxmltest.Shape(2, ph("title", -1), "", ooxmltest.TextBody(dpara("", plain(fmt.Sprintf("Slide %d", i+1)))))
+	}
+	repeated := deck(slides...)
+	repeated.Master("", testMaster()+box(40, 10, 500, 700, 30, "", linked(20)), "", testTxStyles)
+	relID(repeated, "ppt/slideMasters/slideMaster1.xml", ooxmltest.RelHyperlink, "rId7")
+
+	// PowerPoint: pictures that are somewhere else.
+	for i := range slides {
+		var shapes strings.Builder
+		for n := range 20 {
+			shapes.WriteString(picture(10+n, "rId7", "A picture", 10, float64(10+20*n), 100, 15, ""))
+		}
+		slides[i].Shapes = shapes.String()
+	}
+	slidePictures := deck(slides...)
+	for i := range slides {
+		relID(slidePictures, fmt.Sprintf("ppt/slides/slide%d.xml", i+1), ooxmltest.RelImage, "rId7")
+	}
+
+	// Excel: pictures that are somewhere else.
+	var drawing strings.Builder
+	drawing.WriteString(drawingHeader)
+	for n := range links {
+		fmt.Fprintf(&drawing, `<xdr:twoCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>%d</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>`+
+			`<xdr:to><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>%d</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>`+
+			`<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="%d" name="Picture" descr="A picture"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:link="rId1"/></xdr:blipFill><xdr:spPr/></xdr:pic>`+
+			`<xdr:clientData/></xdr:twoCellAnchor>`, n, n+1, n+2)
+	}
+	drawing.WriteString(`</xdr:wsDr>`)
+	xlsx := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: xlRow(1, xlStr("A1", "cell")), Extra: `<drawing r:id="rId1"/>`})
+	xlsx.Rel(firstSheet, relBase+"drawing", "../drawings/drawing1.xml")
+	xlsx.Add("xl/drawings/drawing1.xml", ctDrawing, drawing.String())
+	relID(xlsx, "xl/drawings/drawing1.xml", ooxmltest.RelImage, "rId1")
+
+	const limit = 1 << 20
+	for _, c := range []struct {
+		name  string
+		data  []byte
+		spans bool // the links are in spans, which are asked for
+	}{
+		{"Word", docx.Bytes(), true},
+		{"Word, linked pictures", linkedPictures.Bytes(), false},
+		{"PowerPoint", pptx.Bytes(), true},
+		{"PowerPoint, on the master", repeated.Bytes(), true},
+		{"PowerPoint, linked pictures", slidePictures.Bytes(), false},
+		{"Excel, linked pictures", xlsx.Bytes(), false},
+	} {
+		whole, err := extract(t, c.data, &gofastcore.Options{Spans: c.spans})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if all := documentLinks(whole); all != links*len(address) {
+			t.Fatalf("%s: %d bytes of link targets, of %d", c.name, all, links*len(address))
+		}
+		if c.spans {
+			// Without spans there are no links in the document, and
+			// nothing of them is counted.
+			if doc, err := extract(t, c.data, &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: limit}}); err != nil || cutForText(doc) || documentLinks(doc) != 0 {
+				t.Errorf("%s, without spans: cut %v, %d bytes of link targets, %v", c.name, cutForText(doc), documentLinks(doc), err)
+			}
+		}
+		var first string
+		for _, workers := range []int{1, 8} {
+			doc, err := extract(t, c.data, &gofastcore.Options{Spans: c.spans, Workers: workers, Limits: gofastcore.Limits{MaxTextBytes: limit}})
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			ooxmltest.CheckDocument(t, doc)
+			if got := documentText(doc) + documentLinks(doc); got > limit || got < limit/2 || !cutForText(doc) {
+				t.Errorf("%s, %d workers: %d bytes of text and link targets, cut %v", c.name, workers, got, cutForText(doc))
+			}
+			if json := asJSON(t, doc); first == "" {
+				first = json
+			} else if json != first {
+				t.Errorf("%s: the document differs with %d workers", c.name, workers)
+			}
+		}
+	}
+}
+
+// An address is kept whole up to 8 KiB, which is longer than addresses
+// are, and every link to it holds the same string: what a thousand links
+// cost in memory is a thousand spans, not a thousand addresses.
+func TestLongLinkTargets(t *testing.T) {
+	long := "https://example.com/redirect?to=" + strings.Repeat("é", 1500) + "&token=" + strings.Repeat("0123456789abcdef", 60) // 3 999 bytes
+	endless := "https://example.com/" + strings.Repeat("b", 20_000)
+	pkg := ooxmltest.Docx("")
+	first := pkg.ExternalRel("word/document.xml", ooxmltest.RelHyperlink, long)
+	second := pkg.ExternalRel("word/document.xml", ooxmltest.RelHyperlink, endless)
+	hyperlink := func(id, words string) string {
+		return `<w:hyperlink r:id="` + id + `">` + run(text(words)) + `</w:hyperlink>`
+	}
+	pkg.Add("word/document.xml", ooxmltest.CTDocument, `<w:document`+ooxmltest.WordNS+`><w:body>`+
+		para(run(text("See "))+hyperlink(first, "this")+run(text(" and "))+hyperlink(first, "this again")+run(text(" and "))+hyperlink(second, "that")+run(text(".")))+
+		para(run(text("Or "))+run(`<w:fldChar w:fldCharType="begin"/>`)+run(`<w:instrText xml:space="preserve"> HYPERLINK "`+ooxmltest.EscapeXML(long)+`" </w:instrText>`)+
+			run(`<w:fldChar w:fldCharType="separate"/>`)+run(text("a field"))+run(`<w:fldChar w:fldCharType="end"/>`)+run(text(".")))+
+		`</w:body></w:document>`)
+	doc := word(t, pkg, &gofastcore.Options{Spans: true})
+	var targets []string
+	for _, b := range doc.AllBlocks() {
+		for _, sp := range b.Spans {
+			if sp.Href != "" {
+				targets = append(targets, sp.Href)
+			}
+		}
+	}
+	if len(targets) != 4 {
+		t.Fatalf("%d links, of 4", len(targets))
+	}
+	if targets[0] != long || targets[1] != long || targets[3] != long {
+		t.Errorf("a long address is not kept whole: %d, %d and %d bytes of %d", len(targets[0]), len(targets[1]), len(targets[3]), len(long))
+	}
+	if unsafe.StringData(targets[0]) != unsafe.StringData(targets[1]) {
+		t.Error("two links to one address hold two copies of it")
+	}
+	if got := targets[2]; len(got) != 8<<10 || !strings.HasPrefix(endless, got) {
+		t.Errorf("an address of %d bytes is kept as %d bytes", len(endless), len(got))
 	}
 }

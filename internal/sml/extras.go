@@ -7,6 +7,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -275,10 +276,22 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					sawImage = true
 					continue
 				}
+				// What a picture says counts as text does: its
+				// alternative text and, if the picture is not in the
+				// file, its address, which like a link's may be given
+				// any number of times.
+				said := len(alt)
+				if rel.External {
+					said += len(rel.Target)
+				}
+				if !sh.room.Take(said) {
+					s.Abort(warn.ErrText)
+					continue
+				}
 				var b gofastcore.Block
 				if rel.External {
 					// A picture that is not in the file: named, not fetched.
-					b = gofastcore.Block{Kind: gofastcore.KindImage, Text: alt, Image: &gofastcore.Image{}, Attrs: map[string]string{"href": clean.Label(rel.Target)}}
+					b = gofastcore.Block{Kind: gofastcore.KindImage, Text: alt, Image: &gofastcore.Image{}, Attrs: map[string]string{"href": rel.Target}}
 				} else {
 					var err error
 					b, err = sh.wb.image(rel.Target, alt)
