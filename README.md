@@ -393,11 +393,11 @@ flagged. What this means for a reviewer:
   of the text's shape is taken as what the text is seen against.
 - **Table styles that are not known.** Office has table styles built in,
   and a file may name one without defining it (Excel always does; files
-  written by python-pptx do too). Excel's 60 are taken from the standard;
-  of PowerPoint's 74, the 52 whose definitions PowerPoint wrote into the
-  files of the test corpus are known. Where a table's style is neither in
-  the file nor known, text in it is judged only against a fill the cell
-  itself states.
+  written by python-pptx do too). Excel's 60 are taken from the standard.
+  Of PowerPoint's 74, the 55 whose definitions PowerPoint wrote into the
+  files of the test corpus are known; of Word's, the 74 that Word wrote
+  there. Where a table's style is neither in the file nor known, text in
+  it is judged only against a fill the cell itself states.
 - **What a slide looks like during the show.** Animations are not played.
   Text that an animation reveals, hides or moves is judged where the slide
   stores it.
