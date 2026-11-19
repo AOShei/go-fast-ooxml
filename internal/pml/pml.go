@@ -55,6 +55,8 @@ type presentation struct {
 	opts *gofastcore.Options
 
 	width, height float64        // the size of a slide in points; zero if the file does not say
+	paperHeight   float64        // the height of a notes page or handout, in points; zero if not said
+	masters       [2]string      // the notes master and the handout master, if there are
 	first         int            // the number the first slide shows
 	defaults      *dml.ListStyle // the text style under every other
 	tablePart     string         // the part that defines table styles
@@ -73,12 +75,19 @@ type shared struct {
 	repeated atomic.Int64 // blocks of layouts and masters that may still be repeated on slides
 	exceeded atomic.Bool  // the decompression budget ran out
 
-	mu      sync.Mutex
-	sheets  map[string]*layout
-	themes  map[string]*themeEntry
-	images  map[string]*gofastcore.Image
-	opaque  map[string]bool // pictures: whether one hides what is behind it
-	damaged []string        // parts that could not be read in full
+	mu     sync.Mutex
+	sheets map[string]*layout
+	themes map[string]*themeEntry
+	images map[string]*gofastcore.Image
+	opaque map[string]bool // pictures: whether one hides what is behind it
+
+	// What the notes master [0] and the handout master [1] put on every
+	// page they make, read once, and the bytes of its text.
+	paperOnce  [2]sync.Once
+	paper      [2][]gofastcore.Block
+	paperFrom  [2][]int8 // the placeholder of each block: header 0, footer 1, none -1
+	paperBytes [2]int
+	damaged    []string // parts that could not be read in full
 
 	tableOnce  sync.Once
 	tables     map[string]*tableStyle
@@ -217,6 +226,10 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 			p.tablePart = rel.Target
 		case ns.IsRel(rel.Type, ns.RelCommentAuthors, ns.RelAuthors):
 			p.authorParts = append(p.authorParts, rel.Target)
+		case ns.IsRel(rel.Type, ns.RelNotesMaster) && p.masters[0] == "":
+			p.masters[0] = rel.Target
+		case ns.IsRel(rel.Type, ns.RelHandoutMaster) && p.masters[1] == "":
+			p.masters[1] = rel.Target
 		}
 	}
 	p.load(main, func(s *xmlscan.Scanner) {
@@ -244,6 +257,11 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 				cy, ok2 := intAttr(s, "cy")
 				if ok1 && ok2 && cx > 0 && cy > 0 && cx < 1<<40 && cy < 1<<40 {
 					p.width, p.height = round(float64(cx)/dml.EMU), round(float64(cy)/dml.EMU)
+				}
+				s.Skip()
+			case s.Is(ns.Pres, "notesSz"):
+				if cy, ok := intAttr(s, "cy"); ok && cy > 0 && cy < 1<<40 {
+					p.paperHeight = round(float64(cy) / dml.EMU)
 				}
 				s.Skip()
 			case s.Is(ns.Pres, "defaultTextStyle"):

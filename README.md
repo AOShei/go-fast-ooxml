@@ -288,6 +288,8 @@ placeholder it takes after, on the layout or the master.
 | Date, footer and slide-number placeholders | `footer`. A slide-number field shows the slide's number |
 | Text the layout or the master has of its own | `header` if it is in the upper half of the slide, `footer` if in the lower; on every slide that shows it, once where layout and master repeat each other |
 | Speaker's notes | `note` blocks of type `speaker`, one for each paragraph |
+| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master says not to show is flagged `invisible`. The date and the page number are not read |
+| Header and footer of the handouts | `header` and `footer` blocks from the handout master, once, after the first slide |
 | Comments, in both the older and the threaded form | `note` blocks of type `comment`, with author and date; replies follow the comment |
 
 Whether a paragraph has a bullet, how large its text is and what colour it
@@ -314,8 +316,7 @@ slide past that says so with `limit.exceeded`. What a limit leaves out is
 the same for any number of workers.
 
 **Not read:** charts, diagrams (SmartArt) and sound and video clips, each
-counted in `ooxml.unread_content`; the
-notes master and handout master; animations, other than to know which
+counted in `ooxml.unread_content`; animations, other than to know which
 shapes they move (see hidden text). An action that starts a program or
 runs a macro is reported as `input.active_content` and never run.
 

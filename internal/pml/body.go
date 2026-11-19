@@ -28,9 +28,16 @@ func bbox(sh *props) gofastcore.Rect {
 // title.
 func (pg *page) body(sh *props) (title bool) {
 	s, t := &pg.s, &pg.text
-	if pg.role == roleNotes && !(sh.ph.has && sh.ph.typ == phBody) {
-		// On a notes page only the notes are read: the rest is the
-		// picture of the slide and the page's furniture.
+	if pg.role == roleNotes && !(sh.ph.has && (sh.ph.typ == phBody || sh.ph.typ == phHeader || sh.ph.typ == phFooter)) {
+		// On a notes page the notes are read, and the page's own header
+		// and footer: the rest is the picture of the slide, the date and
+		// the number.
+		s.Skip()
+		return false
+	}
+	if (pg.role == roleNotesMaster || pg.role == roleHandout) && sh.ph.has && sh.ph.typ != phHeader && sh.ph.typ != phFooter {
+		// Of a notes master or handout, the header and footer and its own
+		// text; not the frames the pages fill in, nor the date and number.
 		s.Skip()
 		return false
 	}
@@ -68,7 +75,7 @@ func (pg *page) body(sh *props) (title bool) {
 	}
 	t.Palette, t.Chain = &pg.pal, pg.chain[:n]
 	t.Base = dml.RunProps{}
-	if pg.role != roleNotes {
+	if !pg.role.paper() {
 		t.Base.Ink = dml.Fill{Paint: dml.PaintSolid, Color: textInk}
 	}
 	t.Behind, t.Lit, t.Later = sh.behind, sh.lit, false
@@ -92,6 +99,23 @@ func (pg *page) body(sh *props) (title bool) {
 	switch pg.role {
 	case roleNotes:
 		kind, level, joined = gofastcore.KindNote, 0, false
+		switch {
+		case sh.ph.typ == phHeader:
+			kind, pg.ownHF[0] = gofastcore.KindHeader, true
+		case sh.ph.typ == phFooter:
+			kind, pg.ownHF[1] = gofastcore.KindFooter, true
+		}
+	case roleNotesMaster, roleHandout:
+		// The header, the footer, and text of the page's own: at the top
+		// of the printed page or at the bottom.
+		kind, level, joined = gofastcore.KindFooter, 0, false
+		switch {
+		case sh.ph.has && sh.ph.typ == phHeader:
+			kind = gofastcore.KindHeader
+		case sh.ph.has:
+		case sh.boxed && pg.p.paperHeight > 0 && (sh.box.Y0+sh.box.Y1)/2 < pg.p.paperHeight/2:
+			kind = gofastcore.KindHeader
+		}
 	case roleLayout, roleMaster:
 		// Text of the layout or master itself: it is on every slide that
 		// uses it, at the top or at the bottom.
@@ -101,8 +125,8 @@ func (pg *page) body(sh *props) (title bool) {
 		}
 	}
 	loc := gofastcore.Location{}
-	if pg.role != roleNotes {
-		loc.BBox = bbox(sh)
+	if !pg.role.paper() {
+		loc.BBox = bbox(sh) // a printed page's places are not the slide's
 	}
 
 	if joined {
@@ -206,7 +230,7 @@ func (pg *page) pic(g *group) {
 	}
 	sh.fill = dml.Fill{Paint: dml.PaintOther} // it is what fills its box
 	pg.place(&sh, g)
-	if pg.role == roleNotes {
+	if pg.role.paper() {
 		return
 	}
 	if sh.media {
@@ -301,7 +325,7 @@ func (pg *page) frame(g *group) {
 		// Anything else holds one of these.
 	}
 	pg.place(&sh, g)
-	if pg.role == roleNotes {
+	if pg.role.paper() {
 		return
 	}
 	pg.paints(&sh, false)

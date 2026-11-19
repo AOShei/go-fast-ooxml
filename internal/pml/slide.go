@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
@@ -164,6 +165,9 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 			unmapped += pg.text.Unmapped
 			pg.text.Unmapped = 0
 			res.Programs += pg.programs
+			// What the notes master puts on every notes page, but the
+			// header or footer the page has its own of.
+			blocks = pg.addPaper(blocks, 0, pg.ownHF, room, part, res)
 		}
 		for _, name := range comments {
 			if !pg.exceeded {
@@ -174,6 +178,11 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		pg.text.Removed = 0
 		unmapped += pg.text.Unmapped
 		pg.text.Unmapped = 0
+		// What the handout master puts on every handout: once, with the
+		// first slide.
+		if index == 0 {
+			blocks = pg.addPaper(blocks, 1, [2]bool{}, room, part, res)
+		}
 		part.Blocks = blocks
 		pg.blocks = pg.blocks[:0]
 	}
@@ -482,4 +491,107 @@ func imageID(b *gofastcore.Block) string {
 		return "\x00" + b.Attrs["href"] // a picture outside the file
 	}
 	return b.Image.ID
+}
+
+// addPaper appends what the notes master (which 0) or the handout master
+// (1) puts on every page it makes, as headers and footers. Like the text
+// of a layout, it is stored once and counts each time it is written.
+func (pg *page) addPaper(blocks []gofastcore.Block, which int, own [2]bool, room *gofastcore.TextBudget, part *gofastcore.Part, res *unit.Result) []gofastcore.Block {
+	p := pg.p
+	paper, from, bytes := p.readPaper(which)
+	if own[0] || own[1] {
+		// The page has a header or a footer of its own in place of the
+		// master's.
+		var kept []gofastcore.Block
+		bytes = 0
+		for i, b := range paper {
+			if f := from[i]; f >= 0 && own[f] {
+				continue
+			}
+			kept = append(kept, b)
+			bytes += len(b.Text)
+			for _, sp := range b.Spans {
+				bytes += len(sp.Href)
+			}
+		}
+		paper = kept
+	}
+	switch n := int64(len(paper)); {
+	case n == 0:
+	case p.repeated.Add(-n) < 0:
+		p.repeated.Add(n)
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the header and footer of the notes pages are left out: the slides of the presentation repeat more of them than is kept")
+		res.Limited = true
+	case !room.Take(bytes):
+		pg.full = true
+	default:
+		blocks = appendRepeated(blocks, paper)
+	}
+	return blocks
+}
+
+// readPaper reads the notes master (which 0) or the handout master (1)
+// once: its header and footer, and text of its own. The frames its pages
+// fill in, the date and the page number are not read. A header or footer
+// the master says not to show is flagged.
+func (p *presentation) readPaper(which int) (blocks []gofastcore.Block, from []int8, bytes int) {
+	p.paperOnce[which].Do(func() {
+		name := p.masters[which]
+		if name == "" || !p.pkg.Has(name) {
+			return
+		}
+		pg := &page{p: p}
+		var s xmlscan.Scanner
+		rels, err := p.pkg.RelsWith(name, &s)
+		p.note(opc.RelsName(name), err)
+		var th *theme.Scheme
+		for _, rel := range rels {
+			if !rel.External && ns.IsRel(rel.Type, ns.RelTheme) && th == nil {
+				th = p.theme(rel.Target)
+			}
+		}
+		pg.name, pg.number = name, ""
+		pg.role = [2]role{roleNotesMaster, roleHandout}[which]
+		pg.index(rels)
+		pg.pal = dml.Palette{Theme: th, Map: dml.DefaultMap}
+		pg.read(dml.DefaultMap)
+		if pg.found != nil && *pg.found != dml.DefaultMap && pg.failure == nil && !pg.exceeded {
+			pg.read(*pg.found)
+		}
+		if pg.failure != nil {
+			p.note(name, pg.failure)
+		}
+		blocks := append([]gofastcore.Block(nil), pg.blocks...)
+		// Which placeholder each block is from: header 0, footer 1, or
+		// none (-1), the master's own text.
+		from := make([]int8, len(blocks))
+		for i := range from {
+			from[i] = -1
+		}
+		for i := range 2 {
+			for j := 0; j+1 < len(pg.hfBlock[i]); j += 2 {
+				for k := pg.hfBlock[i][j]; k < pg.hfBlock[i][j+1] && k < len(blocks); k++ {
+					from[k] = int8(i)
+					if !pg.hf[i] {
+						blocks[k].Hidden |= gofastcore.HiddenInvisible
+					}
+				}
+			}
+		}
+		bytes := 0
+		for i := range blocks {
+			b := &blocks[i]
+			bytes += len(b.Text)
+			for _, sp := range b.Spans {
+				bytes += len(sp.Href)
+			}
+			// Marked once here: the blocks are shared by every slide.
+			if found := gofastcore.InvisibleChars(b.Text); found != nil {
+				b.Spans = append(b.Spans[:len(b.Spans):len(b.Spans)], found...)
+				b.Hidden |= gofastcore.HiddenChars
+			}
+		}
+		p.paper[which], p.paperFrom[which], p.paperBytes[which] = blocks, from, bytes
+	})
+	return p.paper[which], p.paperFrom[which], p.paperBytes[which]
 }

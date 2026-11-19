@@ -51,6 +51,7 @@ func TestPowerPointHiddenSlidesAndShapes(t *testing.T) {
 		`slide 2 "" hidden=invisible`,
 		`  paragraph "On a slide left out of the show" hidden=invisible`,
 		`  note "and its notes" hidden=invisible type=speaker`,
+		`  header "A header of the notes page" hidden=invisible`,
 	)
 	if !slideWarned(doc, 0, gofastcore.WarnTextHidden) || !slideWarned(doc, 1, gofastcore.WarnTextHidden) {
 		t.Errorf("text.hidden is missing: %v %v", doc.Parts[0].Warnings, doc.Parts[1].Warnings)

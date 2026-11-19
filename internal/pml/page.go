@@ -23,7 +23,13 @@ const (
 	roleLayout
 	roleMaster
 	roleNotes
+	roleNotesMaster // what every notes page has: its header and footer
+	roleHandout     // the handout master: what every printed handout has
 )
+
+// paper reports whether a page of this role is printed, not shown: a
+// notes page or a handout. It is white, and has a size of its own.
+func (r role) paper() bool { return r == roleNotes || r == roleNotesMaster || r == roleHandout }
 
 // phType is the type of a placeholder: a shape that stands for a kind of
 // content and takes its place and formatting from the shape of the same
@@ -340,6 +346,13 @@ type page struct {
 	cut      string // why the part was cut short, if it was
 	cells    int64  // table cells taken from the shared allowance
 	failure  error  // why the part itself could not be read
+	// Of a notes master or handout: whether its header [0] and footer [1]
+	// are shown, and the blocks of each, as pairs of from and to.
+	hf      [2]bool
+	hfBlock [2][]int
+	// Of a notes page: whether it has a header [0] and a footer [1] of its
+	// own, in place of the notes master's.
+	ownHF [2]bool
 }
 
 // reset makes the page ready to read a part, or to read it again.
@@ -347,6 +360,7 @@ func (pg *page) reset() {
 	pg.hidden, pg.showMaster, pg.bg, pg.found = false, true, dml.Fill{}, nil
 	pg.shapes, pg.blocks, pg.paint, pg.phs = pg.shapes[:0], pg.blocks[:0], pg.paint[:0], nil
 	pg.loose, pg.unit, pg.skipped = false, 0, 0
+	pg.hf, pg.hfBlock, pg.ownHF = [2]bool{true, true}, [2][]int{}, [2]bool{}
 	pg.animated, pg.allAnimated = pg.animated[:0], false
 	pg.title, pg.sawImage, pg.unread = "", false, nil
 	pg.external, pg.programs, pg.cut, pg.failure = 0, 0, "", nil
@@ -434,6 +448,15 @@ func (pg *page) part() {
 				return // nothing that is read comes after it
 			case s.Is(ns.Pres, "extLst") && pg.role != roleMaster:
 				return
+			case s.Is(ns.Pres, "hf"):
+				// Which of the header, footer, date and number a notes
+				// page or handout shows. Shown unless it says not.
+				for i, name := range [2]string{"hdr", "ftr"} {
+					if v, ok := s.Attr(xmlscan.NoSpace, name); ok && (string(v) == "0" || string(v) == "false") {
+						pg.hf[i] = false
+					}
+				}
+				s.Skip()
 			default:
 				s.Skip()
 			}
@@ -738,7 +761,7 @@ func (pg *page) place(sh *props, g *group) {
 	if sh.hide || g.hide {
 		sh.reasons |= gofastcore.HiddenInvisible
 	}
-	if w, h := pg.p.width, pg.p.height; sh.boxed && w > 0 && h > 0 && pg.role != roleNotes &&
+	if w, h := pg.p.width, pg.p.height; sh.boxed && w > 0 && h > 0 && !pg.role.paper() &&
 		(sh.box.X1 <= 0 || sh.box.Y1 <= 0 || sh.box.X0 >= w || sh.box.Y0 >= h) {
 		sh.reasons |= gofastcore.HiddenOffPage
 	}
@@ -766,7 +789,7 @@ func (pg *page) place(sh *props, g *group) {
 // own, is seen against: the last thing painted under it, if that is one
 // colour over the whole box, or the page's background if nothing is.
 func (pg *page) behind(box dml.Rect, boxed bool) (theme.Color, bool) {
-	if pg.role == roleNotes {
+	if pg.role.paper() {
 		return theme.White, true // a notes page is paper
 	}
 	// What the layout and the master draw is under the slide's shapes,
@@ -870,7 +893,15 @@ func (pg *page) sp(g *group) {
 		}
 	}
 	pg.place(&sh, g)
-	if pg.role == roleNotes {
+	if (pg.role == roleNotesMaster || pg.role == roleHandout) && sh.ph.has && len(pg.blocks) > first {
+		// The blocks of the header or footer, which the page may not show.
+		which := 1
+		if sh.ph.typ == phHeader {
+			which = 0
+		}
+		pg.hfBlock[which] = append(pg.hfBlock[which], first, len(pg.blocks))
+	}
+	if pg.role.paper() {
 		return
 	}
 	if sh.ph.has && pg.role != roleSlide {
