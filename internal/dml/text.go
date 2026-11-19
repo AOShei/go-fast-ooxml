@@ -12,6 +12,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/label"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -264,6 +265,13 @@ const defaultSize = 1800
 // once. The fields down to SlideNumber are set by the caller before each
 // Read, and the rest are the result.
 type Text struct {
+	// Budget is what the document may still hold of text. Every
+	// paragraph read is taken from it, and when it runs out the scan is
+	// ended with warn.ErrText. Nil for no limit.
+	Budget *gofastcore.TextBudget
+	// Taken counts what was taken from Budget, for a caller that reads
+	// a part again and gives it back first.
+	Taken int64
 	// Palette resolves colours.
 	Palette *Palette
 	// Chain is the list styles the body's text inherits from, nearest
@@ -467,6 +475,14 @@ func (t *Text) para(s *xmlscan.Scanner) {
 		t.Buf, t.spans = t.Buf[:start], t.spans[:spanStart]
 		return
 	}
+	// A paragraph the document has no room for ends the reading of the
+	// part it is in; what was read before it is kept.
+	if !t.Budget.Take(to - from) {
+		t.Buf, t.spans = t.Buf[:start], t.spans[:spanStart]
+		s.Abort(warn.ErrText)
+		return
+	}
+	t.Taken += int64(to - from)
 	p := Para{Start: start + from, End: start + to, Level: level, Size: size}
 	p.Spans, p.Hidden = hidden.Settle(t.spans[spanStart:], from, to, raw)
 	t.spans = t.spans[:spanStart]

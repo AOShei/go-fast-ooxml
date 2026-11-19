@@ -636,8 +636,8 @@ func TestExcelSharedStringAmplification(t *testing.T) {
 	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "A", Data: rows.String()}).WithSharedStrings(strings.Repeat("x", 1000))
 	data := pkg.Bytes()
 	// Two megabytes of text from a file of a few kilobytes, with a limit
-	// of one megabyte on what may be decompressed.
-	doc, err := extract(t, data, &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 1 << 20}})
+	// of one megabyte on the text a document may hold.
+	doc, err := extract(t, data, &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: 1 << 20}})
 	if err != nil {
 		t.Fatal(err)
 	}

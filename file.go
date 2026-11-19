@@ -230,12 +230,8 @@ func (f *File) open(first bool) (*session, error) {
 	case opc.Docx:
 		sess.src = wml.Open(pkg, main, opts)
 	case opc.Xlsx:
-		// The text of the cells is bounded by the same number as the
-		// decompressed size: a workbook cannot ask for more output than
-		// the largest input allowed.
 		sess.src = sml.Open(pkg, main, opts, sml.Config{
-			MaxCells:     gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells),
-			MaxTextBytes: gofastcore.ResolveLimit(opts.Limits.MaxDecodedBytes, DefaultMaxDecodedBytes),
+			MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells),
 		})
 	default:
 		sess.src = pml.Open(pkg, main, opts, pml.Config{
@@ -350,6 +346,7 @@ func (f *File) pass(ctx context.Context, selected []int, window int, yield func(
 		return nil, err
 	}
 	sess.src.Begin()
+	gofastcore.TextBudgetFrom(ctx).Reset()
 	workers := f.opts.Workers
 	if workers <= 0 {
 		workers = runtime.GOMAXPROCS(0)
@@ -429,7 +426,10 @@ func (f *File) inOrder(ctx context.Context, selected []int, handed int, yield fu
 	f.mu.Lock()
 	f.sess, f.clean = sess, false
 	f.mu.Unlock()
+	// The reading starts over: what the first attempt took of the text
+	// the document may hold is given back.
 	sess.src.Begin()
+	gofastcore.TextBudgetFrom(ctx).Reset()
 	for k, index := range selected {
 		res := sess.src.Read(ctx, index)
 		if err := ctx.Err(); err != nil {
@@ -514,7 +514,9 @@ func (f *File) embedded(ctx context.Context, sess *session, tallies []*unit.Tall
 			continue
 		}
 		limited = limited || t.Limited
-		children, bad, err := media.Embedded(ctx, sess.pkg, &f.opts, t.Rels, seen, !limited)
+		// With a limit met, or no text left to take, the embedded files
+		// are listed and not read.
+		children, bad, err := media.Embedded(ctx, sess.pkg, &f.opts, t.Rels, seen, !limited && !gofastcore.TextBudgetFrom(ctx).Spent())
 		out = append(out, children...)
 		if len(bad) > 0 {
 			t.Damaged = append(t.Damaged[:len(t.Damaged):len(t.Damaged)], bad...)
@@ -527,7 +529,8 @@ func (f *File) embedded(ctx context.Context, sess *session, tallies []*unit.Tall
 // Document reads the parts Options.Parts selects and returns the
 // document, the same one Extract returns.
 func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
-	ctx = f.tree(ctx)
+	ctx, done := f.tree(ctx)
+	defer done()
 	selected, asked, err := f.selection()
 	if err != nil {
 		return nil, err
@@ -581,7 +584,8 @@ func (f *File) capped(asked, given int) gofastcore.Warning {
 // Children once they have been read.
 func (f *File) Parts(ctx context.Context) iter.Seq2[gofastcore.Part, error] {
 	return func(yield func(gofastcore.Part, error) bool) {
-		ctx := f.tree(ctx)
+		ctx, done := f.tree(ctx)
+		defer done()
 		selected, _, err := f.selection()
 		if err == nil {
 			err = ctx.Err()
@@ -612,7 +616,8 @@ func (f *File) Parts(ctx context.Context) iter.Seq2[gofastcore.Part, error] {
 // Part reads the part with the given number, from 1, whether or not
 // Options.Parts selects it.
 func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
-	ctx = f.tree(ctx)
+	ctx, done := f.tree(ctx)
+	defer done()
 	if number < 1 || number > f.parts {
 		return gofastcore.Part{}, fmt.Errorf("gofastooxml: part %d: the %s has %d %s, numbered from 1: %w", number, f.kind(), f.parts, f.noun, gofastcore.ErrNoPartsSelected)
 	}
@@ -711,7 +716,8 @@ func (f *File) Warnings() []gofastcore.Warning {
 // and returns them as in gofastcore.Document.Children. With no
 // Options.Child each is listed, not extracted.
 func (f *File) Children(ctx context.Context) ([]*gofastcore.Document, error) {
-	ctx = f.tree(ctx)
+	ctx, done := f.tree(ctx)
+	defer done()
 	sess, indexes, tallies := f.known()
 	sess.src.Begin()
 	out := f.embedded(ctx, sess, tallies)

@@ -93,6 +93,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		maxSpin  = flags.Int("max-spin-count", 0, "rounds of hashing an encrypted file may ask for to try a password (0: the default, 1 million; -1: no limit)")
 		maxCells = flags.Int64("max-cells", 0, "cells kept from a workbook or from the tables of a presentation (0: the default, 20 million; -1: no limit)")
 		maxBytes = flags.Int64("max-decoded-bytes", 0, "decompressed bytes read from a file (0: the default, 2 GiB; -1: no limit)")
+		maxText  = flags.Int64("max-text-bytes", 0, "bytes of text a document and the files embedded in it may hold (0: the default, 256 MiB; -1: no limit)")
 		quiet    = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
 		version  = flags.Bool("version", false, "print the version and exit")
 		// For Markdown and text.
@@ -128,7 +129,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return fail("unknown format %q: json, markdown or text", *format)
 	}
 	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password}
-	opts.Limits.MaxDecodedBytes = *maxBytes
+	opts.Limits.MaxDecodedBytes, opts.Limits.MaxTextBytes = *maxBytes, *maxText
 	switch *images {
 	case "none":
 		opts.Images = gofastcore.ImagesNone

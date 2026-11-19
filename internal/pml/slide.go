@@ -35,7 +35,11 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 	res := &unit.Result{}
 	part := &res.Part
 	part.Kind, part.Number, part.Width, part.Height = gofastcore.PartSlide, index+1, p.width, p.height
-	pg.exceeded, pg.damaged, pg.cells = false, nil, 0
+	pg.exceeded, pg.damaged, pg.cells, pg.full = false, nil, 0, false
+	// What the document may still hold of text is taken paragraph by
+	// paragraph as the slide, its notes and its comments are read.
+	room := gofastcore.TextBudgetFrom(ctx)
+	pg.text.Budget, pg.text.Taken = room, 0
 
 	removed, skipped, sawImage := 0, 0, false
 	cut := ""
@@ -83,7 +87,12 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		pg.number = strconv.Itoa(index + p.first)
 		pg.index(rels)
 		pg.read(colors)
-		if pg.found != nil && *pg.found != colors && pg.failure == nil && !pg.exceeded {
+		if pg.found != nil && *pg.found != colors && pg.failure == nil && !pg.exceeded && !pg.full {
+			// Read again with the colours the slide turned out to have:
+			// its text is taken a second time, so the first is given
+			// back.
+			room.Return(pg.text.Taken)
+			pg.text.Taken = 0
 			colors = *pg.found
 			pg.read(colors)
 		}
@@ -111,12 +120,21 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 			if l.master != nil && l.show {
 				above = l.master.static
 			}
+			// What every slide repeats is stored once and written with
+			// every slide: it counts against the text the document may
+			// hold each time.
+			bytes := l.staticBytes
+			if above != nil {
+				bytes += l.master.staticBytes
+			}
 			switch n := int64(len(above) + len(l.static)); {
 			case n == 0:
 			case p.repeated.Add(-n) < 0:
 				p.repeated.Add(n)
 				part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the text of the slide's layout and master is left out: the slides of the presentation repeat more of it than is kept")
 				res.Limited = true
+			case !room.Take(bytes):
+				pg.full = true
 			default:
 				blocks = append(blocks, above...)
 				// A layout often repeats what its master has, in the same
@@ -156,6 +174,10 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 	}
 
 	res.Damaged = pg.damaged
+	if pg.full {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, warn.TextCut("slide"))
+		res.Limited = true
+	}
 	if pg.exceeded {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; the slide is cut off there")
 		res.Limited = true
@@ -193,6 +215,12 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 // sheet reads a layout or a master into l.
 func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	p := pg.p
+	// A layout is read once and kept for every slide and every reading
+	// of the presentation: its text is counted where a slide repeats it,
+	// not here, where a budget that ran out would cut it for all.
+	room, full := pg.text.Budget, pg.full
+	pg.text.Budget = nil
+	defer func() { pg.text.Budget, pg.full = room, full }()
 	pg.name, pg.number = l.name, ""
 	pg.index(rels)
 	pg.pal = dml.Palette{Theme: l.theme, Map: l.cmap}
@@ -257,8 +285,10 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	// These blocks are copied to every slide that shows them, and the
 	// copies share their spans. Invisible characters are marked here,
 	// once, so that nothing is added to a block several slides hold.
+	l.staticBytes = 0
 	for i := range l.static {
 		b := &l.static[i]
+		l.staticBytes += len(b.Text)
 		if found := gofastcore.InvisibleChars(b.Text); found != nil {
 			b.Spans = append(b.Spans[:len(b.Spans):len(b.Spans)], found...)
 			b.Hidden |= gofastcore.HiddenChars

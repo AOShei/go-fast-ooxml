@@ -325,6 +325,11 @@ func (s *Scanner) more() bool {
 	return false
 }
 
+// Abort ends the scan: from now on Next returns EOF and Err returns err,
+// unless the scan had failed already. It is for a reader that has reason
+// of its own to stop, such as a limit on what it may produce.
+func (s *Scanner) Abort(err error) { s.fail(err) }
+
 // Next advances to the next token and returns its kind.
 func (s *Scanner) Next() Kind {
 	if s.pendingEnd {

@@ -45,19 +45,21 @@ func (f *File) allowance(ctx context.Context) *atomic.Int64 {
 }
 
 // tree returns the context for one reading of this file's parts and of
-// the files embedded in it: ctx, carrying what is left for their password
-// checks. A file that is itself embedded passes on what it was given;
-// otherwise each reading has an allowance of its own, as it counts every
-// limit afresh.
-func (f *File) tree(ctx context.Context) context.Context {
-	if _, ok := ctx.Value(spinKey{}).(*atomic.Int64); ok {
-		return ctx
+// the files embedded in it: ctx, carrying what the document and the
+// files embedded in it share, which is the text they may hold
+// (gofastcore.Limits.MaxTextBytes) and what is left for their password
+// checks. A file that is itself embedded draws on what the document it
+// is in has left; otherwise each reading counts afresh, as it does every
+// limit. done is to be called when the reading is over: it hands what
+// the file used back to the document it is embedded in.
+func (f *File) tree(ctx context.Context) (_ context.Context, done func()) {
+	ctx, room := gofastcore.WithTextBudget(ctx, f.opts.Limits)
+	if _, ok := ctx.Value(spinKey{}).(*atomic.Int64); !ok {
+		if left := f.allowance(ctx); left != nil {
+			ctx = context.WithValue(ctx, spinKey{}, left)
+		}
 	}
-	left := f.allowance(ctx)
-	if left == nil {
-		return ctx
-	}
-	return context.WithValue(ctx, spinKey{}, left)
+	return ctx, room.Close
 }
 
 // unlock looks at whether the file is a compound file and, if it is a

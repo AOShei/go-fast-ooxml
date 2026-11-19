@@ -13,6 +13,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -647,6 +648,13 @@ func (p *parser) block(pp *paraProps) (gofastcore.Block, bool) {
 		}
 		return gofastcore.Block{}, false
 	}
+	// Every paragraph is counted here, wherever it stands: in the body,
+	// a table cell, a note, a header, a text box. A paragraph the
+	// document has no room for ends the reading; what was read is kept.
+	if !p.r.text.Take(to - from) {
+		p.s.Abort(warn.ErrText)
+		return gofastcore.Block{}, false
+	}
 
 	b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(raw[from:to])}
 	b.Spans, b.Hidden = settle(p.spans[p.para.spanStart:], from, to, raw)
@@ -880,6 +888,11 @@ func (p *parser) runText() {
 	preserve := string(space) == "preserve"
 	start := len(p.text)
 	p.text = s.AppendText(p.text)
+	// A paragraph is counted when it is complete; one that has by itself
+	// outgrown what is left is not read to its end first.
+	if n := len(p.text) - p.para.start; n > 1<<16 && int64(n) > p.r.text.Left() {
+		p.s.Abort(warn.ErrText)
+	}
 	if preserve {
 		return
 	}

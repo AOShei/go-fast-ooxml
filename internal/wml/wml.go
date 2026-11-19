@@ -105,7 +105,9 @@ type reader struct {
 	sawImage          bool // the body has a picture, whether or not pictures are extracted
 	unread            map[string]int
 	external          int
-	budget            bool // the decompression budget ran out
+	budget            bool                   // the decompression budget ran out
+	text              *gofastcore.TextBudget // what the document may still hold of text
+	textCut           bool                   // and that it ran out
 }
 
 // Extract reads the Word document whose main part is named main into doc,
@@ -116,7 +118,7 @@ type reader struct {
 // could be read is in the part, and warnings say what could not.
 func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcore.Options, doc *gofastcore.Document) {
 	r := &reader{drawn: dml.Palette{Map: dml.DefaultMap},
-		ctx: ctx, pkg: pkg, opts: opts, doc: doc,
+		ctx: ctx, pkg: pkg, opts: opts, doc: doc, text: gofastcore.TextBudgetFrom(ctx),
 		part:          &gofastcore.Part{Kind: gofastcore.PartBody, Number: 1},
 		seenFurniture: map[string]bool{},
 		usedNotes:     map[string]bool{},
@@ -259,6 +261,8 @@ func (r *reader) noteErr(name string, err error) {
 	case err == nil:
 	case errors.Is(err, opc.ErrBudget):
 		r.budget = true
+	case errors.Is(err, warn.ErrText):
+		r.textCut = true
 	default:
 		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, clean.Label(name))
 	}
@@ -270,6 +274,8 @@ func (r *reader) bodyErr(err error) {
 	switch {
 	case errors.Is(err, opc.ErrBudget):
 		r.budget = true
+	case errors.Is(err, warn.ErrText):
+		r.textCut = true
 	case errors.Is(err, xmlscan.ErrDepth), errors.Is(err, xmlscan.ErrTokenTooLarge):
 		r.part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the document body is cut off: "+clean.Label(err.Error()))
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
@@ -545,7 +551,8 @@ func (r *reader) imageBlock(name, alt string) gofastcore.Block {
 // embedded hands the files embedded in the document to the caller's child
 // extractor: other Office files, and objects inserted from other programs.
 func (r *reader) embedded(rels []opc.Rel) {
-	children, damaged, err := media.Embedded(r.ctx, r.pkg, r.opts, rels, r.children, !r.budget)
+	// With no text left to take, the embedded files are listed, not read.
+	children, damaged, err := media.Embedded(r.ctx, r.pkg, r.opts, rels, r.children, !r.budget && !r.text.Spent())
 	r.doc.Children = append(r.doc.Children, children...)
 	for _, name := range damaged {
 		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, clean.Label(name))
@@ -567,6 +574,9 @@ func (r *reader) finish() {
 	}
 	if r.budget {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; the document is cut off there")
+	}
+	if r.textCut {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, warn.TextCut("document"))
 	}
 	if !hasText && !part.Has(gofastcore.WarnPartFailed) {
 		switch {

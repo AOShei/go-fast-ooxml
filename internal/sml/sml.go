@@ -37,11 +37,6 @@ type Config struct {
 	// MaxCells bounds the cells kept from a workbook, all sheets
 	// together.
 	MaxCells int64
-	// MaxTextBytes bounds the text of those cells. A cell's text is
-	// counted wherever it is used, so a long string that a million cells
-	// refer to counts a million times: it would be written a million
-	// times by whatever uses the result.
-	MaxTextBytes int64
 }
 
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
@@ -59,7 +54,6 @@ type workbook struct {
 	persons  map[string]string // authors of threaded comments, by id
 
 	cells atomic.Int64 // cells that may still be kept
-	text  atomic.Int64 // bytes of cell text that may still be kept
 
 	mu     sync.Mutex
 	images map[string]*gofastcore.Image
@@ -218,7 +212,6 @@ func (b *Book) HiddenChecked() gofastcore.Hidden { return HiddenChecked }
 func (b *Book) Begin() {
 	b.wb.pkg.Restore(b.after)
 	b.wb.cells.Store(b.cfg.MaxCells)
-	b.wb.text.Store(b.cfg.MaxTextBytes)
 }
 
 // Limited reports whether the decompression budget ran out while the
@@ -323,6 +316,8 @@ func (wb *workbook) sheet(ctx context.Context, index int, ref sheetRef, budget b
 // missing, a chart, a dialog, or one the limit was reached before.
 func (wb *workbook) start(ctx context.Context, index int, ref sheetRef, budget bool) (sh *sheet, readable bool) {
 	sh = &sheet{wb: wb, ctx: ctx, name: ref.target, budget: budget, unread: map[string]int{}}
+	sh.room = gofastcore.TextBudgetFrom(ctx)
+	sh.shapes.Budget = sh.room
 	part := &sh.part
 	part.Kind, part.Number, part.Name = gofastcore.PartSheet, index+1, ref.name
 	if ref.hidden {
@@ -485,6 +480,11 @@ func (sh *sheet) noteErr(name string, err error) {
 	case err == nil:
 	case errors.Is(err, opc.ErrBudget):
 		sh.budget = true
+	case errors.Is(err, warn.ErrText):
+		// The text of a shape went over what the document may hold.
+		if sh.cut == "" {
+			sh.cut = "the limit on the amount of text was reached"
+		}
 	default:
 		sh.damaged = append(sh.damaged, name)
 	}
