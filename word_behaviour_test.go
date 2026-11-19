@@ -250,7 +250,10 @@ func TestWordRunContent(t *testing.T) {
 	body := para(run(`<w:t>  trimmed  </w:t>`)+run(text(" kept "))+run("<w:t>\n\t  end\n  </w:t>")) +
 		para(run(text("a")+`<w:tab/>`+text("b")+`<w:br/>`+text("c")+`<w:cr/>`+text("d"))) +
 		para(run(text("non")+`<w:noBreakHyphen/>`+text("breaking soft")+`<w:softHyphen/>`+text("hyphen"))) +
-		para(run(`<w:sym w:font="Symbol" w:char="F061"/><w:sym w:font="Symbol" w:char="F0B7"/><w:sym w:font="Wingdings" w:char="F04A"/>`)) +
+		// Symbol fonts by their tables; Wingdings F0FF, the Windows logo,
+		// has no character in Unicode.
+		para(run(`<w:sym w:font="Symbol" w:char="F061"/><w:sym w:font="Symbol" w:char="F0B7"/><w:sym w:font="Wingdings" w:char="F04A"/>`+
+			`<w:sym w:font="Wingdings 2" w:char="F050"/><w:sym w:font="Webdings" w:char="F021"/><w:sym w:font="Wingdings" w:char="F0FF"/>`)) +
 		// A field: the code is skipped, the result is text.
 		para(run(text("Page "))+run(`<w:fldChar w:fldCharType="begin"/>`)+run(`<w:instrText xml:space="preserve"> PAGE \* MERGEFORMAT </w:instrText>`)+
 			run(`<w:fldChar w:fldCharType="separate"/>`)+run(text("7"))+run(`<w:fldChar w:fldCharType="end"/>`)+
@@ -266,7 +269,7 @@ func TestWordRunContent(t *testing.T) {
 		`paragraph "trimmed kept end"`,
 		"paragraph \"a\\tb\\nc\\nd\"",
 		`paragraph "non‑breaking soft\u00adhyphen"`,
-		"paragraph \"α•\uFFFD\"",
+		"paragraph \"α•☺🗸🕷\uFFFD\"",
 		`paragraph "Page 7 of 9"`,
 		`paragraph "See the site."`,
 		`paragraph "smart control"`,

@@ -41,7 +41,7 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 	room := gofastcore.TextBudgetFrom(ctx)
 	pg.text.Budget, pg.text.Taken = room, 0
 
-	removed, skipped, sawImage := 0, 0, false
+	removed, unmapped, skipped, sawImage := 0, 0, 0, false
 	cut := ""
 	switch {
 	case ref.target == "" || !p.pkg.Has(ref.target):
@@ -104,6 +104,7 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		res.Unread, res.Programs = pg.unread, pg.programs
 		removed, skipped, sawImage, cut = pg.text.Removed, pg.skipped, pg.sawImage, pg.cut
 		pg.text.Removed, pg.cells = 0, 0 // counted; the cells stay taken
+		unmapped, pg.text.Unmapped = pg.text.Unmapped, 0
 		if err := pg.failure; err != nil {
 			switch {
 			case errors.Is(err, xmlscan.ErrDepth), errors.Is(err, xmlscan.ErrTokenTooLarge):
@@ -160,6 +161,8 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 			blocks = append(blocks, pg.blocks...)
 			removed += pg.text.Removed
 			pg.text.Removed = 0
+			unmapped += pg.text.Unmapped
+			pg.text.Unmapped = 0
 			res.Programs += pg.programs
 		}
 		for _, name := range comments {
@@ -169,6 +172,8 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		}
 		removed += pg.text.Removed
 		pg.text.Removed = 0
+		unmapped += pg.text.Unmapped
+		pg.text.Unmapped = 0
 		part.Blocks = blocks
 		pg.blocks = pg.blocks[:0]
 	}
@@ -207,6 +212,9 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 	}
 	if removed > 0 {
 		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(removed))
+	}
+	if unmapped > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(unmapped))
 	}
 	part.MarkHidden()
 	return res

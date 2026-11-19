@@ -350,7 +350,7 @@ func (pg *page) reset() {
 	pg.animated, pg.allAnimated = pg.animated[:0], false
 	pg.title, pg.sawImage, pg.unread = "", false, nil
 	pg.external, pg.programs, pg.cut, pg.failure = 0, 0, "", nil
-	pg.text.Removed, pg.text.Programs = 0, 0
+	pg.text.Removed, pg.text.Unmapped, pg.text.Programs = 0, 0, 0
 	if pg.cells > 0 {
 		pg.p.cells.Add(pg.cells) // given back: the part is read again
 		pg.cells = 0

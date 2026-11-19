@@ -335,7 +335,8 @@ func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, ro
 	t.Later, t.Styles, t.Link, t.SlideNumber = false, sh.wb.opts.Spans, nil, ""
 	t.Read(s)
 	sh.removed += t.Removed
-	t.Removed = 0
+	sh.unmapped += t.Unmapped
+	t.Removed, t.Unmapped = 0, 0
 	for i := range t.Paras {
 		p := &t.Paras[i]
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(t.Buf[p.Start:p.End]), Spans: p.Spans, Hidden: p.Hidden}

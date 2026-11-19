@@ -392,6 +392,9 @@ func (sh *sheet) finish(sawImage bool) {
 	if sh.removed > 0 {
 		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(sh.removed))
 	}
+	if sh.unmapped > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))
+	}
 	part.MarkHidden()
 }
 

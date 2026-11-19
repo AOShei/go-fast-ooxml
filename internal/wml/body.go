@@ -13,6 +13,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -30,6 +31,7 @@ type parser struct {
 	text    []byte             // text of the paragraphs being built, innermost last
 	spans   []gofastcore.Span  // their spans, offsets counted from each paragraph's start
 	scratch []byte             // for cleaning a piece of text
+	symbols []byte             // for translating text in a symbol font
 	para    paraState          // the paragraph being read
 	after   []gofastcore.Block // blocks that follow the paragraph or table in progress
 
@@ -754,10 +756,10 @@ func (p *parser) run(deleted bool) {
 				s.Skip()
 				continue
 			}
-			p.runText()
+			p.runText(p.runFont(&direct))
 		case "delText":
 			if deleted {
-				p.runText()
+				p.runText(p.runFont(&direct))
 			} else {
 				s.Skip()
 			}
@@ -881,19 +883,40 @@ func fieldLink(code []byte) string {
 	return ""
 }
 
-// runText appends the content of w:t.
+// runFont returns the symbol font a run's text is in, from its own
+// properties, its character style, its paragraph's style or the
+// document's defaults, nearest first; symbol.None for an ordinary font.
+func (p *parser) runFont(direct *runProps) symbol.Font {
+	if direct.fontSet {
+		return direct.font
+	}
+	if c := p.r.styles.char(direct.style); c != nil && c.fontSet {
+		return c.font
+	}
+	return p.para.base.font
+}
+
+// runText appends the content of w:t, in font.
 //
 // White space at the ends of a text element is dropped unless the element
 // asks for it to be kept with xml:space="preserve", which is what Word and
 // LibreOffice do. Word writes that attribute whenever a run begins or ends
 // with a space, so in its own files nothing is lost by the rule; in a file
 // made by another program it reproduces what a reader sees in Word.
-func (p *parser) runText() {
+func (p *parser) runText(font symbol.Font) {
 	s := &p.s
 	space, _ := s.Attr(xmlscan.SpaceXML, "space")
 	preserve := string(space) == "preserve"
 	start := len(p.text)
 	p.text = s.AppendText(p.text)
+	if font != symbol.None {
+		// Text typed in a symbol font: each character is a code of the
+		// font ("J" in Wingdings is a smiling face).
+		var missing int
+		p.symbols, missing = font.Translate(p.symbols[:0], p.text[start:])
+		p.text = append(p.text[:start], p.symbols...)
+		p.r.unmapped += missing
+	}
 	// A paragraph is counted when it is complete; one that has by itself
 	// outgrown what is left is not read to its end first.
 	if n := len(p.text) - p.para.start; n > 1<<16 && int64(n) > p.r.text.Left() {

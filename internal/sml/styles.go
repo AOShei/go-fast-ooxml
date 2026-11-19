@@ -7,6 +7,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -21,6 +22,7 @@ type cellStyle struct {
 	format  *numfmt.Format
 	general bool              // the format is General
 	hidden  gofastcore.Hidden // why text in such a cell cannot be seen
+	symbol  symbol.Font       // the cell's font, if it is a symbol font: its text is codes
 }
 
 type styleSheet struct {
@@ -83,8 +85,9 @@ func readColorRef(s *xmlscan.Scanner) colorRef {
 }
 
 type fontInfo struct {
-	size  float64 // in points; 0 if not given
-	color colorRef
+	size   float64 // in points; 0 if not given
+	color  colorRef
+	symbol symbol.Font
 }
 
 type fillInfo struct {
@@ -142,6 +145,9 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 						}
 					case s.Is(ns.Sheet, "color"):
 						f.color = readColorRef(s)
+					case s.Is(ns.Sheet, "name"):
+						v, _ := s.Attr(xmlscan.NoSpace, "val")
+						f.symbol = symbol.ByName(string(v))
 					}
 				}
 				if len(fonts) < maxStyles {
@@ -244,6 +250,7 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 		cs := cellStyle{format: f, general: f == numfmt.General()}
 		if x.font >= 0 && x.font < len(fonts) {
 			font := fonts[x.font]
+			cs.symbol = font.symbol
 			if font.size > 0 && font.size < gofastcore.HiddenTinySize {
 				cs.hidden |= gofastcore.HiddenTiny
 			}

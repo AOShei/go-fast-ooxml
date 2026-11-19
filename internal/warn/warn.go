@@ -4,7 +4,10 @@
 // declares them.
 package warn
 
-import "errors"
+import (
+	"errors"
+	"strconv"
+)
 
 const (
 	UnreadContent       = "ooxml.unread_content"
@@ -24,4 +27,10 @@ var ErrText = errors.New("the limit on the amount of text was reached")
 // for that reason; what stands for "part" is the kind of part.
 func TextCut(noun string) string {
 	return "the limit on the amount of text was reached; the " + noun + " is cut off there"
+}
+
+// Unmapped is the message of gofastcore.WarnTextUnmappedGlyphs: n codes of
+// a symbol font that have no character in Unicode.
+func Unmapped(n int) string {
+	return strconv.Itoa(n) + " characters of a symbol font that have no character in Unicode appear as U+FFFD"
 }

@@ -1,26 +1,21 @@
 package wml
 
 import (
-	"strings"
 	"unicode/utf8"
+
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 )
 
-// symbolRune returns the character a reader sees for a code in a symbol
-// font. Word stores such characters as a font name and a number, usually
-// in the private range U+F020 to U+F0FF, which means nothing without the
-// font.
-//
-// The Symbol font is translated from the Unicode Consortium's table. A
-// code in any other symbol font (Wingdings, Webdings) is returned as
-// U+FFFD, the replacement character: the fact that a character stood
-// there is kept, and the caller reports that it could not be read.
+// symbolRune returns the character a reader sees for w:sym, a character
+// given by a font and a number. In a symbol font the number is a code,
+// usually in the private range U+F020 to U+F0FF, translated by the font's
+// table; a code with no character is returned as U+FFFD, the replacement
+// character, so that the fact that a character stood there is kept and
+// the caller can report that it could not be read.
 func symbolRune(font string, code rune) rune {
-	if code >= 0xF000 && code <= 0xF0FF {
-		code &= 0xFF
-	}
-	if strings.EqualFold(font, "Symbol") {
-		if code >= 0x20 && code <= 0xFF {
-			if r := symbolFont[code-0x20]; r != 0 {
+	if f := symbol.ByName(font); f != symbol.None {
+		if c, ok := symbol.Code(code); ok {
+			if r, ok := f.Rune(c); ok {
 				return r
 			}
 		}

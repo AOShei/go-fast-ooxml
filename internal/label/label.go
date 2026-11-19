@@ -5,68 +5,35 @@ package label
 import (
 	"strings"
 	"unicode"
+
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 )
 
 // Bullet returns the character a reader sees for a bullet definition.
-// Bullets are usually stored as a code in a symbol font's private range;
-// the common ones are translated and any other becomes a plain bullet.
+// Bullets are usually stored as a code of a symbol font, often in the
+// private range; the code is translated by the font's table, and a code
+// with no character, or a bullet with nothing to show, becomes a plain
+// bullet.
 func Bullet(text, font string) string {
 	// In a symbol font every character is a code, not only those in the
 	// private range: "§" in Wingdings is a small square.
-	symbolic := false
-	switch strings.ToLower(font) {
-	case "symbol", "wingdings", "wingdings 2", "wingdings 3", "webdings":
-		symbolic = true
-	}
+	f := symbol.ByName(font)
 	for _, r := range text {
-		var code rune
+		code, coded := symbol.Code(r)
 		switch {
-		case r >= 0xF000 && r <= 0xF0FF:
-			code = r & 0xFF
-		case symbolic && r > 0x20 && r <= 0xFF:
-			code = r
+		case coded && (f != symbol.None || r >= 0xF000):
+			if f == symbol.None {
+				return "•" // a symbol code with no symbol font named
+			}
+			if c, ok := f.Rune(code); ok && c != ' ' {
+				return string(c)
+			}
+			return "•"
 		case r >= 0xFB00 && r <= 0xFB06:
 			continue // a ligature is not a bullet, and is not written as one
 		case r == 'o' || r == '-' || r == '*' || r > 0x7F && unicode.IsPrint(r):
 			return string(r)
-		default:
-			continue
 		}
-		switch strings.ToLower(font) {
-		case "symbol":
-			switch code {
-			case 0xB7:
-				return "•"
-			case 0x2D:
-				return "−"
-			case 0xA8:
-				return "♦"
-			case 0xDE:
-				return "⇒"
-			}
-		case "wingdings":
-			switch code {
-			case 0xA7:
-				return "▪"
-			case 0x6C, 0x9F:
-				return "●"
-			case 0x6E:
-				return "■"
-			case 0x71, 0x6F, 0xA8:
-				return "□"
-			case 0x76:
-				return "❖"
-			case 0xD8:
-				return "➢"
-			case 0xE0:
-				return "→"
-			case 0xFC:
-				return "✓"
-			case 0xFE:
-				return "☑"
-			}
-		}
-		return "•"
 	}
 	return "•"
 }

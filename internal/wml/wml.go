@@ -597,7 +597,7 @@ func (r *reader) finish() {
 	}
 	if r.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs,
-			strconv.Itoa(r.unmapped)+" characters of a symbol font this version cannot translate appear as U+FFFD")
+			warn.Unmapped(r.unmapped))
 	}
 	if r.clamped > 0 {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, strconv.Itoa(r.clamped)+" headings deeper than level 6")

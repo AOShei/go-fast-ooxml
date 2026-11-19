@@ -79,6 +79,13 @@ with warnings that say what could not.
 - **Pictures are blocks.** Every picture is an `image` block with its
   place, its size and its alternative text, unless `Options.Images` is
   `ImagesNone`; `ImagesData` adds the bytes.
+- **Symbol fonts are translated.** Text in Symbol, Wingdings, Wingdings 2,
+  Wingdings 3 or Webdings is codes of the font, not letters: "ü" in
+  Wingdings is a check mark. It is written as the characters Unicode gives
+  those symbols, in all three formats, whether the font is set on the run,
+  its style or the cell, and for bullets. A code Unicode has no character
+  for (the Windows logo) is U+FFFD, and the part says how many with
+  `text.unmapped_glyphs`.
 - **A file cut short** has lost the directory at the end of its archive.
   Its members are then found by their own headers, as far as they go: a
   file that lost only its directory gives the whole document, one cut

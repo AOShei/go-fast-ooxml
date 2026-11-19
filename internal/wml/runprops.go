@@ -5,6 +5,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -64,6 +65,10 @@ type runProps struct {
 	shade     color // shading behind the run
 	highlight color
 	style     string // the character style the run names
+	// font is the symbol font the run's text is in (w:rFonts), if fontSet;
+	// symbol.None for an ordinary font.
+	font    symbol.Font
+	fontSet bool
 }
 
 // under fills what p leaves unset from parent.
@@ -89,6 +94,9 @@ func (p *runProps) under(parent *runProps) {
 	if !p.highlight.set {
 		p.highlight = parent.highlight
 	}
+	if !p.fontSet {
+		p.font, p.fontSet = parent.font, parent.fontSet
+	}
 }
 
 func (p *runProps) is(prop uint8) bool { return p.on&prop != 0 }
@@ -104,7 +112,7 @@ func (p *runProps) setFlag(prop uint8, on bool) {
 
 // empty reports whether the layer sets nothing.
 func (p *runProps) empty() bool {
-	return p.has == 0 && p.size == 0 && p.scale == 0 && p.vert == vertUnset && !p.color.set && !p.shade.set && !p.highlight.set && p.style == ""
+	return p.has == 0 && p.size == 0 && p.scale == 0 && p.vert == vertUnset && !p.color.set && !p.shade.set && !p.highlight.set && p.style == "" && !p.fontSet
 }
 
 // onOff reads the value of an on/off element: present without a value, or
@@ -215,6 +223,21 @@ func readRunProps(s *xmlscan.Scanner, rp *runProps, theme map[string]color) {
 			} else {
 				// "none": no highlight, whatever a style says.
 				rp.highlight = color{set: true, auto: true}
+			}
+		case "rFonts":
+			// The font of the characters a document mostly has: w:ascii,
+			// and w:hAnsi for the rest of Latin. A theme font is never a
+			// symbol font.
+			name, ok := s.Attr(ns.Word, "ascii")
+			if !ok {
+				name, ok = s.Attr(ns.Word, "hAnsi")
+			}
+			_, themed := s.Attr(ns.Word, "asciiTheme")
+			switch {
+			case ok:
+				rp.font, rp.fontSet = symbol.ByName(string(name)), true
+			case themed:
+				rp.font, rp.fontSet = symbol.None, true
 			}
 		case "rStyle":
 			v, _ := s.Attr(ns.Word, "val")
