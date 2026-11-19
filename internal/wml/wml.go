@@ -43,9 +43,11 @@ const (
 // HiddenChecked is the set of hidden-text reasons this reader checks
 // completely. Clipping (a text box or table row too small for its text)
 // and transparency are flagged where they are found, but only some forms
-// of them are looked for, so they are not listed. Text hidden by its place
-// on the page (off the page, under a shape) is not looked for at all: this
-// reader does no layout.
+// of them are looked for, so they are not listed. So are off_page and
+// occluded: a floating text box whose every possible place is off the
+// page, or that an opaque drawing in front of it, anchored in the same
+// paragraph, covers (float.go). Text in the flow of the body has no place
+// without laying out the pages, which this reader does not do.
 const HiddenChecked = gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars
 
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
@@ -118,6 +120,12 @@ type reader struct {
 	text              *gofastcore.TextBudget // what the document may still hold of text
 	charts            []opc.Rel              // what the charts read embed: their workbooks
 	textCut           bool                   // and that it ran out
+
+	// Floating drawings (float.go): where they are, the pages of the
+	// sections, and the paragraphs read so far, which number them.
+	floats     []float
+	pages      []pageGeom
+	paragraphs int
 }
 
 // Extract reads the Word document whose main part is named main into doc,
@@ -585,6 +593,7 @@ func (r *reader) embedded(rels []opc.Rel) {
 func (r *reader) finish() {
 	part := r.part
 	r.numberNotes(part.Blocks)
+	r.judgeFloats(part.Blocks)
 	hasText, hasImage := false, false
 	for i := range part.Blocks {
 		switch b := &part.Blocks[i]; {

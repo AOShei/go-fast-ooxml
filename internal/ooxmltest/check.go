@@ -3,6 +3,7 @@ package ooxmltest
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
@@ -61,6 +62,15 @@ func CheckDocument(t testing.TB, doc *gofastcore.Document) {
 	for i := range doc.Parts {
 		p := &doc.Parts[i]
 		hasText := false
+		for j := range p.Blocks {
+			// A reader's marks on blocks are its own and never reach
+			// the output.
+			for k := range p.Blocks[j].Attrs {
+				if strings.ContainsRune(k, 0) {
+					t.Errorf("part %d block %d: a mark of the reader's own is left in its attributes: %q", p.Number, j, k)
+				}
+			}
+		}
 		for j := range p.Blocks {
 			b := &p.Blocks[j]
 			if b.Kind != gofastcore.KindImage && (b.Text != "" || b.Table != nil) {

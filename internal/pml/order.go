@@ -1,14 +1,13 @@
 package pml
 
 import (
-	"bytes"
 	"errors"
-	"io"
 	"slices"
 	"sort"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
+	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 )
 
@@ -99,56 +98,14 @@ func (p *presentation) opaquePicture(name string) bool {
 	if ok {
 		return opaque
 	}
-	if rc, err := p.pkg.Open(name); err == nil {
-		head := make([]byte, 4096)
-		n, err := io.ReadFull(rc, head)
-		rc.Close()
-		if errors.Is(err, opc.ErrBudget) {
-			p.exceeded.Store(true)
-		}
-		opaque = opaqueHeader(head[:n])
+	opaque, err := media.Opaque(p.pkg, name)
+	if errors.Is(err, opc.ErrBudget) {
+		p.exceeded.Store(true)
 	}
 	p.mu.Lock()
 	p.opaque[name] = opaque
 	p.mu.Unlock()
 	return opaque
-}
-
-var pngSignature = []byte("\x89PNG\r\n\x1a\n")
-
-// opaqueHeader decides from the start of a picture file whether the
-// picture has no transparency.
-func opaqueHeader(head []byte) bool {
-	if len(head) >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF {
-		return true // JPEG has no transparency
-	}
-	if !bytes.HasPrefix(head, pngSignature) {
-		return false
-	}
-	// The chunks before the image data: the header says whether there is
-	// an alpha channel, and a tRNS chunk makes a colour transparent.
-	for at := len(pngSignature); at+8 <= len(head); {
-		size := int(head[at])<<24 | int(head[at+1])<<16 | int(head[at+2])<<8 | int(head[at+3])
-		kind := string(head[at+4 : at+8])
-		switch kind {
-		case "IHDR":
-			if at+8+10 > len(head) {
-				return false
-			}
-			if colorType := head[at+8+9]; colorType == 4 || colorType == 6 {
-				return false
-			}
-		case "tRNS":
-			return false
-		case "IDAT":
-			return true
-		}
-		if size < 0 || size > len(head) {
-			return false // the image data starts further in than was read
-		}
-		at += 12 + size
-	}
-	return false
 }
 
 // item is something to be put in reading order: a shape, or a top-level

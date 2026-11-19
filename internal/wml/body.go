@@ -166,6 +166,8 @@ type paraState struct {
 	flags     clean.Flags       // how its text is cleaned
 	verbatim  bool              // it is code: its text is kept as written
 	display   []byte            // the text of its display equations
+	seq       int               // its number, in the order paragraphs begin
+	section   int               // the section it is in: properties it carries end it, after it
 }
 
 var noFormatting runProps
@@ -372,10 +374,37 @@ func (p *parser) section() {
 	s := &p.s
 	titlePage := false
 	var notes [2]notePr
-	defer func() { p.r.endSection(notes) }()
+	g := letter
+	defer func() {
+		p.r.endSection(notes)
+		if len(p.r.pages) < 1<<16 {
+			p.r.pages = append(p.r.pages, g)
+		}
+	}()
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
+			continue
+		}
+		if s.Depth() == depth+1 && (s.Is(ns.Word, "pgSz") || s.Is(ns.Word, "pgMar")) {
+			// Lengths in twentieths of a point; a margin given as
+			// negative is one that text does not push.
+			twips := func(name string, into *float64) {
+				if v, ok := s.Attr(ns.Word, name); ok {
+					if n, err := strconv.ParseInt(string(v), 10, 32); err == nil {
+						*into = abs(float64(n)) / 20
+					}
+				}
+			}
+			if s.Is(ns.Word, "pgSz") {
+				twips("w", &g.w)
+				twips("h", &g.h)
+			} else {
+				twips("top", &g.top)
+				twips("bottom", &g.bottom)
+				twips("left", &g.left)
+				twips("right", &g.right)
+			}
 			continue
 		}
 		if s.Depth() == depth+1 && s.Is(ns.Word, "titlePg") {
@@ -500,7 +529,8 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 	// A paragraph can sit inside another's run, in a text box; the outer
 	// one's state is put back when this one is done.
 	outer, outerHref, outerDepth := p.para, p.href, p.hrefDepth
-	p.para = paraState{start: len(p.text), spanStart: len(p.spans)}
+	p.para = paraState{start: len(p.text), spanStart: len(p.spans), seq: p.r.paragraphs, section: len(p.r.sections)}
+	p.r.paragraphs++
 	p.href, p.hrefDepth = "", 0
 	p.format(&pp)
 	depth := s.Depth()
@@ -1227,6 +1257,11 @@ func (p *parser) drawing() {
 	shapes := 0      // shapes seen: sizes are only understood for one alone
 	shapeProps := 0  // depth of the shape's properties while they are read
 	ownFill := false // the shape sets its fill itself, not through its style
+	// Where it floats, if it is anchored at a place of its own, and the
+	// fill of its one shape, which may hide what is under it.
+	anchor := float{paragraph: p.para.seq, section: p.para.section}
+	anchored := false
+	var shapeFill color
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -1246,6 +1281,15 @@ func (p *parser) drawing() {
 			shapeProps = 0
 		}
 		switch {
+		case s.Is(ns.WordDraw, "anchor"):
+			anchored = true
+			readAnchor(s, &anchor)
+		case s.Is(ns.WordDraw, "simplePos"):
+			readSimplePos(s, &anchor)
+		case s.Is(ns.WordDraw, "positionH"):
+			readPosition(s, &anchor.h)
+		case s.Is(ns.WordDraw, "positionV"):
+			readPosition(s, &anchor.v)
 		case s.Is(ns.WordShape, "wsp"):
 			fill, ownFill, shapeProps = color{}, false, 0
 			shapes++
@@ -1315,6 +1359,7 @@ func (p *parser) drawing() {
 		case s.Is(ns.Word, "txbxContent"):
 			// A text box: its paragraphs follow the one it hangs on.
 			hasBox = true
+			shapeFill = fill
 			if !fill.set {
 				fill = p.backdrop() // nothing of its own: what the box sits on shows through
 			}
@@ -1335,6 +1380,12 @@ func (p *parser) drawing() {
 				hideWhole(b, gofastcore.HiddenClipped)
 			}
 		}
+	}
+	if !shapeFill.set {
+		shapeFill = fill
+	}
+	if anchored && shapes <= 1 && len(p.r.floats) < maxFloats {
+		p.float(anchor, boxes, hasBox, shapeFill, target, external, width, height)
 	}
 	if target == "" || p.r.opts.Images == gofastcore.ImagesNone {
 		if target != "" {
