@@ -151,6 +151,15 @@ func FuzzXlsx(f *testing.F) {
 			xlRow(2, `<c r="A2"><f t="shared" si="0"/><v>4</v></c>`, `<c r="B2"><f t="shared" si="9"/><v>5</v></c>`, `<c r="C2" t="e"><v>#REF!</v></c>`),
 			`<hyperlinks><hyperlink ref="A1:B2" r:id="rId9"/><hyperlink ref="D1" location="Sheet2!A1"/><hyperlink ref="A1:XFD1048576" location="x"/></hyperlinks>`),
 		sheet(xlRow(1, xlNum("A1", "1"), xlNum("C1", "2"), xlNum("E1", "3"))+xlRow(3, xlNum("B3", "4"))+xlRow(4, xlNum("D4", "1e308"), xlNum("E4", "-0"), xlNum("F4", "abc")), ``),
+		// Conditional formatting of every kind.
+		sheet(xlRow(1, xlNum("A1", "1"), xlStyled("B1", 1, "5"), xlStr("C1", "secret"), `<c r="D1" t="e"><v>#N/A</v></c>`, `<c r="E1" t="b"><v>0</v></c>`)+xlRow(2, xlNum("A2", "1"), xlNum("B2", "7")),
+			`<conditionalFormatting sqref="A1:E9 G1"><cfRule type="cellIs" dxfId="0" priority="1" operator="between"><formula>0</formula><formula>"x"</formula></cfRule>`+
+				`<cfRule type="colorScale" priority="2"><colorScale><cfvo type="percentile" val="50"/><cfvo type="max"/><color theme="1"/><color rgb="FF000000"/></colorScale></cfRule>`+
+				`<cfRule type="duplicateValues" dxfId="0" priority="3"/><cfRule type="top10" dxfId="0" priority="4" percent="1" rank="50" bottom="1"/>`+
+				`<cfRule type="aboveAverage" dxfId="0" priority="5" stdDev="1" aboveAverage="0"/><cfRule type="expression" dxfId="0" priority="6" stopIfTrue="1"><formula>A1</formula></cfRule>`+
+				`<cfRule type="containsText" dxfId="0" priority="7" text="cre"/><cfRule type="notContainsBlanks" dxfId="1" priority="8"/></conditionalFormatting>`+
+				`<extLst><ext><x14:conditionalFormattings xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">`+
+				`<x14:cfRule type="expression"/><xm:sqref>B1:B2</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst>`),
 	} {
 		f.Add(s, styles, strs, drawing)
 		f.Add(s, symbolStyles, strs, drawing)

@@ -29,8 +29,10 @@ import (
 // completely: hidden sheets, rows and columns and values a format blanks
 // (invisible), fonts under two points (tiny), text in the colour of its
 // cell (low_contrast), and invisible characters. Where conditional
-// formatting applies, the colours a cell shows depend on its value and
-// are not worked out: text there is not judged against its fill.
+// formatting gives a colour, the rules are decided from the stored values
+// and the cell is judged with the colours of those that match; where a
+// rule is a formula and it makes a difference whether it matches, the
+// cell is not judged, and a warning on the sheet counts it.
 const HiddenChecked = gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars
 
 // Config holds the limits that are this format's own.
@@ -498,7 +500,7 @@ func (sh *sheet) chartContent() (sawImage bool) {
 func (sh *sheet) tablesOf(declared []declaredTable) []placed {
 	sh.order()
 	sh.sortDetails()
-	sh.unjudge()
+	sh.applyConditional(declared)
 	return sh.regions(declared)
 }
 
