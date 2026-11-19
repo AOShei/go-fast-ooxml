@@ -260,7 +260,15 @@ func readRunProps(s *xmlscan.Scanner, rp *runProps, theme map[string]color) {
 // so the theme is only consulted when the value is missing. Tints and
 // shades of theme colours are not applied.
 func readColor(s *xmlscan.Scanner, valueAttr, themeAttr string, theme map[string]color) color {
+	// A theme colour supersedes the value, which is there for programs
+	// that know no themes. Lightened or darkened, the value is the colour
+	// Word worked out, and is taken.
 	v, _ := s.Attr(ns.Word, valueAttr)
+	if name, ok := s.Attr(ns.Word, themeAttr); ok && !shaded(s, themeAttr) {
+		if c, found := theme[themeNames[string(name)]]; found {
+			return c
+		}
+	}
 	if c, ok := hexColor(v); ok {
 		return c
 	}
@@ -273,6 +281,18 @@ func readColor(s *xmlscan.Scanner, valueAttr, themeAttr string, theme map[string
 		return color{set: true, auto: true}
 	}
 	return color{}
+}
+
+// shaded reports whether a theme colour is lightened or darkened
+// (themeTint, themeShade; themeFillTint, themeFillShade).
+func shaded(s *xmlscan.Scanner, themeAttr string) bool {
+	prefix := "theme"
+	if themeAttr == "themeFill" {
+		prefix = "themeFill"
+	}
+	_, tint := s.Attr(ns.Word, prefix+"Tint")
+	_, shade := s.Attr(ns.Word, prefix+"Shade")
+	return tint || shade
 }
 
 func hexColor(v []byte) (color, bool) {

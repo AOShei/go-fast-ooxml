@@ -47,7 +47,8 @@ when the work planned before the release is done.
   custom XML data, Word's document variables, Excel's defined names, the
   code of Excel 4 macro sheets, and the formulas of pivot caches'
   calculated fields.
-- Word's field codes as `note` blocks of type `field` after their
+- Word's field codes that hold text of their own (index entries, the
+  branches of IF, a citation tool's data) as `note` blocks of type `field` after their
   paragraph, flagged as hidden.
 - Equations in Word and PowerPoint written in UnicodeMath, with their
   structure; a Word display equation as a `formula` block.

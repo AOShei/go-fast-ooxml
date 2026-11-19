@@ -225,7 +225,7 @@ func (p *Part) Finish() (limited bool) {
 			pages[i] = strconv.Itoa(cp)
 		}
 		p.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, fmt.Sprintf(
-			"%d bytes of macro code in code page %s are not decoded and are U+FFFD", p.undecoded, strings.Join(pages, ", ")))
+			"%d characters of macro code in code page %s, which it does not define or which is not known here, are U+FFFD", p.undecoded, strings.Join(pages, ", ")))
 	}
 	if len(p.Blocks) == 0 {
 		p.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")
