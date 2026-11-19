@@ -59,6 +59,8 @@ type sheet struct {
 	varying    []rect   // where conditional formatting may change how cells look
 	varyAll    bool     // or everywhere: a range of it could not be read
 	tables     []string // parts of the tables the sheet declares
+	lists      []choiceList
+	listRanges int // the ranges of all of them
 	drawings   []string
 
 	text   arena
@@ -68,15 +70,24 @@ type sheet struct {
 	room     *gofastcore.TextBudget
 	raw, out []byte
 
-	noValue  int            // formulas stored without a result
-	removed  int            // control characters taken out
-	unmapped int            // codes of symbol fonts with no character
-	pending  int64          // text of the cells read and not yet in tables
-	symbols  []byte         // for translating text in a symbol font
-	split    int            // regions too sparse to be a grid
-	unread   map[string]int // content of kinds that are not read
-	damaged  []string       // parts that could not be read to their end
-	cut      string         // why reading stopped early, if it did
+	noValue  int   // formulas stored without a result
+	removed  int   // control characters taken out
+	unmapped int   // codes of symbol fonts with no character
+	pending  int64 // text of the cells read and not yet in tables
+
+	// What cells hold besides their text (details.go).
+	details         []detail // in the order of the cells, once sortDetails has run
+	detailsUnsorted bool
+	shared          map[int]sharedFormula
+	linkAt          map[pos]string // links of single cells and small ranges
+	links           []link         // links of large ranges
+	isDate          bool           // the value just read was shown as a date
+	fbuf            []byte         // for reading a formula
+	symbols         []byte         // for translating text in a symbol font
+	split           int            // regions too sparse to be a grid
+	unread          map[string]int // content of kinds that are not read
+	damaged         []string       // parts that could not be read to their end
+	cut             string         // why reading stopped early, if it did
 
 	// Reading a band of rows at a time (see Rows).
 	pass   int                // which of the two passes over the part this is
@@ -179,12 +190,43 @@ func (sh *sheet) read() {
 		case "extLst":
 			// Newer kinds of conditional formatting are kept here, with
 			// their ranges as text.
+			// Newer data validations are kept here too: their lists are
+			// read, and their ranges are not conditional formatting.
 			depth := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-				if s.Kind() == xmlscan.Start && string(s.Local()) == "sqref" {
+				if s.Kind() != xmlscan.Start {
+					continue
+				}
+				switch string(s.Local()) {
+				case "dataValidation":
+					if sh.pass == passWhole {
+						sh.readValidation(s)
+					} else {
+						s.Skip()
+					}
+				case "sqref":
 					sh.raw = s.AppendText(sh.raw[:0])
 					sh.vary(sh.raw)
 				}
+			}
+		case "dataValidations":
+			// Drop-down lists; reading by bands leaves them out, as it
+			// does comments.
+			if sh.pass != passWhole {
+				s.Skip()
+				continue
+			}
+			depth := s.Depth()
+			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+				if s.Kind() == xmlscan.Start && s.Is(ns.Sheet, "dataValidation") {
+					sh.readValidation(s)
+				}
+			}
+		case "hyperlinks":
+			if sh.wb.opts.Spans {
+				sh.readLinks(s)
+			} else {
+				s.Skip()
 			}
 		case "tableParts":
 			depth := s.Depth()
@@ -396,9 +438,11 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 				}
 			}
 		}
-		// The value: v, or an inline string; a formula is not read.
+		// The value: v, or an inline string; the formula with
+		// Options.Cells.
 		raw := sh.raw[:0]
 		formula, value := false, false
+		f := ""
 		cellDepth := s.Depth()
 		for s.Next() != xmlscan.EOF && s.Depth() >= cellDepth {
 			if s.Kind() != xmlscan.Start {
@@ -413,7 +457,11 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 				value = true
 			case s.Is(ns.Sheet, "f"):
 				formula = true
-				s.Skip()
+				if sh.wb.opts.Cells {
+					f = sh.formulaOf(s, row, col)
+				} else {
+					s.Skip()
+				}
 			default:
 				s.Skip()
 			}
@@ -434,6 +482,7 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 			}
 			continue
 		}
+		sh.isDate = false
 		text, hidden := sh.value(typ, style, raw)
 		if text == "" {
 			continue
@@ -443,6 +492,9 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 		}
 		textBytes += int64(len(text))
 		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, style: styleIndex, hidden: hidden | style.hidden})
+		if sh.wb.opts.Cells {
+			sh.keepDetail(&sh.cells[len(sh.cells)-1], typ, raw, f, sh.isDate)
+		}
 	}
 	if !ordered {
 		sh.unsorted = true
@@ -518,6 +570,7 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 		return sh.text.put(out), 0
 	}
 	out, result := style.format.Number(sh.out[:0], v, sh.wb.date1904)
+	sh.isDate = result == numfmt.Date
 	sh.out = out
 	return sh.text.put(out), blank(result)
 }

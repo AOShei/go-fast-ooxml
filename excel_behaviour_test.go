@@ -683,7 +683,8 @@ func TestExcelWorkersGiveTheSameResult(t *testing.T) {
 
 func TestExcelOtherKindsOfSheet(t *testing.T) {
 	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Data", Data: xlRow(1, xlNum("A1", "1"))}, ooxmltest.Sheet{Name: "Empty"})
-	// A sheet of old-style macros: its cells are read like any sheet's.
+	// A sheet of old-style macros: its cells are read like any sheet's,
+	// and its formulas, which are its code, are stored and flagged.
 	macro := pkg.Rel("xl/workbook.xml", "http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet", "macrosheets/sheet1.xml")
 	pkg.Add("xl/macrosheets/sheet1.xml", "application/vnd.ms-excel.macrosheet+xml",
 		`<xm:macrosheet xmlns="`+ooxmltest.NSSheet+`" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData>`+
@@ -704,6 +705,9 @@ func TestExcelOtherKindsOfSheet(t *testing.T) {
 		`sheet 4 "Gone"`,
 		`sheet 5 "No part named"`,
 		`sheet 6 "Macros"`, `  table A1:B1 inferred [["Auto_Open" "0"]]`,
+		// The macro sheet's code is in the stored part, flagged.
+		`stored 7 "" hidden=invisible`,
+		"  code  \"B1\\t=EXEC(\\\"calc.exe\\\")\" hidden=invisible language=excel4 name=Macros stored=macro",
 	)
 	if !warned(doc, gofastcore.WarnInputActiveContent) {
 		t.Errorf("the macro sheet is not reported: %+v", doc.Warnings)
@@ -884,4 +888,54 @@ func TestExcelTableStyles(t *testing.T) {
 		t.Errorf("got\n  %q\nwant\n  %q", got, want)
 	}
 	ooxmltest.CheckDocument(t, doc)
+}
+
+// A drop-down list is a note of type choices at the cells it is for: the
+// values of a list written out, one per line, or the reference a list is
+// taken from. A list whose arrow is hidden, or whose cells are all
+// hidden, is flagged; validations that are not lists offer no choices.
+func TestExcelDropDownLists(t *testing.T) {
+	data := xlRow(1, xlStr("A1", "Answer"), xlStr("B1", "Size"), xlStr("D1", "S")) +
+		xlRow(2, xlStr("D2", "M")) + xlRow(3, xlStr("D3", "L"))
+	extra := `<cols><col min="6" max="7" width="0" customWidth="1"/></cols>` +
+		`<dataValidations count="5">` +
+		`<dataValidation type="list" allowBlank="1" sqref="A2:A10"><formula1>"Yes,No,""Maybe"", sure,,"</formula1></dataValidation>` +
+		`<dataValidation type="list" sqref="C5 B2:B10"><formula1>$D$1:$D$3</formula1></dataValidation>` +
+		`<dataValidation type="list" showDropDown="1" sqref="H1"><formula1>"secret,list"</formula1></dataValidation>` +
+		`<dataValidation type="list" sqref="F1:G4"><formula1>"in,hidden,columns"</formula1></dataValidation>` +
+		`<dataValidation type="whole" operator="between" sqref="I1"><formula1>1</formula1><formula2>9</formula2></dataValidation>` +
+		`</dataValidations>` +
+		`<extLst><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">` +
+		`<x14:dataValidations count="1" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><x14:dataValidation type="list" allowBlank="1">` +
+		`<x14:formula1><xm:f>Lists!$A$1:$A$3</xm:f></x14:formula1><xm:sqref>E1:E3</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>`
+	doc := excel(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Form", Data: data, Extra: extra}), nil)
+	expectSheets(t, doc,
+		`sheet 1 "Form"`,
+		`  table A1:B1 inferred [["Answer" "Size"]]`,
+		`  table D1:D3 inferred [["S"] ["M"] ["L"]]`,
+		`  note E1:E3 "=Lists!$A$1:$A$3" type=choices`,
+		`  note F1:G4 "in\nhidden\ncolumns" hidden=invisible type=choices`,
+		`  note H1 "secret\nlist" hidden=invisible type=choices`,
+		`  note A2:A10 "Yes\nNo\n\"Maybe\"\nsure" type=choices`,
+		`  note C5 B2:B10 "=$D$1:$D$3" type=choices`,
+	)
+	if md := doc.Markdown(); !strings.Contains(md, "Yes\nNo") {
+		t.Errorf("the values are not in the Markdown:\n%s", md)
+	}
+	// Reading by bands leaves them out, as it does comments.
+	f, err := gofastooxml.OpenBytes(ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Form", Data: data, Extra: extra}).Bytes(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for p, err := range f.Rows(context.Background(), 1, 100) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range p.Blocks {
+			if b.Kind == gofastcore.KindNote {
+				t.Errorf("Rows gave a note: %q", b.Text)
+			}
+		}
+	}
 }

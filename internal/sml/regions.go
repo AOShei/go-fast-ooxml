@@ -265,7 +265,7 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 		// by row CellCost for each of its cells, filled or not, and the
 		// text of its cells. Where there is no room for all of its rows,
 		// the rows that fit are kept and the sheet is cut off there.
-		fit := int64(0)
+		fit, details := int64(0), 0
 		if b.sh.room.Take(gofastcore.BlockCost) {
 			first := r.r0 + int32(top)
 			for j := next; fit < height; fit++ {
@@ -273,7 +273,11 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 				cost := gofastcore.CellCost * cols
 				for ; j < n && cells[g.index(j)].row <= row; j++ {
 					if c := &cells[g.index(j)]; c.row == row && c.col >= r.c0 && c.col <= r.c1 {
-						cost += int64(len(c.text))
+						n, ok := b.sh.detailBytes(c)
+						cost += int64(len(c.text)) + n
+						if ok {
+							details++
+						}
 					}
 				}
 				if !b.sh.room.Take(int(min(cost, math.MaxInt32))) {
@@ -294,6 +298,9 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 		part := rect{r0: r.r0 + int32(top), r1: r.r0 + int32(top+height) - 1, c0: r.c0, c1: r.c1}
 		flat := make([]string, height*cols)
 		t := &gofastcore.Table{Rows: make([][]string, height)}
+		if details > 0 {
+			t.Cells = make([]gofastcore.CellDetail, 0, details)
+		}
 		for i := range t.Rows {
 			t.Rows[i] = flat[int64(i)*cols : int64(i+1)*cols : int64(i+1)*cols]
 		}
@@ -313,6 +320,9 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 				continue
 			}
 			t.Rows[c.row-part.r0][c.col-part.c0] = c.text
+			if d, ok := b.sh.cellDetail(c, int(c.row-part.r0), int(c.col-part.c0)); ok {
+				t.Cells = append(t.Cells, d)
+			}
 			if b.owner != nil {
 				b.owner[i] = id
 			}

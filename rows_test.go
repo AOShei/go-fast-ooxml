@@ -193,7 +193,7 @@ func TestRowsOnFixturesAndCorpus(t *testing.T) {
 		if err != nil {
 			continue // not a workbook this library opens; another test's business
 		}
-		for number := 1; number <= f.NumParts(); number++ {
+		for number := 1; number <= len(f.Sheets()); number++ {
 			whole, err := f.Part(ctx, number)
 			if err != nil {
 				t.Fatal(err)

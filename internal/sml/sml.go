@@ -84,6 +84,12 @@ type Book struct {
 	external    int      // links to other workbooks and files
 	removed     int      // control characters removed from shared strings
 	stringsFull bool     // the shared strings were cut off at their limit
+
+	// What the workbook stores and shows on no sheet (stored.go).
+	names       []definedName
+	localNames  []localName
+	macroSheets bool
+	raw         []byte
 }
 
 // SheetInfo is a sheet as the workbook lists it.
@@ -155,9 +161,19 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 					}
 				}
 				b.refs = append(b.refs, ref)
+				b.macroSheets = b.macroSheets || ref.kind == ns.RelMacrosheet || ref.kind == ns.RelIntlMacrosheet
+			case s.Depth() == 2 && s.Is(ns.Sheet, "definedNames"):
+				b.readNames(s)
 			}
 		}
 	})
+	// A name local to a sheet has the sheet's name in front.
+	for _, l := range b.localNames {
+		if l.sheet >= 0 && l.sheet < len(b.refs) {
+			n := &b.names[l.index]
+			n.name = b.refs[l.sheet].name + "!" + n.name
+		}
+	}
 
 	// What the sheets share. If no sheet is asked for there is nothing to
 	// read it for.
@@ -200,7 +216,15 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 
 // Len returns the number of parts: one for each sheet, and one for a
 // workbook that lists none.
-func (b *Book) Len() int { return max(len(b.refs), 1) }
+func (b *Book) Len() int {
+	if i := b.storedIndex(); i >= 0 {
+		return i + 1
+	}
+	return max(len(b.refs), 1)
+}
+
+// Stored returns the index of the stored part, or -1 if there is none.
+func (b *Book) Stored() int { return b.storedIndex() }
 
 // Noun names the parts of a workbook.
 func (b *Book) Noun() string { return "sheets" }
@@ -229,6 +253,9 @@ func (b *Book) Sheets() []SheetInfo {
 
 // Read reads the sheet with the given index into a part.
 func (b *Book) Read(ctx context.Context, index int) *unit.Result {
+	if index == b.storedIndex() {
+		return b.readStored(ctx)
+	}
 	if len(b.refs) == 0 {
 		// A workbook with no sheets, or whose list of them could not be
 		// read. A document has at least one part, and this one says why
@@ -416,6 +443,7 @@ func (sh *sheet) content() (sawImage bool) {
 	sh.applyTableStyles(declared)
 	blocks := sh.tablesOf(declared)
 	blocks = append(blocks, sh.comments()...)
+	blocks = append(blocks, sh.choices()...)
 	for _, target := range sh.drawings {
 		var saw bool
 		blocks, saw = sh.drawing(target, blocks)
@@ -431,6 +459,7 @@ func (sh *sheet) content() (sawImage bool) {
 // tablesOf turns the cells read so far into tables.
 func (sh *sheet) tablesOf(declared []declaredTable) []placed {
 	sh.order()
+	sh.sortDetails()
 	sh.unjudge()
 	return sh.regions(declared)
 }

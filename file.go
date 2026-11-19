@@ -53,6 +53,7 @@ type File struct {
 	within   int64                // for a file embedded in a document: the bytes that document has left to decompress; 0 otherwise
 	checked  gofastcore.Hidden
 	parts    int
+	stored   int // the index of the stored part, or -1
 	noun     string
 	sheets   []Sheet
 
@@ -179,6 +180,7 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 	}
 	f.sess, f.clean = sess, !sess.src.Limited()
 	f.parts, f.noun, f.checked = sess.src.Len(), sess.src.Noun(), sess.src.HiddenChecked()
+	f.stored = sess.src.Stored()
 	if book, ok := sess.src.(*sml.Book); ok {
 		for i, sh := range book.Sheets() {
 			f.sheets = append(f.sheets, Sheet{Number: i + 1, Name: sh.Name, Hidden: sh.Hidden})
@@ -287,7 +289,9 @@ func (f *File) Metadata() gofastcore.Metadata { return f.meta }
 // NumParts returns the number of parts: 1 for a Word document, the
 // number of sheets of a workbook, the number of slides of a
 // presentation. A workbook or presentation with none has one part, which
-// says so.
+// says so. A document that stores what it shows nowhere (defined names,
+// macro code) has one more, last, of kind gofastcore.PartStored; it comes
+// with the whole document, not with a range of parts.
 func (f *File) NumParts() int { return f.parts }
 
 // Sheets lists the sheets of a workbook in order, without reading them.
@@ -328,7 +332,12 @@ func (f *File) spoil(sess *session) {
 // selection returns the indexes of the parts Options.Parts asks for, cut
 // to Options.Limits.MaxParts.
 func (f *File) selection() (selected []int, asked int, err error) {
+	whole := f.opts.Parts == (gofastcore.PartRange{})
 	for i := 0; i < f.parts; i++ {
+		// The stored part comes with the whole document only.
+		if i == f.stored && !whole {
+			continue
+		}
 		if f.opts.Parts.Contains(i + 1) {
 			selected = append(selected, i)
 		}
@@ -692,8 +701,8 @@ func (f *File) Rows(ctx context.Context, number, band int) iter.Seq2[gofastcore.
 		case err != nil:
 		case f.source.Format != "xlsx":
 			err = fmt.Errorf("gofastooxml: a %s has no rows: %w", f.kind(), gofastcore.ErrUnsupported)
-		case number < 1 || number > f.parts:
-			err = fmt.Errorf("gofastooxml: sheet %d: the workbook has %d sheets, numbered from 1: %w", number, f.parts, gofastcore.ErrNoPartsSelected)
+		case number < 1 || number > len(f.sheets):
+			err = fmt.Errorf("gofastooxml: sheet %d: the workbook has %d sheets, numbered from 1: %w", number, len(f.sheets), gofastcore.ErrNoPartsSelected)
 		default:
 			book = sess.src.(*sml.Book)
 			err = ctx.Err()

@@ -282,6 +282,9 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 // presentation that has none.
 func (d *Deck) Len() int { return max(len(d.refs), 1) }
 
+// Stored returns -1: a presentation has no stored part yet.
+func (d *Deck) Stored() int { return -1 }
+
 // Noun names the parts of a presentation.
 func (d *Deck) Noun() string { return "slides" }
 

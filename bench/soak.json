@@ -33,15 +33,15 @@
   "ooxml.unread_content": 778,
   "part.failed": 37,
   "part.image_only": 267,
-  "part.no_text": 1279,
+  "part.no_text": 1280,
   "structure.heading_level_clamped": 18,
-  "text.hidden": 339,
+  "text.hidden": 604,
   "text.tracked_changes": 129,
   "text.unmapped_glyphs": 3
  },
  "documents_with_hidden_text": {
   "clipped": 1,
-  "invisible": 269,
+  "invisible": 545,
   "invisible_chars": 3,
   "low_contrast": 66,
   "occluded": 2,
