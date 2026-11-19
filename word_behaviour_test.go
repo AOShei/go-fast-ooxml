@@ -717,3 +717,50 @@ func TestWordCodeStyleOnListItemsAndHeadings(t *testing.T) {
 		}
 	}
 }
+
+// Footnotes and endnotes are numbered as the document says: in the form,
+// from the number and with the restarts its settings and each section
+// give. A section's properties come after its text.
+func TestWordNoteNumbering(t *testing.T) {
+	pkg := ooxmltest.Docx("")
+	note := func(id int, text string) string {
+		return fmt.Sprintf(`<w:footnote w:id="%d"><w:p><w:r><w:t>%s</w:t></w:r></w:p></w:footnote>`, id, text)
+	}
+	endnote := func(id int, text string) string {
+		return fmt.Sprintf(`<w:endnote w:id="%d"><w:p><w:r><w:t>%s</w:t></w:r></w:p></w:endnote>`, id, text)
+	}
+	ref := func(kind string, id int) string {
+		return run(fmt.Sprintf(`<w:%sReference w:id="%d"/>`, kind, id))
+	}
+	pkg.Add("word/footnotes.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml",
+		`<w:footnotes`+ooxmltest.WordNS+`>`+note(1, "one")+note(2, "two")+note(3, "three")+`</w:footnotes>`)
+	pkg.Rel("word/document.xml", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes", "footnotes.xml")
+	pkg.Add("word/endnotes.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml",
+		`<w:endnotes`+ooxmltest.WordNS+`>`+endnote(1, "first end")+endnote(2, "second end")+`</w:endnotes>`)
+	pkg.Rel("word/document.xml", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes", "endnotes.xml")
+	// The settings: footnotes as letters from c. The first section keeps
+	// them; the second restarts them, in Roman numerals from 1 (a section
+	// that names no first number has the settings'), and numbers its
+	// endnotes from 5.
+	pkg.Add("word/settings.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
+		`<w:settings`+ooxmltest.WordNS+`><w:footnotePr><w:numFmt w:val="lowerLetter"/><w:numStart w:val="3"/><w:footnote w:id="-1"/></w:footnotePr></w:settings>`)
+	pkg.Rel("word/document.xml", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings", "settings.xml")
+	body := para(run(text("Alpha"))+ref("footnote", 1)+run(text(" beta"))+ref("footnote", 2)) +
+		`<w:p><w:pPr><w:sectPr/></w:pPr></w:p>` +
+		para(run(text("Gamma"))+ref("footnote", 3)+ref("endnote", 1)+ref("endnote", 2)) +
+		`<w:sectPr><w:footnotePr><w:numFmt w:val="upperRoman"/><w:numStart w:val="1"/><w:numRestart w:val="eachSect"/></w:footnotePr>` +
+		`<w:endnotePr><w:numFmt w:val="decimal"/><w:numStart w:val="5"/></w:endnotePr></w:sectPr>`
+	pkg.Add("word/document.xml", ooxmltest.CTDocument, `<w:document`+ooxmltest.WordNS+`><w:body>`+body+`</w:body></w:document>`)
+	doc := word(t, pkg, nil)
+	var marks []string
+	for _, b := range doc.AllBlocks() {
+		if b.Kind == gofastcore.KindFootnote {
+			marks = append(marks, b.Marker+" "+b.Text)
+		}
+	}
+	want := []string{"c one", "d two", "I three", "5 first end", "6 second end"}
+	if strings.Join(marks, "|") != strings.Join(want, "|") {
+		t.Errorf("notes %q, want %q", marks, want)
+	}
+	ooxmltest.CheckDocument(t, doc)
+}

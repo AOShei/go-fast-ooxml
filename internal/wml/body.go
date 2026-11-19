@@ -285,6 +285,8 @@ func (p *parser) container(emit func(gofastcore.Block)) {
 func (p *parser) section() {
 	s := &p.s
 	titlePage := false
+	var notes [2]notePr
+	defer func() { p.r.endSection(notes) }()
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
@@ -292,6 +294,14 @@ func (p *parser) section() {
 		}
 		if s.Depth() == depth+1 && s.Is(ns.Word, "titlePg") {
 			titlePage = onOff(s)
+			continue
+		}
+		if s.Depth() == depth+1 && s.Is(ns.Word, "footnotePr") {
+			notes[0] = readNotePr(s)
+			continue
+		}
+		if s.Depth() == depth+1 && s.Is(ns.Word, "endnotePr") {
+			notes[1] = readNotePr(s)
 			continue
 		}
 		header := s.Is(ns.Word, "headerReference")
@@ -776,9 +786,9 @@ func (p *parser) run(deleted bool) {
 		case "ruby":
 			p.ruby()
 		case "footnoteReference":
-			p.noteRef(p.r.footnotes, &p.r.footnoteN, "decimal")
+			p.noteRef(p.r.footnotes, 0)
 		case "endnoteReference":
-			p.noteRef(p.r.endnotes, &p.r.endnoteN, "lowerRoman")
+			p.noteRef(p.r.endnotes, 1)
 		case "commentReference":
 			p.commentRef()
 		case "drawing", "pict", "object":
@@ -1026,18 +1036,17 @@ func (p *parser) symbol() {
 
 // noteRef handles a reference to a footnote or endnote: the note becomes a
 // block after the paragraph, labelled with the number a reader sees.
-func (p *parser) noteRef(notes map[int]note, counter *int, format string) {
+func (p *parser) noteRef(notes map[int]note, kind int) {
 	s := &p.s
 	id, ok := intAttr(s, "id")
 	custom, has := s.Attr(ns.Word, "customMarkFollows")
 	marker := ""
 	if !has || !isOn(custom) {
-		*counter++
-		marker = formatNumber(*counter, format)
+		marker = p.r.noteMark(kind)
 	}
 	// A note is given once, at its first reference. A file that refers to
 	// one note many times does not get it copied each time.
-	key := format + strconv.Itoa(id)
+	key := [2]string{"foot", "end"}[kind] + strconv.Itoa(id)
 	if n, found := notes[id]; ok && found && n.text != "" && !p.r.usedNotes[key] {
 		p.r.usedNotes[key] = true
 		p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: n.text, Spans: n.spans, Hidden: n.hidden})
