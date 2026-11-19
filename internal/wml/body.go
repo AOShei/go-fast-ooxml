@@ -1346,8 +1346,12 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 				}
 				switch {
 				case s.Is(ns.Word, "tblStyle"):
-					if v, ok := s.Attr(ns.Word, "val"); ok && p.r.styles != nil {
-						state.style = p.r.styles.tables[string(v)]
+					if v, ok := s.Attr(ns.Word, "val"); ok {
+						if p.r.styles == nil {
+							// No styles part: the built-in styles are still known.
+							p.r.styles = &styles{byID: map[string]*style{}, chars: map[string]*charStyle{}, tables: map[string]*tableStyle{}}
+						}
+						state.style = p.r.styles.table(string(v), p.r.theme)
 					}
 				case s.Is(ns.Word, "tblLook"):
 					state.look = readLook(s)

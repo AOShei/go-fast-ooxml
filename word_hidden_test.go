@@ -580,3 +580,24 @@ func TestWordNotesAndBoxesOnHiddenText(t *testing.T) {
 	)
 	ooxmltest.CheckDocument(t, doc)
 }
+
+// A table may name one of Word's built-in styles without the document
+// defining it. Word's own definition is used: "Table Classic 3" fills its
+// cells grey and its first row navy, so white text in it is seen.
+func TestWordBuiltInTableStyles(t *testing.T) {
+	cell := func(s string) string { return `<w:tc>` + para(styled(whiteText, s)) + `</w:tc>` }
+	table := func(style string) string {
+		return `<w:tbl><w:tblPr><w:tblStyle w:val="` + style + `"/><w:tblLook w:firstRow="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>` +
+			`<w:tr>` + cell("head") + `</w:tr><w:tr>` + cell("body") + `</w:tr></w:tbl>`
+	}
+	// By its English identifier, by the Hungarian one a Hungarian Word
+	// writes, and by one that is no built-in style.
+	doc := word(t, ooxmltest.Docx(table("TableClassic3")+table("Klasszikustblzat3")+table("NoSuchStyle")), nil)
+	expectBlocks(t, doc,
+		`table header=0 [["head"] ["body"]]`,
+		`table header=0 [["head"] ["body"]]`,
+		// Not known: the text is judged against the page.
+		`table hidden=low_contrast header=0 [["head"] ["body"]] hidden_cell(0,0 low_contrast) hidden_cell(1,0 low_contrast)`,
+	)
+	ooxmltest.CheckDocument(t, doc)
+}

@@ -365,3 +365,47 @@ func atoi(b []byte) (int, bool) {
 	}
 	return n, true
 }
+
+// table returns the table style with the given identifier: the document's
+// own, or, for one of Word's built-in styles that the document names
+// without defining it, Word's (presetstyles.go). It returns nil for a
+// style neither knows.
+func (st *styles) table(id string, theme map[string]color) *tableStyle {
+	if ts, ok := st.tables[id]; ok {
+		return ts
+	}
+	ts := st.preset(id, theme, 0)
+	if ts != nil {
+		st.resolveTable(ts, 0)
+	}
+	return ts
+}
+
+// preset reads one of Word's built-in table styles, named by an
+// identifier the document uses or by its name, into st.tables, with the
+// built-in styles it is based on.
+func (st *styles) preset(id string, theme map[string]color, depth int) *tableStyle {
+	name, ok := presetTableIDs[id]
+	if !ok {
+		name = id // a parent is named by its name
+	}
+	xml, ok := presetTableStyles[name]
+	if !ok || depth > 8 || len(st.tables) >= maxTableStyles {
+		return nil
+	}
+	var s xmlscan.Scanner
+	s.ResetBytes([]byte(`<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:type="table">`+xml+`</w:style>`), scanOptions)
+	s.Next()
+	ts := readTableStyle(&s, theme)
+	st.tables[id] = ts
+	if ts.based != "" {
+		if _, own := st.tables[ts.based]; !own {
+			st.preset(ts.based, theme, depth+1)
+		}
+	}
+	return ts
+}
+
+// maxTableStyles bounds the table styles kept for a document, its own and
+// the built-in ones it names.
+const maxTableStyles = 1 << 12

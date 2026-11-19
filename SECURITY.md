@@ -132,8 +132,8 @@ do with each.
   cut short, each format's main part, number formats, the compound-file
   container and the encryption information; all run in CI on every pull
   request.
-- A soak run over 5,586 files: the corpus and the Office files in the test
-  suites of LibreOffice, Apache Tika, pandoc and seven other projects,
+- A soak run over 6,571 files: the corpus and the Office files in the test
+  suites of LibreOffice, Apache Tika, pandoc and nine other projects,
   among them their collections of crash cases and fuzzer findings. Every
   file gives a valid document or a shared error, the same for any number
   of workers and a part at a time (`bench/soak.json`).
