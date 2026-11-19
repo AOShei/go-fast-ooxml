@@ -263,7 +263,7 @@ func TestWordRunContent(t *testing.T) {
 		// Wrappers that hold ordinary content.
 		para(`<w:smartTag><w:r>`+text("smart ")+`</w:r></w:smartTag><w:sdt><w:sdtPr><w:alias w:val="x"/></w:sdtPr><w:sdtContent>`+run(text("control"))+`</w:sdtContent></w:sdt>`) +
 		`<w:sdt><w:sdtContent>` + ooxmltest.Para("A paragraph inside a content control") + `</w:sdtContent></w:sdt>` +
-		para(run(text("Energy: "))+`<m:oMath><m:r><m:t>E=mc</m:t></m:r><m:sSup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sSup></m:oMath>`) +
+		para(run(text("Energy: "))+`<m:oMath><m:r><m:t>E=m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath>`) +
 		`<w:p w14:paraId="1A2B3C4D">` + run(text("Anchored")) + `</w:p>`
 	doc := word(t, ooxmltest.Docx(body), nil)
 	expectBlocks(t, doc,
@@ -277,7 +277,7 @@ func TestWordRunContent(t *testing.T) {
 		`paragraph "See the site."`,
 		`paragraph "smart control"`,
 		`paragraph "A paragraph inside a content control"`,
-		`paragraph "Energy: E=mc2"`,
+		`paragraph "Energy: E=mc^2"`,
 		`paragraph "Anchored" anchor=1A2B3C4D`,
 	)
 	if !partWarned(doc, gofastcore.WarnTextUnmappedGlyphs) {
@@ -797,5 +797,21 @@ func TestWordFieldCodes(t *testing.T) {
 		`paragraph "Kept"`,
 		`note "DATE" hidden=invisible type=field`,
 		`note "today" author=A type=deletion`,
+	)
+}
+
+// An equation is written in UnicodeMath, the linear form Word shows. A
+// paragraph that is a display equation and nothing else is a formula
+// block; an equation in a sentence stays in the sentence.
+func TestWordEquations(t *testing.T) {
+	m := func(x string) string { return `<m:r><m:t>` + x + `</m:t></m:r>` }
+	frac := `<m:f><m:num>` + m("-b±") + `<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e><m:sSup><m:e>` + m("b") + `</m:e><m:sup>` + m("2") +
+		`</m:sup></m:sSup>` + m("-4ac") + `</m:e></m:rad></m:num><m:den>` + m("2a") + `</m:den></m:f>`
+	body := `<w:p><m:oMathPara><m:oMath>` + m("x=") + frac + `</m:oMath></m:oMathPara></w:p>` +
+		para(run(text("The area is "))+`<m:oMath>`+m("π")+`<m:sSup><m:e>`+m("r")+`</m:e><m:sup>`+m("2")+`</m:sup></m:sSup></m:oMath>`+run(text(".")))
+	doc := word(t, ooxmltest.Docx(body), nil)
+	expectBlocks(t, doc,
+		`formula "x=(-b±√(b^2-4ac))/(2a)" notation=unicodemath`,
+		`paragraph "The area is πr^2."`,
 	)
 }

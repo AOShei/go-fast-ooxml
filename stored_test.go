@@ -209,7 +209,7 @@ func TestMacrosAsOlevba(t *testing.T) {
 				t.Errorf("%s: module %s is missing", names[i], name)
 			case got == want:
 				exact++
-			case ascii(got) == ascii(want) && strings.Contains(got, "�"):
+			case ascii(got) == ascii(want) && strings.Contains(got, "\uFFFD"):
 				projected++
 			default:
 				t.Errorf("%s: module %s differs:\n ours:   %.300q\n olevba: %.300q", names[i], name, got, want)

@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/label"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -480,9 +481,9 @@ func (t *Text) para(s *xmlscan.Scanner) {
 				s.Skip()
 			}
 			choice = -1
-		case s.Is(ns.Math, "t"):
-			// The text of an equation, in the order it is written.
-			t.raw = s.AppendText(t.raw[:0])
+		case s.Is(ns.Math, "oMathPara"), s.Is(ns.Math, "oMath"):
+			// An equation, in UnicodeMath, the linear form Office shows.
+			t.raw = omml.Linear(s, t.raw[:0])
 			var removed int
 			t.Buf, removed = clean.Append(t.Buf, t.raw, clean.Ligatures)
 			t.Removed += removed

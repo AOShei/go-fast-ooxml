@@ -12,6 +12,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -164,6 +165,7 @@ type paraState struct {
 	behind    color             // what lies behind its text
 	flags     clean.Flags       // how its text is cleaned
 	verbatim  bool              // it is code: its text is kept as written
+	display   []byte            // the text of its display equations
 }
 
 var noFormatting runProps
@@ -548,16 +550,31 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 				s.Skip()
 			}
 		case ns.Math:
-			// An equation: its characters are kept in order, its layout
-			// (fractions, exponents) is not reconstructed.
+			// An equation, in UnicodeMath, the linear form Word shows.
+			display := s.Is(ns.Math, "oMathPara")
 			start := len(p.text)
-			p.text = s.AppendText(p.text)
+			p.text = omml.Linear(s, p.text)
 			p.tidy(start)
+			if display {
+				if len(p.para.display) > 0 {
+					p.para.display = append(p.para.display, '\n')
+				}
+				p.para.display = append(p.para.display, p.text[start:]...)
+			}
 		default:
 			s.Skip()
 		}
 	}
 	b, ok := p.block(&pp)
+	// A paragraph that is a display equation and nothing else is one.
+	if ok && b.Kind == gofastcore.KindParagraph && len(p.para.display) > 0 && b.Marker == "" &&
+		b.Text == string(bytes.TrimSpace(p.para.display)) {
+		b.Kind = gofastcore.KindFormula
+		if b.Attrs == nil {
+			b.Attrs = map[string]string{}
+		}
+		b.Attrs[gofastcore.AttrNotation] = gofastcore.NotationUnicodeMath
+	}
 	p.text = p.text[:p.para.start]
 	p.spans = p.spans[:p.para.spanStart]
 	p.para, p.href, p.hrefDepth = outer, outerHref, outerDepth

@@ -99,7 +99,7 @@ func TestProject(t *testing.T) {
 	}
 	// A code page with no table: what is not ASCII is U+FFFD.
 	p, err = vba.Read(ooxmltest.VBAProject(1251, ooxmltest.VBAModule{Name: "M", Code: "' \xcf\xf0\xe8\xe2\xe5\xf2\r\n"}), 1<<20)
-	if err != nil || p.Undecoded != 6 || p.Modules[0].Code != "' "+strings.Repeat("�", 6)+"\n" {
+	if err != nil || p.Undecoded != 6 || p.Modules[0].Code != "' "+strings.Repeat("\uFFFD", 6)+"\n" {
 		t.Errorf("1251: %+v, %v", p, err)
 	}
 	if _, err := vba.Read(ooxmltest.Compound(map[string][]byte{"x": []byte("y")}), 100); !errors.Is(err, vba.ErrNotProject) {

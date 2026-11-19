@@ -321,7 +321,7 @@ func TestPowerPointTextAndFields(t *testing.T) {
 		`  paragraph "Name:\tvalue\nsecond line"`,
 		`  paragraph "office \n after"`,
 		`  paragraph "Slide 5 of the deck, on 4 March 2026"`,
-		`  paragraph "Where E=mc2 holds"`,
+		`  paragraph "Where E=mc^2 holds"`,
 	)
 }
 
