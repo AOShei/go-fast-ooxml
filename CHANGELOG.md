@@ -39,6 +39,12 @@ when the work planned before the release is done.
 
 - `Extract`, `ExtractFile` and `Extractor`, which implements
   `gofastcore.Extractor`: the whole file as a `gofastcore.Document`.
+- With `Options.Cells`, the formulas of cells (shared formulas moved to
+  each cell) and the types and stored values of what they hold; with
+  `Options.Spans`, cell hyperlinks; both in `Table.Cells`.
+- A last part of kind `stored` for what a workbook stores and shows on no
+  sheet: defined names and the code of Excel 4 macro sheets, flagged as
+  hidden.
 - `Open`, `OpenBytes`, `OpenReaderAt` and `File`: a part at a time
   (`Parts`, `Part`), a sheet in bands of rows (`Rows`), embedded files
   (`Children`), without holding the document.
@@ -68,7 +74,6 @@ when the work planned before the release is done.
 
 ### Not in this release
 
-- Formula text, chart data, pivot tables, SmartArt text, the binary
-  workbook format (`.xlsb`), and the legacy binary formats (`.doc`, `.xls`,
-  `.ppt`).
+- Chart data, pivot tables, SmartArt text, the binary workbook format
+  (`.xlsb`), and the legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files encrypted for a certificate or protected by rights management.

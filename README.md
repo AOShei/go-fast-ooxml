@@ -257,6 +257,31 @@ A formula gives its stored result. Formulas are not evaluated, and one
 stored without a result is an empty cell, reported as
 `ooxml.formula_no_value`.
 
+**What a cell holds besides its text** is in `Table.Cells`, an entry for
+each cell that has something:
+
+- with `Options.Spans`, where the cell links to: an address, or `#` and a
+  place in the workbook;
+- with `Options.Cells`, its formula as Excel shows it, without `=` (a
+  formula a range of cells shares is moved to each cell, as Excel moves
+  it), and the type of its value (`number`, `date`, `bool`, `error`,
+  `text`) with the value where the text does not show it in full: 0.333 in
+  a cell showing `33%`, a date's serial number. Across the 30,144 formulas
+  and 1,326 links of the corpus's workbooks, these agree with openpyxl's
+  (`TestExcelCellDetailsAsOpenpyxl`); openpyxl leaves out spaces some
+  shared formulas have, which are kept here. On a sheet of numbers there
+  is an entry for every cell: `large.xlsx` takes about half as long again
+  to read with `Cells`, and allocates three times as much.
+
+Markdown writes the links of cells; formulas and values are only in the
+document, since a formula can hold text nobody sees on the sheet.
+
+**What a workbook stores and shows on no sheet** is in a last part of
+kind `stored`, flagged as hidden: its defined names (`Rate: 0.2`; a name
+can stand for a text that appears nowhere else), and the code of its
+Excel 4 macro sheets, one formula to a line. It is read as data, never
+evaluated, and comes with the whole document, not with a range of parts.
+
 **Tables.** A table the workbook declares is one table block, with its
 header row. The other cells are grouped into blocks separated by empty rows
 and columns; those boundaries are a reading of the layout, so such tables
@@ -273,10 +298,9 @@ used: a long string that a million cells refer to is small in the file and
 large in the result. A sheet that reaches a limit is cut off there, with
 `limit.exceeded`.
 
-**Not read:** formula text, charts, pivot table definitions (what a pivot
-table shows is in the cells and is read), data validation lists, and the
-macros of macro sheets and VBA projects, which are reported as
-`input.active_content`.
+**Not read:** charts, pivot table definitions (what a pivot table shows is
+in the cells and is read), data validation lists, and VBA projects. Macro
+sheets and VBA projects are reported as `input.active_content`.
 
 ## PowerPoint presentations
 
@@ -420,13 +444,15 @@ flagged. What this means for a reviewer:
 - **Fonts and spacing.** A font whose glyphs are blank, or spacing that piles
   characters on each other, is not detected.
 - **Content never shown on a page but extracted by design**: document
-  properties, alternative text of pictures, comments, speaker's notes. Each
-  has its own place in the model (metadata, `image` blocks, `note` blocks),
-  so a consumer can treat it apart.
+  properties, alternative text of pictures, comments, speaker's notes,
+  and, flagged as hidden in the stored part, a workbook's defined names
+  and the code of its macro sheets. Each has its own place in the model
+  (metadata, `image` blocks, `note` blocks, the `stored` part), so a
+  consumer can treat it apart. Formulas, with `Options.Cells`, are in
+  `Table.Cells`, apart from what cells show.
 - **Content not extracted at all**, which therefore cannot reach a model
   through this library: field codes, custom XML data, document variables;
-  in Excel, formula text, defined names, data validation lists and pivot
-  caches.
+  in Excel, data validation lists and pivot caches.
 
 The contrast test is the shared model's (`gofastcore.LowContrast`): text
 is taken to be indiscernible when its contrast with what is behind it is

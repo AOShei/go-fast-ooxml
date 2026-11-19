@@ -240,7 +240,7 @@ func TestSoak(t *testing.T) {
 		}
 		// Spans say how the text is set and change none of it. Pictures
 		// add their blocks, so with them only the outcome is checked.
-		spans, _ := read(plain, &gofastcore.Options{Workers: 4, Spans: true})
+		spans, _ := read(plain, &gofastcore.Options{Workers: 4, Spans: true, Cells: true})
 		read(plain, &gofastcore.Options{Workers: 4, Spans: true, Images: gofastcore.ImagesData})
 		// Under limits a real file runs into.
 		// (With a child extractor: a document cut off by a limit still

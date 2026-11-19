@@ -654,6 +654,9 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options) *Body {
 // Len returns the number of parts, which is one.
 func (b *Body) Len() int { return 1 }
 
+// Stored returns -1: a Word document has no stored part yet.
+func (b *Body) Stored() int { return -1 }
+
 // Noun names the parts of a Word document.
 func (b *Body) Noun() string { return "parts" }
 

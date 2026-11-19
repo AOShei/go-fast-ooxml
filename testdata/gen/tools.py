@@ -252,9 +252,46 @@ TOOLS = {
 
 
 # Adapters that are test oracles only: they do not extract text, so they are
+
+def openpyxl_formulas(path):
+    """The formula text and the hyperlink of each cell, as openpyxl reads
+    them, as JSON: per sheet, by cell reference, the formula without its
+    "=" (a shared formula as openpyxl moves it to the cell; an array
+    formula in its first cell) and where the cell links to (an address, or
+    "#" and a place in the workbook). It is the oracle for Table.Cells.
+    """
+    import json
+
+    import openpyxl
+    from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
+
+    wb = openpyxl.load_workbook(path, data_only=False)
+    out = []
+    for ws in wb.worksheets:
+        formulas, links = {}, {}
+        for row in ws.iter_rows():
+            for c in row:
+                v = c.value
+                if isinstance(v, ArrayFormula):
+                    if v.text:
+                        formulas[c.coordinate] = v.text[1:] if v.text.startswith("=") else v.text
+                elif isinstance(v, DataTableFormula):
+                    pass
+                elif isinstance(v, str) and c.data_type == "f" and v.startswith("="):
+                    formulas[c.coordinate] = v[1:]
+                h = c.hyperlink
+                if h is not None:
+                    if h.target:
+                        links[c.coordinate] = h.target
+                    elif h.location:
+                        links[c.coordinate] = "#" + h.location
+        out.append({"sheet": ws.title, "formulas": formulas, "links": links})
+    return json.dumps(out)
+
 # not part of the baseline measurements.
 ORACLES = {
     "openpyxl-cells": ("openpyxl", openpyxl_cells, {"xlsx"}),
+    "openpyxl-formulas": ("openpyxl", openpyxl_formulas, {"xlsx"}),
     "python-pptx-slides": ("python-pptx", python_pptx_slides, {"pptx"}),
     "msoffcrypto-decrypt": ("msoffcrypto-tool", msoffcrypto_decrypt, {"docx", "xlsx", "pptx"}),
 }
