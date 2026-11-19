@@ -359,7 +359,17 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					s.Abort(warn.ErrText)
 				}
 			case s.Is(ns.Diagram, "relIds"):
-				sh.unread["diagram"]++
+				id, _ := s.Attr(ns.Rel, "dm")
+				rel, found := byID[string(id)]
+				if !found || rel.External || !ns.IsRel(rel.Type, ns.RelDiagram) || !sh.wb.pkg.Has(rel.Target) {
+					sh.damaged = append(sh.damaged, "the diagram "+clean.Label(string(id))+" of "+target)
+					continue
+				}
+				var cut bool
+				out, cut = sh.diagram(rel.Target, byID, &pal, out, row, col, unseen)
+				if cut {
+					s.Abort(warn.ErrText)
+				}
 			}
 		}
 	})

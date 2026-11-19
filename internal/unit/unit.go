@@ -21,8 +21,8 @@ type Result struct {
 // whole. It is small, and is kept when the part itself has been handed
 // on.
 type Tally struct {
-	// Unread counts content of kinds that are not read: charts,
-	// diagrams.
+	// Unread counts content of kinds that are not read: sound and video
+	// clips, dialog sheets.
 	Unread map[string]int
 	// Damaged names the supporting parts that could not be read to
 	// their end.

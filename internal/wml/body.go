@@ -1231,7 +1231,7 @@ func (p *parser) drawing() {
 		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
 			p.chart(name)
 		case s.Is(ns.Diagram, "relIds"):
-			p.r.unread["diagram"]++
+			p.diagram()
 		}
 	}
 	if hasBox && shapes <= 1 && !autofit && (width >= 0 && width < gofastcore.HiddenTinySize || height >= 0 && height < gofastcore.HiddenTinySize) {

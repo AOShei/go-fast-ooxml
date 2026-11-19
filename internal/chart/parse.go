@@ -284,7 +284,8 @@ func (r *reader) newer(c *Chart) []series {
 		}
 		switch {
 		case s.Is(ns.ChartEx, "data"):
-			id, _ := s.Attr(xmlscan.NoSpace, "id")
+			v, _ := s.Attr(xmlscan.NoSpace, "id")
+			id := string(v) // copied before the scanner's buffer is reused
 			d := &data{}
 			dd := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= dd {
@@ -310,7 +311,7 @@ func (r *reader) newer(c *Chart) []series {
 				}
 			}
 			if len(byID) < maxSeries {
-				byID[string(id)] = d
+				byID[id] = d
 			}
 		case s.Is(ns.ChartEx, "title") && s.Depth() == depth+2:
 			c.Title = r.title(ns.ChartEx)

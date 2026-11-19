@@ -10,9 +10,9 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
 | Format | State |
 |---|---|
-| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files. Hidden text is flagged (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
-| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, merged cells, comments, text in shapes, pictures and embedded files are read. Hidden text is flagged (see below). Sheets are read in parallel |
-| PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. Hidden text is flagged (see below). Slides are read in parallel |
+| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. Hidden text is flagged (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
+| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. Hidden text is flagged (see below). Sheets are read in parallel |
+| PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. Hidden text is flagged (see below). Slides are read in parallel |
 
 ## How fast
 
@@ -310,9 +310,15 @@ used: a long string that a million cells refer to is small in the file and
 large in the result. A sheet that reaches a limit is cut off there, with
 `limit.exceeded`.
 
-**Not read:** charts, pivot table definitions (what a pivot table shows is
-in the cells and is read), and VBA projects. Macro
-sheets and VBA projects are reported as `input.active_content`.
+A chart's table is not cells of the sheet: its `loc.range` is the cell the
+chart is anchored to, and its role is `chart` (see
+[Charts and SmartArt](#charts-and-smartart)). A chart sheet is a part with
+no cells; its chart's blocks have no `loc.range`.
+
+**Not read:** pivot table definitions (what a pivot table shows is in the
+cells and is read), dialog sheets (counted in `ooxml.unread_content`), and
+VBA projects. Macro sheets and VBA projects are reported as
+`input.active_content`.
 
 ## PowerPoint presentations
 
@@ -360,10 +366,59 @@ about a million blocks are repeated in this way over a presentation, and a
 slide past that says so with `limit.exceeded`. What a limit leaves out is
 the same for any number of workers.
 
-**Not read:** charts, diagrams (SmartArt) and sound and video clips, each
-counted in `ooxml.unread_content`; animations, other than to know which
+**Not read:** sound and video clips, counted in `ooxml.unread_content`;
+animations, other than to know which
 shapes they move (see hidden text). An action that starts a program or
 runs a macro is reported as `input.active_content` and never run.
+
+## Charts and SmartArt
+
+The same in all three formats.
+
+**A chart** is its data, as the chart's cache holds it: a `caption` block
+with its title, then a `table` block with `role` `chart`, the chart's
+type in `chart` (`bar`, `line`, `pie`; several, space-separated, for a
+chart that combines them; the newer kinds by their layout: `waterfall`,
+`sunburst`, `treemap`, `funnel`, `boxwhisker`, `clusteredcolumn` for a
+histogram), its name in `name`, and the titles of its axes in `x_axis` and
+`y_axis`. The header row has the names of the series; the first columns,
+with an empty header, the categories, outermost first; then a column of
+values for each series, written through their number formats as the
+chart labels them (a date as a date, in ISO 8601). A bubble chart has a
+second column for each series, the sizes of its bubbles. Series that do
+not share their categories, such as those of a scatter chart, are tables
+of their own. A title with no text of its own is the name of the chart's
+one series, as Office shows it.
+
+- The cache is what the chart was drawn from when the file was saved. The
+  workbook a chart in Word or PowerPoint embeds is handed to
+  `Options.Child` as an embedded file: it may hold more than the chart
+  shows. Excel keeps the data of its newer charts on the sheet and none in
+  the chart: such a chart's table has the names of its series only.
+- **Series a chart's filter leaves out** are in the file and not drawn:
+  they are read, in a table of their own flagged `invisible`.
+- A chart holds at most about two million points; a larger one is cut off
+  with `limit.exceeded`.
+- Across 1,413 series in the corpus and the soak set, the names,
+  categories and values agree with python-pptx and openpyxl
+  (`TestChartsAsOracles`).
+
+**A SmartArt diagram** is the text of its data model, in the order and
+nesting the model declares: a `list_item` for each paragraph of a node,
+its level the node's depth. Office also keeps the drawing it made of the
+diagram; where the file has it, each item has the place of the shape it
+is drawn in (on a slide), its text is judged as other text is (colour
+against the shape's fill, size), and a node the layout draws nowhere is
+flagged `invisible`: it is in the file and on no slide. A drawing that is
+empty, or draws none of the model, is out of date and is not judged by.
+Text on the connectors between nodes (an arrow's label) is an item
+between the nodes it joins. Against LibreOffice, which imports the
+drawing, over the 111 presentations with SmartArt in the corpus and the
+soak set: nothing flagged as drawn nowhere is shown, and all 961
+diagram paragraphs it shows are in this library's text
+(`TestSmartArtAsLibreOffice`, `GOFAST_SMARTART_SOAK=1` for the soak set).
+Where a diagram has no drawing, LibreOffice lays the model out itself and
+may leave text out; that text is given here, unflagged.
 
 ## Hidden text
 
@@ -458,6 +513,8 @@ flagged. What this means for a reviewer:
 - **Content never shown on a page but extracted by design**: document
   properties, alternative text of pictures, comments, speaker's notes,
   the values of drop-down lists,
+  the series a chart's filter leaves out and the SmartArt nodes a layout
+  does not draw (both flagged `invisible`),
   and, flagged as hidden in the stored part, a workbook's defined names
   and the code of its macro sheets. Each has its own place in the model
   (metadata, `image` blocks, `note` blocks, the `stored` part), so a
@@ -488,6 +545,7 @@ see, is not.
 | `internal/numfmt` | Number formats: what a cell displays for the value it holds |
 | `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables and table styles, reading order, what covers what, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
+| `internal/chart`, `internal/diagram` | Charts, of both kinds, as tables of their data; SmartArt diagrams, from their data model and the drawing Office made of them. Shared by the three readers |
 | `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours and fill styles, pictures and embedded files, settling which text is hidden, bullets and numerals, warning codes, what reading one part gives |
 | `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |

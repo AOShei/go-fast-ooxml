@@ -56,9 +56,9 @@ type sheet struct {
 	hiddenRows []int32
 	hiddenCols []span
 	merges     []rect
-	varying    []rect   // where conditional formatting may change how cells look
-	varyAll    bool     // or everywhere: a range of it could not be read
-	tables     []string // parts of the tables the sheet declares
+	varying    []rect    // where conditional formatting may change how cells look
+	varyAll    bool      // or everywhere: a range of it could not be read
+	tables     []string  // parts of the tables the sheet declares
 	charts     []opc.Rel // what the charts read embed: their workbooks
 	chartSheet bool      // a sheet that is one chart
 	lists      []choiceList

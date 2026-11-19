@@ -645,7 +645,6 @@ func TestPowerPointContentThatIsNotRead(t *testing.T) {
 	}
 	preview := picture(11, "rId5", "", 50, 300, 200, 100, "")
 	pkg := deck(ooxmltest.Slide{Shapes: box(2, 10, 10, 200, 40, "", dpara("", plain("Figures"))) +
-		frame(4, 360, 60, 300, 200, "http://schemas.openxmlformats.org/drawingml/2006/diagram", `<dgm:relIds r:dm="rId10" r:lo="rId11" r:qs="rId12" r:cs="rId13"/>`) +
 		video +
 		frame(10, 50, 300, 200, 100, "http://schemas.openxmlformats.org/presentationml/2006/ole",
 			`<mc:AlternateContent><mc:Choice Requires="v">`+ole(preview)+`</mc:Choice><mc:Fallback>`+ole(preview)+`</mc:Fallback></mc:AlternateContent>`) +
@@ -681,7 +680,7 @@ func TestPowerPointContentThatIsNotRead(t *testing.T) {
 	want := []string{
 		"input.active_content: 1 actions that start a program or run a macro; none was run",
 		"input.external_reference: 1 links to pictures, media or files outside the presentation; nothing was fetched",
-		"ooxml.unread_content: 1 audio or video clip, 1 diagram",
+		"ooxml.unread_content: 1 audio or video clip",
 	}
 	if strings.Join(codes, "\n") != strings.Join(want, "\n") {
 		t.Errorf("warnings:\n %s\nwant:\n %s", strings.Join(codes, "\n "), strings.Join(want, "\n "))

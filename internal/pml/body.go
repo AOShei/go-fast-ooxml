@@ -306,10 +306,7 @@ func (pg *page) frame(g *group) {
 		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
 			pg.chart(&sh, g)
 		case s.Is(ns.Diagram, "relIds"):
-			if pg.role == roleSlide {
-				pg.count("diagram")
-			}
-			s.Skip()
+			pg.diagram(&sh, g)
 		case s.Is(ns.Pres, "pic"):
 			pg.pic(g) // what an embedded object looks like on the slide
 		case s.Is(ns.MC, "Choice"):

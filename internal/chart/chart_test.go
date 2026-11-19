@@ -210,3 +210,38 @@ func TestChartPointBounds(t *testing.T) {
 		t.Errorf("%d cells held", cells)
 	}
 }
+
+// Any chart part gives tables that are rectangular and within the
+// bounds, and the blocks the budget allows, without failing.
+func FuzzChart(f *testing.F) {
+	f.Add(`<c:chartSpace` + cNS + `><c:chart><c:title><c:tx><c:rich><a:p><a:r><a:t>T</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser><c:tx><c:v>S</c:v></c:tx><c:cat>` +
+		strCache("x", "a", "b") + `</c:cat><c:val>` + numCache("0.0", "1", "2") + `</c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`)
+	f.Add(`<cx:chartSpace` + cxNS + `><cx:chartData><cx:data id="0"><cx:strDim type="cat"><cx:lvl ptCount="2"><cx:pt idx="0">a</cx:pt><cx:pt idx="1">b</cx:pt></cx:lvl></cx:strDim>` +
+		`<cx:numDim type="val"><cx:lvl ptCount="2" formatCode="0%"><cx:pt idx="0">0.5</cx:pt><cx:pt idx="5">1</cx:pt></cx:lvl></cx:numDim></cx:data></cx:chartData>` +
+		`<cx:chart><cx:plotArea><cx:plotAreaRegion><cx:series layoutId="funnel"><cx:dataId val="0"/></cx:series></cx:plotAreaRegion></cx:plotArea></cx:chart></cx:chartSpace>`)
+	f.Fuzz(func(t *testing.T, xml string) {
+		data := ooxmltest.NewPackage().Add("c.xml", "application/xml", xml).Bytes()
+		pkg, err := opc.Open(bytes.NewReader(data), int64(len(data)), opc.Limits{MaxDecodedBytes: 1 << 24, MaxMembers: 10})
+		if err != nil {
+			return
+		}
+		c, _ := Read(pkg, "c.xml")
+		if c == nil {
+			return
+		}
+		cells := 0
+		for _, tb := range c.Tables {
+			for _, r := range tb.Rows {
+				if len(r) != len(tb.Rows[0]) {
+					t.Fatalf("ragged table %q", tb.Rows)
+				}
+				cells += len(r)
+			}
+		}
+		if cells > 2*maxTotal {
+			t.Fatalf("%d cells", cells)
+		}
+		_, budget := gofastcore.WithTextBudget(context.Background(), gofastcore.Limits{MaxTextBytes: 4096})
+		c.Blocks(budget, "n")
+	})
+}
