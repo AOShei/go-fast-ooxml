@@ -213,7 +213,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		}
 		switch {
 		case ns.IsRel(rel.Type, ns.RelStyles):
-			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, wb.theme) })
+			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, wb.theme, opts.DeepHidden) })
 		case ns.IsRel(rel.Type, ns.RelSharedStrings):
 			load(rel.Target, func(s *xmlscan.Scanner) {
 				var full bool

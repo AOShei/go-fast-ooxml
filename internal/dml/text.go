@@ -304,8 +304,12 @@ type Text struct {
 	Chain []*ListStyle
 	Base  RunProps
 	// Behind is what the text is seen against, if Lit says it is known.
+	// Where it is not one colour, Under may hold the colours it is made
+	// of (the stops of a gradient, the cells of a picture), which text is
+	// judged against when Lit is false.
 	Behind theme.Color
 	Lit    bool
+	Under  []theme.Color
 	// Later puts off judging text against what is behind it: the colours
 	// the text is written in are listed in Inks for the caller to judge.
 	// A table cell needs this, since its fill follows its text.
@@ -694,6 +698,9 @@ func (t *Text) run(s *xmlscan.Scanner, paraStart, level int, slideNumber bool) f
 			break
 		}
 		if !lit {
+			if !rp.Behind.IsSet() && LowOnMost(ink, alpha, t.Under) {
+				reasons |= gofastcore.HiddenLowContrast
+			}
 			break
 		}
 		if alpha < 1 {
@@ -735,4 +742,29 @@ func (t *Text) run(s *xmlscan.Scanner, paraStart, level int, slideNumber bool) f
 		t.spans = append(t.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Hidden: reasons})
 	}
 	return shown
+}
+
+// MostShare is the share of what lies under text that text must be lost
+// against to be judged not discernible on something that is not one
+// colour: nearly all of it.
+const MostShare = 0.95
+
+// LowOnMost reports whether text of colour ink, at that opacity, is of low
+// contrast against at least MostShare of the colours under it.
+func LowOnMost(ink theme.Color, alpha float64, under []theme.Color) bool {
+	if len(under) == 0 {
+		return false
+	}
+	low := 0
+	for _, behind := range under {
+		c := ink
+		if alpha < 1 {
+			blend := func(a, b uint8) uint8 { return uint8(float64(a)*alpha + float64(b)*(1-alpha) + 0.5) }
+			c = theme.Color{R: blend(ink.R, behind.R), G: blend(ink.G, behind.G), B: blend(ink.B, behind.B)}
+		}
+		if gofastcore.LowContrast(c.R, c.G, c.B, behind.R, behind.G, behind.B) {
+			low++
+		}
+	}
+	return float64(low) >= MostShare*float64(len(under))
 }

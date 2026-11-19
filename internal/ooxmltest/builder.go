@@ -171,6 +171,12 @@ func (p *Package) addRel(source, typ, target string, external bool) string {
 	return id
 }
 
+// RelID adds a relationship with an id of the caller's choosing, which
+// must not be of the form the builder gives ("rId" and a number).
+func (p *Package) RelID(source, id, typ, target string) {
+	p.rels[source] = append(p.rels[source], rel{id, typ, target, false})
+}
+
 // Bytes returns the package as a zip archive.
 func (p *Package) Bytes() []byte {
 	var buf bytes.Buffer

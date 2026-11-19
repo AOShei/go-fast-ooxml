@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -978,7 +979,8 @@ func (sh *sheet) lookUnder(own *cellStyle, table look, over []int, mask uint64, 
 	case own.fill == 1:
 		behind = own.fillColor
 	case own.fill == 2:
-		return false, true // not one colour: not judged, as without the rules
+		// Not one colour: judged against a gradient's stops, if known.
+		return inkSet && dml.LowOnMost(ink, 1, own.stops), true
 	case table.fill == 1:
 		behind = table.fillColor
 	case table.fill == 2:

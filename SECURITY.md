@@ -25,7 +25,7 @@ Any of the following is a bug to report, whatever the file:
 
 | | |
 |---|---|
-| **Run anything** | Macros are never run, formulas never evaluated, fields never updated. Their presence is reported (`input.active_content`) |
+| **Run anything** | Macros are never run, formulas never evaluated, fields never updated. Their presence is reported (`input.active_content`); the code of VBA projects and macro sheets, and the codes of fields, are read as text and flagged as hidden |
 | **Reach anything** | No file other than the input is opened and no network connection is made. Links to other files, remote templates and linked pictures are reported (`input.external_reference`), never followed. The packages that read file content do not import `os`, `net` or `os/exec`, and a test fails if one starts to |
 | **Use XML against the reader** | The library has its own XML reader. Document type declarations are refused, so there are no entities to expand and nothing external to include. Nesting is bounded at 512 elements |
 | **Crash the caller** | No panic on any input: every index, length and count taken from a file is checked, and every list a file can lengthen has a bound |
@@ -50,6 +50,9 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Password checks of a document and the files embedded in it, together | 10 times the above | | Further encrypted files are listed, not opened |
 | Depth of embedded documents | 4 | `Options.Limits.MaxDepth` | Listed, not opened |
 | Nesting of XML elements | 512 | fixed | The part is cut off |
+| Code of a VBA project, decompressed | what is left of the text and decompression budgets | | The module is cut off; what it decompresses to is charged to the decompression budget too |
+| Pictures decoded for `DeepHidden` | 40 million pixels, 64 MiB of file | fixed | Not decoded; text over them is not judged |
+| Conditional formatting rules that give a colour, per sheet | 64; 1 million values read for them | fixed | The cells of further rules are not judged, and counted by `ooxml.hidden_unchecked` |
 
 A zero in a limit means its default and a negative number means none.
 

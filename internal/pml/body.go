@@ -78,7 +78,7 @@ func (pg *page) body(sh *props) (title bool) {
 	if !pg.role.paper() {
 		t.Base.Ink = dml.Fill{Paint: dml.PaintSolid, Color: textInk}
 	}
-	t.Behind, t.Lit, t.Later = sh.behind, sh.lit, false
+	t.Behind, t.Lit, t.Later, t.Under = sh.behind, sh.lit, false, sh.under
 	t.Styles, t.Link, t.SlideNumber = pg.p.opts.Spans, pg.link, pg.number
 	t.Cost = gofastcore.BlockCost
 	t.Read(s)
@@ -217,6 +217,14 @@ func (pg *page) pic(g *group) {
 			if ok && !sh.hasBlip {
 				sh.blip, sh.hasBlip = string(id), true
 			}
+		case s.Is(ns.Draw, "srcRect"):
+			for i, side := range []string{"l", "t", "r", "b"} {
+				if v, ok := intAttr(s, side); ok {
+					sh.fill.Crop[i] = float64(v) / 100000
+				}
+			}
+		case s.Is(ns.Draw, "tile"):
+			sh.fill.Tile = true
 		case s.Is(ns.Draw, "alphaModFix"):
 			if n, ok := intAttr(s, "amt"); ok && n < 100000 {
 				sh.faded = true
@@ -229,7 +237,12 @@ func (pg *page) pic(g *group) {
 			s.Skip()
 		}
 	}
-	sh.fill = dml.Fill{Paint: dml.PaintOther} // it is what fills its box
+	// It is what fills its box.
+	crop, tile := sh.fill.Crop, sh.fill.Tile
+	sh.fill = dml.Fill{Paint: dml.PaintOther, Crop: crop, Tile: tile}
+	if rel, found := pg.rels[sh.blip]; sh.hasBlip && found && !rel.External && !sh.faded {
+		sh.fill.Blip = rel.Target
+	}
 	pg.place(&sh, g)
 	if pg.role.paper() {
 		return

@@ -15,6 +15,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
+	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -222,11 +223,17 @@ func (p *parser) document(out *[]gofastcore.Block) {
 		if s.Depth() == 2 && s.Is(ns.Word, "background") {
 			// The page colour. Word shows it only when the document's
 			// settings say so. A child element makes it a gradient or a
-			// picture, which is not a colour to judge text against.
+			// picture, which is not one colour; with DeepHidden, text is
+			// judged against the gradient's two colours or the picture's.
 			c := readColor(s, "color", "themeColor", p.r.theme)
+			first := c
 			for s.Next() != xmlscan.EOF && s.Depth() >= 2 {
-				if s.Kind() == xmlscan.Start {
-					c = unknown
+				if s.Kind() != xmlscan.Start {
+					continue
+				}
+				c = unknown
+				if p.r.opts.DeepHidden && s.Is(ns.VML, "fill") {
+					c.under = p.pageFill(s, first)
 				}
 			}
 			if p.r.showBackground && c.set && !c.auto {
@@ -1297,7 +1304,7 @@ func (p *parser) drawing() {
 			shapeProps = s.Depth()
 		case shapeProps > 0 && s.Depth() == shapeProps+1 && s.Space() == ns.Draw:
 			if f, ok := dml.ReadFill(s); ok {
-				fill, ownFill = p.r.drawingFill(f), true
+				fill, ownFill = p.r.drawingFill(p.picture(f)), true
 			} else if s.Is(ns.Draw, "ln") {
 				s.Skip() // the outline has a fill of its own
 			}
@@ -1768,4 +1775,39 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 			s.Skip()
 		}
 	}
+}
+
+// picture turns the relationship of a fill's picture into its part's
+// name, as this part sees it.
+func (p *parser) picture(f dml.Fill) dml.Fill {
+	if f.Blip == "" {
+		return f
+	}
+	if rel, ok := p.rels[f.Blip]; ok && !rel.External {
+		f.Blip = rel.Target
+	} else {
+		f.Blip = ""
+	}
+	return f
+}
+
+// pageFill reads the v:fill of the page's background: a gradient from the
+// page colour to color2, or a picture, stretched or tiled, whose colours
+// are those of the page either way.
+func (p *parser) pageFill(s *xmlscan.Scanner, first color) []theme.Color {
+	typ, _ := s.Attr(xmlscan.NoSpace, "type")
+	if id, ok := s.Attr(ns.Rel, "id"); ok && string(typ) != "gradient" && string(typ) != "gradientRadial" && string(typ) != "pattern" {
+		return p.r.deepColors(p.picture(dml.Fill{Paint: dml.PaintOther, Blip: string(id)}))
+	}
+	if string(typ) != "gradient" && string(typ) != "gradientRadial" {
+		return nil
+	}
+	second := white
+	if v, ok := s.Attr(xmlscan.NoSpace, "color2"); ok {
+		second = vmlColor(v)
+	}
+	if !first.set || first.auto || first.unknown || !second.set || second.unknown {
+		return nil
+	}
+	return []theme.Color{{R: first.r, G: first.g, B: first.b}, {R: second.r, G: second.g, B: second.b}}
 }

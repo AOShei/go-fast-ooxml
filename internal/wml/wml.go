@@ -126,6 +126,7 @@ type reader struct {
 	floats     []float
 	pages      []pageGeom
 	paragraphs int
+	grids      map[string]*media.Grid // pictures reduced to colours, for DeepHidden
 }
 
 // Extract reads the Word document whose main part is named main into doc,

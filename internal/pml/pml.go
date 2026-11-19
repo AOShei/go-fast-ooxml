@@ -80,7 +80,8 @@ type shared struct {
 	sheets map[string]*layout
 	themes map[string]*themeEntry
 	images map[string]*gofastcore.Image
-	opaque map[string]bool // pictures: whether one hides what is behind it
+	opaque map[string]bool        // pictures: whether one hides what is behind it
+	grids  map[string]*media.Grid // pictures reduced to colours, for DeepHidden
 
 	// What the notes master [0] and the handout master [1] put on every
 	// page they make, read once, and the bytes of its text.

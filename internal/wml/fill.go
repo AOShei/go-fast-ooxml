@@ -2,10 +2,14 @@ package wml
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
+	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -80,9 +84,55 @@ func (r *reader) drawingFill(f dml.Fill) color {
 		}
 		return unknown
 	case dml.PaintOther:
-		return unknown
+		c := unknown
+		if r.opts.DeepHidden {
+			c.under = r.deepColors(f)
+		}
+		return c
 	}
 	return color{}
+}
+
+// deepColors returns, with DeepHidden, the colours a fill that is not one
+// colour is made of: a gradient's stops, or the colours of a picture
+// (whose relationship has been turned into its part's name); nil where
+// they are not known.
+func (r *reader) deepColors(f dml.Fill) []theme.Color {
+	if len(f.Stops) > 0 {
+		colors, _ := r.drawn.Colors(f.Stops)
+		return colors
+	}
+	if f.Blip == "" || !r.pkg.Has(f.Blip) {
+		return nil
+	}
+	g, ok := r.grids[f.Blip]
+	if !ok {
+		var decoded bool
+		var err error
+		g, decoded, err = media.Sample(r.pkg, f.Blip)
+		r.noteErr(f.Blip, budgetOnly(err))
+		if !decoded {
+			g = nil
+		}
+		if r.grids == nil {
+			r.grids = map[string]*media.Grid{}
+		}
+		r.grids[f.Blip] = g
+	}
+	if g == nil {
+		return nil
+	}
+	return g.Colors
+}
+
+// budgetOnly keeps an error only if it is that the decompression budget
+// ran out: a picture that cannot be decoded is not judged, and is not
+// damage.
+func budgetOnly(err error) error {
+	if errors.Is(err, opc.ErrBudget) {
+		return err
+	}
+	return nil
 }
 
 // vmlColors are the colour names legacy drawings use.
@@ -141,6 +191,9 @@ func vmlFillElement(s *xmlscan.Scanner, fill color) color {
 	}
 	if v, ok := s.Attr(xmlscan.NoSpace, "type"); ok && string(v) != "solid" {
 		return unknown // a gradient, a pattern, a picture
+	}
+	if _, ok := s.Attr(ns.Rel, "id"); ok {
+		return unknown // a picture
 	}
 	if _, ok := s.Attr(xmlscan.NoSpace, "opacity"); ok {
 		return unknown

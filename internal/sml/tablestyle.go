@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
@@ -302,7 +303,7 @@ func (cs *cellStyle) lowContrastOver(from look) bool {
 	case cs.fill == 1:
 		behind = cs.fillColor
 	case cs.fill == 2:
-		return false // not one colour: not judged
+		return dml.LowOnMost(ink, 1, cs.stops) // not one colour: judged against a gradient's stops only
 	case from.fill == 1:
 		behind = from.fillColor
 	case from.fill == 2:
