@@ -580,3 +580,73 @@ func TestPartsMemoryDoesNotGrowWithTheDocument(t *testing.T) {
 		}
 	}
 }
+
+// withoutStyle returns the document's JSON form without the spans that
+// say only how text is set. Spans that mark hidden text stay: they are
+// there whether spans are asked for or not.
+func withoutStyle(t testing.TB, doc *gofastcore.Document) string {
+	t.Helper()
+	var back gofastcore.Document
+	if err := json.Unmarshal([]byte(asJSON(t, doc)), &back); err != nil {
+		t.Fatal(err)
+	}
+	back.Walk(func(d *gofastcore.Document, _ int) bool {
+		for i := range d.Parts {
+			for k := range d.Parts[i].Blocks {
+				b := &d.Parts[i].Blocks[k]
+				var kept []gofastcore.Span
+				for _, s := range b.Spans {
+					if s.Hidden != 0 {
+						kept = append(kept, gofastcore.Span{Start: s.Start, End: s.End, Hidden: s.Hidden})
+					}
+				}
+				b.Spans = kept
+			}
+		}
+		return true
+	})
+	return asJSON(t, &back)
+}
+
+// Asking for spans adds spans and changes nothing else: the same blocks,
+// with the same text.
+func TestSpansChangeNothingElse(t *testing.T) {
+	bold := func(s string) string { return `<w:r><w:rPr><w:b/></w:rPr>` + text(s) + `</w:r>` }
+	code := func(inner string) string { return `<w:p><w:pPr><w:pStyle w:val="Code"/></w:pPr>` + inner + `</w:p>` }
+	listing := ooxmltest.Docx(para(run(text("Before."))) +
+		code(bold("func main() {")) + code(run(text("\tprintln("))+bold(`"hello"`)+run(text(")"))) + code(run(text("}"))) +
+		para(run(text("After.")))).WithStyles(wordStyles)
+	all := append(samples(t), sample{"word code listing with bold", listing.Bytes()})
+	for _, s := range all {
+		plain, err := extract(t, s.data, &gofastcore.Options{Child: childExtractor})
+		if err != nil {
+			t.Fatalf("%s: %v", s.name, err)
+		}
+		spans, err := extract(t, s.data, &gofastcore.Options{Child: childExtractor, Spans: true})
+		if err != nil {
+			t.Fatalf("%s: %v", s.name, err)
+		}
+		ooxmltest.CheckDocument(t, spans)
+		if withoutStyle(t, spans) != withoutStyle(t, plain) {
+			t.Errorf("%s: the document with spans differs in more than spans", s.name)
+		}
+	}
+	// The listing is one block of code, and its spans are where the bold
+	// text is in the block.
+	doc, err := extract(t, listing.Bytes(), &gofastcore.Options{Spans: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := doc.Parts[0].Blocks
+	want := "func main() {\n\tprintln(\"hello\")\n}"
+	if len(blocks) != 3 || blocks[1].Kind != gofastcore.KindCode || blocks[1].Text != want {
+		t.Fatalf("blocks: %+v", blocks)
+	}
+	var marked []string
+	for _, s := range blocks[1].Spans {
+		marked = append(marked, blocks[1].Text[s.Start:s.End])
+	}
+	if got := strings.Join(marked, "|"); got != `func main() {|"hello"` {
+		t.Errorf("bold spans cover %q", got)
+	}
+}

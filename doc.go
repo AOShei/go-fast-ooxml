@@ -20,5 +20,10 @@
 // A file encrypted with a password is opened with Options.Password; see
 // the README for what is and is not read.
 //
-// The package is under construction and nothing is released.
+// Files are taken to come from people who are not trusted. Nothing in a
+// file is run or followed, every cost a file can impose has a limit
+// (Options.Limits and the fields of Extractor), and every reader stops
+// when its context is cancelled. A file that cannot be read gives one of
+// the shared errors of gofastcore; one that is damaged in part gives what
+// could be read, with warnings. SECURITY.md says what is promised.
 package gofastooxml

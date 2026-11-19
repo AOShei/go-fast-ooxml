@@ -150,11 +150,19 @@ func (p *parser) document(out *[]gofastcore.Block) {
 }
 
 // emitBody appends a block to the body. Consecutive code paragraphs are
-// one block of code.
+// one block of code, with or without spans: the blocks are the same
+// whether spans are asked for or not.
 func (p *parser) emitBody(out *[]gofastcore.Block, b gofastcore.Block) {
 	if n := len(*out); n > 0 && b.Kind == gofastcore.KindCode && (*out)[n-1].Kind == gofastcore.KindCode &&
-		b.Hidden == 0 && (*out)[n-1].Hidden == 0 && b.Spans == nil && (*out)[n-1].Spans == nil {
-		(*out)[n-1].Text += "\n" + b.Text
+		b.Hidden == 0 && (*out)[n-1].Hidden == 0 {
+		last := &(*out)[n-1]
+		at := len(last.Text) + 1
+		last.Text += "\n" + b.Text
+		for _, span := range b.Spans {
+			span.Start += at
+			span.End += at
+			last.Spans = append(last.Spans, span)
+		}
 		return
 	}
 	*out = append(*out, b)

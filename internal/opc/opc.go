@@ -25,6 +25,10 @@ import (
 var (
 	// ErrNotZip: the input is not a zip archive.
 	ErrNotZip = errors.New("opc: not a zip archive")
+	// ErrCutOff: the input begins as a zip archive does, and the
+	// directory at its end cannot be read: the file was cut short, or
+	// damaged there.
+	ErrCutOff = errors.New("opc: zip archive whose directory cannot be read (the file is cut short or damaged)")
 	// ErrNotPackage: a zip archive with no content-types table, so some
 	// other zip-based format.
 	ErrNotPackage = errors.New("opc: zip archive is not an Office Open XML package")
@@ -78,6 +82,10 @@ type Package struct {
 func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
+		var head [4]byte
+		if n, _ := r.ReadAt(head[:], 0); n == len(head) && string(head[:]) == "PK\x03\x04" {
+			return nil, ErrCutOff
+		}
 		return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
 	}
 	if lim.MaxMembers > 0 && len(zr.File) > lim.MaxMembers {
@@ -112,6 +120,17 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		}
 	}
 	if _, ok := p.files[contentTypesName]; !ok {
+		// Other formats kept in a zip archive (OpenDocument, EPUB) say
+		// what they are in a member of their own.
+		if f, ok := p.files[Canonical("mimetype")]; ok && f.UncompressedSize64 <= 256 {
+			if rc, err := f.Open(); err == nil {
+				said, _ := io.ReadAll(io.LimitReader(rc, 256))
+				rc.Close()
+				if kind := strings.TrimSpace(string(said)); strings.HasPrefix(kind, "application/") {
+					return nil, fmt.Errorf("%w: it is %s", ErrNotPackage, kind)
+				}
+			}
+		}
 		return nil, ErrNotPackage
 	}
 	if err := p.readContentTypes(); err != nil {

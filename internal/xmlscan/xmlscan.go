@@ -456,8 +456,21 @@ func safeCut(b []byte) int {
 	}
 	// An entity reference that has started but not ended.
 	from := max(0, n-16)
-	if i := bytes.LastIndexByte(b[from:n], '&'); i >= 0 && bytes.IndexByte(b[from+i:n], ';') < 0 {
-		n = from + i
+	if i := bytes.LastIndexByte(b[from:n], '&'); i >= 0 {
+		if bytes.IndexByte(b[from+i:n], ';') < 0 {
+			n = from + i
+		}
+		return n
+	}
+	// And further back, a character written by its number with many
+	// zeros in front: "&#", then digits to the end.
+	if i := bytes.LastIndexByte(b[:n], '&'); i >= 0 && i+1 < n && b[i+1] == '#' {
+		for _, c := range b[i+2 : n] {
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' || c == 'x' || c == 'X') {
+				return n
+			}
+		}
+		n = i
 	}
 	return n
 }
@@ -1051,26 +1064,19 @@ func (s *Scanner) normalizeLines(raw []byte) []byte {
 // (raw[0] is '&'), appends the result to buf and returns how many bytes of
 // raw it consumed. A reference that cannot be decoded is kept as written.
 func (s *Scanner) reference(buf, raw []byte) ([]byte, int) {
-	end := bytes.IndexByte(raw[:min(len(raw), 12)], ';')
-	if end < 2 {
-		s.Repairs++
-		return append(buf, '&'), 1
-	}
-	name := raw[1:end]
-	if name[0] == '#' {
+	if len(raw) >= 2 && raw[1] == '#' {
+		// A character by its number, which may be written with any
+		// number of zeros in front: the digits run to the semicolon.
+		i, base := 2, rune(10)
+		if i < len(raw) && (raw[i] == 'x' || raw[i] == 'X') {
+			base, i = 16, i+1
+		}
+		first := i
 		var r rune
-		digits := name[1:]
-		base := rune(10)
-		if len(digits) > 0 && (digits[0] == 'x' || digits[0] == 'X') {
-			base, digits = 16, digits[1:]
-		}
-		if len(digits) == 0 {
-			s.Repairs++
-			return append(buf, '&'), 1
-		}
-		for _, c := range digits {
+	digits:
+		for ; i < len(raw); i++ {
 			var d rune
-			switch {
+			switch c := raw[i]; {
 			case c >= '0' && c <= '9':
 				d = rune(c - '0')
 			case base == 16 && c >= 'a' && c <= 'f':
@@ -1078,18 +1084,27 @@ func (s *Scanner) reference(buf, raw []byte) ([]byte, int) {
 			case base == 16 && c >= 'A' && c <= 'F':
 				d = rune(c-'A') + 10
 			default:
-				s.Repairs++
-				return append(buf, '&'), 1
+				break digits
 			}
 			if r = r*base + d; r > utf8.MaxRune {
 				r = utf8.MaxRune + 1
 			}
 		}
+		if i == first || i == len(raw) || raw[i] != ';' {
+			s.Repairs++
+			return append(buf, '&'), 1
+		}
 		if r == 0 || r > utf8.MaxRune || (r >= 0xD800 && r <= 0xDFFF) {
 			r = utf8.RuneError
 		}
-		return utf8.AppendRune(buf, r), end + 1
+		return utf8.AppendRune(buf, r), i + 1
 	}
+	end := bytes.IndexByte(raw[:min(len(raw), 12)], ';')
+	if end < 2 {
+		s.Repairs++
+		return append(buf, '&'), 1
+	}
+	name := raw[1:end]
 	switch string(name) {
 	case "lt":
 		return append(buf, '<'), end + 1

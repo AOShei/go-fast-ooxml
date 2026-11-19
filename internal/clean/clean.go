@@ -11,6 +11,7 @@ package clean
 
 import (
 	"bytes"
+	"encoding/binary"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -69,6 +70,15 @@ func Plain(b []byte) bool {
 func Append(dst, b []byte, flags Flags) ([]byte, int) {
 	removed := 0
 	for i := 0; i < len(b); {
+		// Most text is printable ASCII, which is kept as it is: a run of
+		// it is found eight bytes at a time and copied in one piece.
+		if n := printable(b[i:]); n > 0 {
+			dst = append(dst, b[i:i+n]...)
+			i += n
+			if i == len(b) {
+				break
+			}
+		}
 		c := b[i]
 		if c < 0x80 {
 			i++
@@ -110,6 +120,28 @@ func Append(dst, b []byte, flags Flags) ([]byte, int) {
 // maxLabel bounds a label. Names and messages are short; a longer one is
 // a file trying to be expensive.
 const maxLabel = 512
+
+// printable returns the length of the run of printable ASCII (0x20 to
+// 0x7E) that b begins with.
+func printable(b []byte) int {
+	const ones, highs = 0x0101010101010101, 0x8080808080808080
+	n := 0
+	for len(b)-n >= 8 {
+		x := binary.LittleEndian.Uint64(b[n:])
+		// A byte with its high bit set, a byte under 0x20, or 0x7F: the
+		// last two by the borrow of a subtraction, which is exact for
+		// the lowest such byte and that is all that is asked.
+		y := x ^ (0x7F * ones)
+		if (x|(x-0x20*ones)|(y-ones)&^y)&highs != 0 {
+			break
+		}
+		n += 8
+	}
+	for n < len(b) && b[n] >= 0x20 && b[n] < 0x7F {
+		n++
+	}
+	return n
+}
 
 // Label makes a string that came from the file fit to appear as a name, an
 // identifier or part of a message in the output: valid UTF-8, no control

@@ -446,3 +446,62 @@ func TestRowsMemoryDoesNotGrowWithTheSheet(t *testing.T) {
 		t.Errorf("large.xlsx: peak heap %d MB is over the ceiling of %d MB", peak>>20, ceiling>>20)
 	}
 }
+
+// A damaged sheet may give its rows out of order, and one cell twice.
+// Read whole, the sheet is put in order and has the cell once, as it was
+// first given. A band at a time, rows are put in order within a band and
+// not across bands, which would take holding the sheet: the cell is in
+// each band it falls in. Nothing the file holds is lost either way.
+// (Found by the fuzz campaign of the release hardening.)
+func TestRowsOfASheetThatGivesACellTwice(t *testing.T) {
+	rows := xlRow(1, xlStr("A1", "first A1"), xlStr("E1", "first E1")) +
+		xlRow(3, xlStr("B3", "B3")) +
+		xlRow(5, xlStr("B5", "B5")) +
+		xlRow(1, xlStr("D1", "late D1"), xlStr("E1", "second E1"))
+	data := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: rows}).Bytes()
+	f, err := gofastooxml.OpenBytes(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	whole, err := f.Part(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := cellsOf(t, whole)
+	// (cellsOf gives each cell's text with its hidden flags after it.)
+	if len(want) != 5 || !strings.HasPrefix(want[cellAt{0, 4}], "first E1") || !strings.HasPrefix(want[cellAt{0, 3}], "late D1") {
+		t.Errorf("the sheet read whole: %v", want)
+	}
+	// Bands of two rows: the second row 1 is in the second band.
+	got := map[cellAt][]string{}
+	bands := 0
+	for part, err := range f.Rows(ctx, 1, 2) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		bands++
+		for at, text := range cellsOf(t, part) {
+			got[at] = append(got[at], text)
+		}
+	}
+	if bands != 2 || len(got) != len(want) {
+		t.Fatalf("%d bands with cells at %d places, the sheet has %d: %v", bands, len(got), len(want), got)
+	}
+	for at, texts := range got {
+		if at == (cellAt{0, 4}) {
+			if len(texts) != 2 || !strings.HasPrefix(texts[0], "first E1") || !strings.HasPrefix(texts[1], "second E1") {
+				t.Errorf("E1 in the bands: %q", texts)
+			}
+		} else if len(texts) != 1 || texts[0] != want[at] {
+			t.Errorf("%v in the bands: %q, in the sheet %q", at, texts, want[at])
+		}
+	}
+	// With the whole sheet in one band it is the sheet read whole.
+	for part, err := range f.Rows(ctx, 1, 1000) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		sameCells(t, "one band", cellsOf(t, part), want)
+	}
+}

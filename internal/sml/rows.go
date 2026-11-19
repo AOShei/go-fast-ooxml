@@ -24,6 +24,12 @@ import (
 // to the reading of the whole sheet. The limits on cells and text do not
 // apply, since nothing accumulates; the decompression budget does.
 //
+// Rows that the file gives out of order are sorted within a band, as
+// they are within a sheet read whole, and not across bands: that would
+// take holding the sheet. So a cell that a damaged file gives twice,
+// which the whole sheet has once (the first), is in each band it falls
+// in.
+//
 // At least one part is handed on, also for a sheet with no cells: it is
 // where the sheet's warnings are.
 func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.Part) bool) *unit.Tally {

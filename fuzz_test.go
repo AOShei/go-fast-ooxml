@@ -3,7 +3,7 @@ package gofastooxml_test
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -156,7 +156,9 @@ func FuzzXlsx(f *testing.F) {
 		checkOutcome(t, "fuzz input", doc, err)
 		// The same sheet a band of rows at a time: every band is a part
 		// that stands by itself, and the cells are those of the sheet
-		// read whole, unless a limit cut either short.
+		// read whole, unless a limit cut either short. They are compared
+		// by place: a sheet that gives one cell twice has it once when
+		// read whole, and once in each band that it falls in.
 		f, err := e.OpenBytes(data, opts)
 		if err != nil {
 			return
@@ -197,13 +199,25 @@ func fuzzCells(parts ...gofastcore.Part) map[string]string {
 			for r, row := range b.Table.Rows {
 				for c, text := range row {
 					if text != "" {
-						out[fmt.Sprintf("%s+%d,%d", strings.SplitN(b.Loc.Range, ":", 2)[0], r, c)] = text
+						out[fuzzPlace(b.Loc.Range, r, c)] = text
 					}
 				}
 			}
 		}
 	}
 	return out
+}
+
+// fuzzPlace returns the place on the sheet of the cell in row r and
+// column c of a table whose range is ref.
+func fuzzPlace(ref string, r, c int) string {
+	first, _, _ := strings.Cut(ref, ":")
+	col, i := 0, 0
+	for ; i < len(first) && first[i] >= 'A' && first[i] <= 'Z'; i++ {
+		col = col*26 + int(first[i]-'A') + 1
+	}
+	row, _ := strconv.Atoi(first[i:])
+	return strconv.Itoa(row+r) + "," + strconv.Itoa(col+c)
 }
 
 // FuzzPptx gives the PowerPoint reader arbitrary slide, layout, master

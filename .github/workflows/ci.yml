@@ -34,10 +34,30 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      # Systems the tests do not run on, among them ones where an int is
+      # 32 bits: the code must at least build and pass vet there.
+      - name: Other systems
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          for target in linux/386 linux/arm linux/arm64 freebsd/amd64 js/wasm; do
+            echo "$target"
+            GOOS=${target%/*} GOARCH=${target#*/} go vet ./...
+          done
+
+      # And the tests as a 32-bit program, which a 64-bit Linux runs.
+      - name: Test, 32-bit
+        if: matrix.os == 'ubuntu-latest'
+        run: GOARCH=386 go test -short ./...
+
+      # The allocation budgets are not measured under the race detector.
+      - name: Allocation budgets
+        run: go test -run 'TestAllocationBudgets' -v .
+
       - name: Fuzz smoke
         if: matrix.os == 'ubuntu-latest'
         run: |
           go test -run '^$' -fuzz '^FuzzOpen$' -fuzztime 30s .
+          go test -run '^$' -fuzz '^FuzzDocx$' -fuzztime 30s .
           go test -run '^$' -fuzz '^FuzzXML$' -fuzztime 30s ./internal/xmlscan
           go test -run '^$' -fuzz '^FuzzNumFmt$' -fuzztime 20s ./internal/numfmt
           go test -run '^$' -fuzz '^FuzzXlsx$' -fuzztime 30s .

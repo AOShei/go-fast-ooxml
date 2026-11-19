@@ -139,7 +139,7 @@ func (e *Extractor) OpenBytes(data []byte, opts *gofastcore.Options) (*File, err
 //
 // A password-protected file is opened with Options.Password. Trying a
 // password takes as long as the file's encryption is made to take: a
-// tenth of a second is usual.
+// hundredth of a second is usual.
 func (e *Extractor) OpenReaderAt(r io.ReaderAt, size int64, opts *gofastcore.Options) (*File, error) {
 	return e.open(context.Background(), r, size, opts)
 }
@@ -527,6 +527,7 @@ func (f *File) embedded(ctx context.Context, sess *session, tallies []*unit.Tall
 // Document reads the parts Options.Parts selects and returns the
 // document, the same one Extract returns.
 func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
+	ctx = f.tree(ctx)
 	selected, asked, err := f.selection()
 	if err != nil {
 		return nil, err
@@ -580,6 +581,7 @@ func (f *File) capped(asked, given int) gofastcore.Warning {
 // Children once they have been read.
 func (f *File) Parts(ctx context.Context) iter.Seq2[gofastcore.Part, error] {
 	return func(yield func(gofastcore.Part, error) bool) {
+		ctx := f.tree(ctx)
 		selected, _, err := f.selection()
 		if err == nil {
 			err = ctx.Err()
@@ -610,6 +612,7 @@ func (f *File) Parts(ctx context.Context) iter.Seq2[gofastcore.Part, error] {
 // Part reads the part with the given number, from 1, whether or not
 // Options.Parts selects it.
 func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
+	ctx = f.tree(ctx)
 	if number < 1 || number > f.parts {
 		return gofastcore.Part{}, fmt.Errorf("gofastooxml: part %d: the %s has %d %s, numbered from 1: %w", number, f.kind(), f.parts, f.noun, gofastcore.ErrNoPartsSelected)
 	}
@@ -643,6 +646,12 @@ func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
 // are not looked up, so every table is origin inferred; and comments,
 // shapes and pictures are not read (Part reads them). A sheet with no
 // cells yields one part with no blocks.
+//
+// Bands follow the order of the rows in the file, which in a sound
+// workbook is the order of the sheet. Rows a file gives out of order are
+// put in order within a band and not across bands, and a cell a damaged
+// file gives twice, which the sheet read whole has once, is in each band
+// it falls in.
 //
 // The iterator yields an error and stops as Parts does; for a file that
 // is not a workbook the error wraps gofastcore.ErrUnsupported.
@@ -701,6 +710,7 @@ func (f *File) Warnings() []gofastcore.Warning {
 // and returns them as in gofastcore.Document.Children. With no
 // Options.Child each is listed, not extracted.
 func (f *File) Children(ctx context.Context) ([]*gofastcore.Document, error) {
+	ctx = f.tree(ctx)
 	sess, indexes, tallies := f.known()
 	sess.src.Begin()
 	out := f.embedded(ctx, sess, tallies)
