@@ -3,6 +3,7 @@ package sml
 import (
 	"bytes"
 	"context"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,8 +60,11 @@ type sheet struct {
 	tables     []string // parts of the tables the sheet declares
 	drawings   []string
 
-	text     arena
-	shapes   dml.Text // reads the text of the shapes on the sheet
+	text   arena
+	shapes dml.Text // reads the text of the shapes on the sheet
+	// room is what the document may still hold of text: the cells' and
+	// the shapes' (gofastcore.Limits.MaxTextBytes).
+	room     *gofastcore.TextBudget
 	raw, out []byte
 
 	noValue int            // formulas stored without a result
@@ -326,7 +330,7 @@ func (sh *sheet) readData() {
 				sh.cut = "the limit on the number of cells was reached"
 				return
 			}
-			if sh.wb.text.Add(-bytesBefore) < 0 {
+			if !sh.room.Take(int(min(bytesBefore, math.MaxInt32))) {
 				sh.cells = sh.cells[:first]
 				sh.cut = "the limit on the amount of text was reached"
 				return

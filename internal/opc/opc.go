@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -25,10 +26,11 @@ import (
 var (
 	// ErrNotZip: the input is not a zip archive.
 	ErrNotZip = errors.New("opc: not a zip archive")
-	// ErrCutOff: the input begins as a zip archive does, and the
-	// directory at its end cannot be read: the file was cut short, or
-	// damaged there.
-	ErrCutOff = errors.New("opc: zip archive whose directory cannot be read (the file is cut short or damaged)")
+	// ErrCutOff: the input begins as a zip archive does, the directory at
+	// its end cannot be read (the file was cut short, or damaged there),
+	// and what the members' own headers lead to is not enough to read a
+	// document from.
+	ErrCutOff = errors.New("opc: zip archive whose directory cannot be read (the file is cut short or damaged), with too little left to read a document from")
 	// ErrNotPackage: a zip archive with no content-types table, so some
 	// other zip-based format.
 	ErrNotPackage = errors.New("opc: zip archive is not an Office Open XML package")
@@ -61,7 +63,9 @@ type Rel struct {
 	ID   string
 	Type string
 	// Target is a part name in canonical form, or, when External is set,
-	// the URL or path exactly as written.
+	// the URL or path as written, made fit to appear in the output
+	// (clean.Address). It is cleaned here, once: every link to it then
+	// holds the same string.
 	Target   string
 	External bool
 }
@@ -76,17 +80,27 @@ type Package struct {
 	overrides map[string]string    // canonical part name -> content type
 	budget    atomic.Int64         // decompressed bytes still allowed
 	ambiguous int                  // members that different readers would read differently
+	recovered *Recovery            // set if the directory was rebuilt from the members' headers
 }
 
 // Open reads the archive's directory and the content-types table.
 func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 	zr, err := zip.NewReader(r, size)
+	var recovered *Recovery
 	if err != nil {
 		var head [4]byte
-		if n, _ := r.ReadAt(head[:], 0); n == len(head) && string(head[:]) == "PK\x03\x04" {
+		if n, _ := r.ReadAt(head[:], 0); n != len(head) || string(head[:]) != "PK\x03\x04" {
+			return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
+		}
+		// It begins as an archive does and has no directory that can be
+		// read: the members are looked for by their own headers.
+		var rerr error
+		switch zr, recovered, rerr = recoverArchive(r, size, lim); {
+		case errors.Is(rerr, ErrBudget), errors.Is(rerr, ErrTooManyParts):
+			return nil, rerr
+		case rerr != nil:
 			return nil, ErrCutOff
 		}
-		return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
 	}
 	if lim.MaxMembers > 0 && len(zr.File) > lim.MaxMembers {
 		return nil, fmt.Errorf("%w: %d, limit %d", ErrTooManyParts, len(zr.File), lim.MaxMembers)
@@ -96,6 +110,7 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		names:     make([]string, 0, len(zr.File)),
 		defaults:  map[string]string{},
 		overrides: map[string]string{},
+		recovered: recovered,
 	}
 	p.budget.Store(lim.MaxDecodedBytes)
 	for _, f := range zr.File {
@@ -119,6 +134,13 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 			p.written[name] = shown
 		}
 	}
+	if _, ok := p.files[contentTypesName]; !ok && recovered != nil {
+		// Some programs write the table of content types last, and it is
+		// lost with the end of the file. The document is then known by
+		// where its main part is (Main), and the parts by the
+		// relationships that lead to them.
+		return p, nil
+	}
 	if _, ok := p.files[contentTypesName]; !ok {
 		// Other formats kept in a zip archive (OpenDocument, EPUB) say
 		// what they are in a member of their own.
@@ -134,10 +156,17 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		return nil, ErrNotPackage
 	}
 	if err := p.readContentTypes(); err != nil {
+		if recovered != nil && !errors.Is(err, ErrBudget) {
+			return p, nil // the table breaks off: what it said before that is used
+		}
 		return nil, err
 	}
 	return p, nil
 }
+
+// Recovered returns what was found by the members' own headers, if the
+// archive had no directory that could be read; nil for a sound archive.
+func (p *Package) Recovered() *Recovery { return p.recovered }
 
 const contentTypesName = "[content_types].xml"
 
@@ -455,7 +484,7 @@ func (p *Package) RelsWith(source string, s *xmlscan.Scanner) ([]Rel, error) {
 			mode, _ := s.Attr(xmlscan.NoSpace, "TargetMode")
 			r := Rel{ID: string(id), Type: string(typ), External: string(mode) == "External"}
 			if r.External {
-				r.Target = string(target)
+				r.Target = clean.Address(string(target))
 			} else {
 				r.Target = Resolve(source, string(target))
 			}

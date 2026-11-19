@@ -19,7 +19,8 @@ import (
 // in the memory a band takes. The price is that the sheet's part is read
 // twice (once for what applies to all rows: hidden columns, merged cells,
 // conditional formatting), that a table which runs over the end of a
-// band is cut there, and that only cells are read: the tables a sheet
+// band is cut there (what follows in the next band is marked as
+// continuing it), and that only cells are read: the tables a sheet
 // declares are not looked up, and comments, shapes and pictures are left
 // to the reading of the whole sheet. The limits on cells and text do not
 // apply, since nothing accumulates; the decompression budget does.
@@ -41,12 +42,24 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 	// be read, it was cut short); each band is a part made from it.
 	sh, readable := b.wb.start(ctx, index, b.refs[index], b.budget)
 	emitted, stopped := false, false
+	// below is where the last table handed on ends, if a table was the
+	// last block handed on: a table that begins the next band right
+	// under it, over the same columns, is the same table carried on.
+	var below rect
+	open := false
 	hand := func(last bool) bool {
 		blocks := sh.arrange(sh.tablesOf(nil))
 		// The cells are in the tables now, and the band is done with.
 		sh.cells, sh.hiddenRows, sh.unsorted, sh.lastRow = sh.cells[:0], sh.hiddenRows[:0], false, 0
 		if len(blocks) == 0 && !last {
 			return true
+		}
+		if n := len(blocks); n > 0 {
+			first, firstOK := parseRange([]byte(blocks[0].Loc.Range))
+			if open && firstOK && first.r0 == below.r1+1 && first.c0 == below.c0 && first.c1 == below.c1 {
+				blocks[0].Continued = true
+			}
+			below, open = parseRange([]byte(blocks[n-1].Loc.Range))
 		}
 		whole := sh.part
 		band := gofastcore.Part{Kind: whole.Kind, Number: whole.Number, Name: whole.Name, Hidden: whole.Hidden, Blocks: blocks}

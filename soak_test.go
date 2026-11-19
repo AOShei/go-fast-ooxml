@@ -243,8 +243,11 @@ func TestSoak(t *testing.T) {
 		spans, _ := read(plain, &gofastcore.Options{Workers: 4, Spans: true})
 		read(plain, &gofastcore.Options{Workers: 4, Spans: true, Images: gofastcore.ImagesData})
 		// Under limits a real file runs into.
-		read(&gofastooxml.Extractor{MaxCells: 40, MaxArchiveMembers: 12}, &gofastcore.Options{Workers: 3})
-		read(plain, &gofastcore.Options{Workers: 3, Limits: gofastcore.Limits{MaxDecodedBytes: 50_000}})
+		// (With a child extractor: a document cut off by a limit still
+		// has its embedded files to account for.)
+		read(&gofastooxml.Extractor{MaxCells: 40, MaxArchiveMembers: 12}, &gofastcore.Options{Workers: 3, Child: childExtractor})
+		read(plain, &gofastcore.Options{Workers: 3, Child: childExtractor, Limits: gofastcore.Limits{MaxDecodedBytes: 50_000}})
+		read(plain, &gofastcore.Options{Workers: 3, Child: childExtractor, Limits: gofastcore.Limits{MaxTextBytes: 2_000}})
 
 		unlocked := false
 		if password, known := soakPasswords[filepath.Base(path)]; known && strings.HasPrefix(name, "soak/") {

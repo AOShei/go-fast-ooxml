@@ -141,42 +141,45 @@ it: two files of the set are made to produce that much.
 
 | | Files |
 |---|---|
-| Read | 5,507 (2,814 Word, 1,756 Excel, 937 PowerPoint) |
-| Refused, each with a reason | 79 |
+| Read | 5,540 (2,827 Word, 1,765 Excel, 948 PowerPoint) |
+| Refused, each with a reason | 46 |
 | Crashes, hangs, invalid documents | 0 |
 
 | Refused because | Files |
 |---|---|
 | Needs a password | 20 (13 of them from the soak set, all opened with the password their project's tests give) |
-| Archive cut off before its directory | 19 |
-| Archive with a damaged directory | 19 |
 | Not an archive at all | 9 |
 | An archive of another format (4 OpenDocument files named `.docx`, a package with only a theme, a plain zip) | 6 |
+| An archive without a readable directory, with too little left to read a document from | 5 |
 | A package whose own structure is damaged | 4 |
 | Legacy binary format; encryption with a cipher other than AES | 2 |
 
-Of the 19 archives cut off before their directory, 15 are fuzzer and crash
-cases, and 4 are test files made by cutting a file short
-(`truncated62886.docx`, `Divino_Revelado.pptx`, `deep-data.xlsx`,
-`testWORD_truncated.docx`). None is among the files published on
-data.gov.uk. This is the count the decision on recovering truncated
-archives was waiting for.
+38 files are archives whose directory cannot be read: cut off before it
+(19) or damaged there (19). Most are fuzzer and crash cases; four are
+test files made by cutting a file short, and none is among the files
+published on data.gov.uk. 33 of the 38 are now read by their members' own
+headers and carry `input.repaired`; before recovery was added all 38 were
+refused. `Divino_Revelado.pptx`, a presentation cut at 524 KB, gives 12
+slides. The count is small, and says little about how often it happens:
+a file cut in transit in someone's pipeline is not in anybody's test
+suite.
 
-Among the documents read, 16 have a part that failed (a sheet the workbook
-lists and does not contain, XML that breaks off) and 11 have a damaged
-part that is not the main one; each says so in its warnings. 253 documents
-have hidden text.
+Among the documents read, 36 have a part that failed (a sheet the
+workbook lists and does not contain, XML that breaks off, a member cut
+short) and 28 have a damaged part that is not the main one; each
+says so in its warnings. 256 documents have hidden text.
 
 The run found one defect: asking for spans changed how consecutive
 paragraphs of code in a Word document were grouped. It is fixed, and
 `TestSpansChangeNothingElse` holds every sample document to it.
 
-The slowest file is a hostile one from Apache POI
+The slowest file was a hostile one from Apache POI
 (`poc-shared-strings.xlsx`): 110 KB in which thousands of cells refer to
-one shared string of a megabyte. It is cut off at the limit on text
-produced, 2 GiB by default, after about four seconds; `SECURITY.md` says
-what to set for files from strangers.
-
+one shared string of a megabyte. Within the limits as they were it became
+2 GiB of text, after about four seconds. It is why the model now has a
+limit on the text a document may hold (`Limits.MaxTextBytes`, 256 MiB by
+default): the sheet is cut off there, and the soak run takes 17 seconds
+where it took 40.
 
 ## Accuracy on the corpus
 
@@ -293,8 +296,9 @@ sheets, 159,654 cells).
 
 Every file of the corpus goes through the command
 (`go test ./cmd/gofastooxml`), with the files embedded in it extracted too:
-740 give a valid document and 48 are refused with a reason (legacy binary
-files, files that need a password, files that are not packages).
+773 give a valid document and 15 are refused with a reason (files that
+need a password, a legacy binary file, files that are not packages,
+archives with too little left of them).
 
 ## Fuzz campaign
 
@@ -311,6 +315,11 @@ of `baseline.md` while it was busy with other work):
 | `FuzzCFB` | A compound file | 5 min | 68 million | clean |
 | `FuzzEncryptionInfo` | The encryption information of a protected file | 5 min | 63 million | clean |
 | `FuzzNumFmt` | A number format and a value | 5 min | 85 million | clean |
+| `FuzzRecover` | Bytes behind the start of an archive, read by its members' own headers | 6 min | 48 million | clean |
+
+`FuzzRecover` came with the recovery of archives cut short, after the
+campaign; `FuzzOpen` was then run again with files cut short among its
+seeds (6 minutes, 7.4 million executions, clean).
 
 The findings, each now a seed that every test run replays, and a test of
 its own:

@@ -51,7 +51,8 @@ const (
 	// more than a fixed number of passes over the cells.
 	maxCuts = 8
 	// maxTableCells is the largest table written as one block. A larger
-	// region is written as several, each a run of its rows.
+	// region is written as several, each a run of its rows, the later ones
+	// marked as continuing the one before.
 	maxTableCells = 1 << 20
 )
 
@@ -60,7 +61,10 @@ const (
 type placed struct {
 	row, col int32
 	seq      int
-	block    gofastcore.Block
+	// piece marks a later run of rows of a table too large for one
+	// block: it continues the block placed just before it.
+	piece bool
+	block gofastcore.Block
 }
 
 // builder turns the cells of a sheet into table blocks.
@@ -287,7 +291,7 @@ func (b *builder) table(g group, at *rect, headerRows int) bool {
 			block.Origin = gofastcore.OriginInferred
 		}
 		b.hide(&block, part)
-		b.out = append(b.out, placed{row: part.r0, col: part.c0, seq: len(b.out), block: block})
+		b.out = append(b.out, placed{row: part.r0, col: part.c0, seq: len(b.out), piece: top > 0, block: block})
 	}
 	return true
 }

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/AOShei/go-fast-core"
 )
 
 // Flags select the conventions to apply beyond validity and control
@@ -32,8 +34,6 @@ const (
 	// Verbatim is for code: nothing beyond validity and control characters.
 	Verbatim Flags = 0
 )
-
-var ligatures = [...]string{"ff", "fi", "fl", "ffi", "ffl", "st", "st"}
 
 // String returns b as a string that obeys the conventions selected by
 // flags, and the number of control characters it had to remove.
@@ -109,7 +109,7 @@ func Append(dst, b []byte, flags Flags) ([]byte, int) {
 		case r < 0xA0:
 			removed++ // a C1 control character
 		case flags&Ligatures != 0 && r >= 0xFB00 && r <= 0xFB06:
-			dst = append(dst, ligatures[r-0xFB00]...)
+			dst = append(dst, gofastcore.Ligature(r)...) // the letters, by the series' rule
 		default:
 			dst = utf8.AppendRune(dst, r)
 		}
@@ -148,8 +148,21 @@ func printable(b []byte) int {
 // characters, no line breaks, trimmed, and of bounded length. It is for
 // part names, content types, addresses and error text, which a file
 // controls as much as it controls its content.
-func Label(s string) string {
-	plain := len(s) <= maxLabel
+func Label(s string) string { return bounded(s, maxLabel) }
+
+// maxAddress bounds an address. Addresses run longer than names: one with
+// a query or a token in it is often over a thousand bytes, and one cut
+// short leads nowhere. This is more than servers accept.
+const maxAddress = 8 << 10
+
+// Address is Label for the target of a link: the same cleaning, with room
+// for the length addresses have. A caller that puts an address into the
+// document counts it against the text the document may hold, since one
+// address may be linked to any number of times.
+func Address(s string) string { return bounded(s, maxAddress) }
+
+func bounded(s string, limit int) string {
+	plain := len(s) <= limit
 	for i := 0; plain && i < len(s); i++ {
 		if c := s[i]; c >= 0x80 || c < 0x20 || c == 0x7F {
 			plain = false
@@ -158,8 +171,8 @@ func Label(s string) string {
 	if plain {
 		return strings.TrimSpace(s)
 	}
-	if len(s) > maxLabel {
-		s = s[:maxLabel]
+	if len(s) > limit {
+		s = s[:limit]
 	}
 	out, _ := String([]byte(s), Trim)
 	out = strings.Join(strings.Fields(out), " ")

@@ -470,11 +470,16 @@ func TestWordImages(t *testing.T) {
 		t.Errorf("ImagesMeta: %s", got)
 	}
 
-	// By default pictures are not extracted, but a document that is only
-	// pictures still says so.
-	none := word(t, build(body), nil)
+	// That is the default: a picture is a block, with its alternative
+	// text, unless the caller asks for none.
+	if got := render(word(t, build(body), nil))[1]; got != `image "Revenue by region" image(word/media/image1.png image/png 40x20 0 bytes)` {
+		t.Errorf("by default: %s", got)
+	}
+	// Asked for none, a document that is only pictures still says so.
+	noImages := &gofastcore.Options{Images: gofastcore.ImagesNone}
+	none := word(t, build(body), noImages)
 	expectBlocks(t, none, `paragraph "A chart follows."`)
-	only := word(t, build(para(picture("rId1", "Scanned page"))), nil)
+	only := word(t, build(para(picture("rId1", "Scanned page"))), noImages)
 	if len(only.Parts[0].Blocks) != 0 || !partWarned(only, gofastcore.WarnPartImageOnly) || partWarned(only, gofastcore.WarnPartNoText) {
 		t.Errorf("picture-only document: blocks %v, warnings %+v", render(only), only.Parts[0].Warnings)
 	}

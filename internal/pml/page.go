@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -174,18 +175,21 @@ type painted struct {
 // layout is a slide layout or a slide master as the slides that use it
 // need it.
 type layout struct {
-	name    string
-	master  *layout       // of a layout; nil for a master
-	theme   *theme.Scheme // of the master
-	cmap    dml.ColorMap  // in force for it
-	show    bool          // a layout: the master's shapes show on its slides
-	bg      dml.Fill      // its own background, if it has one
-	phs     []placeholder
-	paint   []painted          // what its shapes paint, in drawing order
-	static  []gofastcore.Block // its own text, which shows on every slide that uses it
-	repeats []bool             // of a layout: which of static the master has too
-	styles  [3]*dml.ListStyle  // a master's text styles
-	loose   bool               // it paints something whose place is not known
+	name   string
+	master *layout       // of a layout; nil for a master
+	theme  *theme.Scheme // of the master
+	cmap   dml.ColorMap  // in force for it
+	show   bool          // a layout: the master's shapes show on its slides
+	bg     dml.Fill      // its own background, if it has one
+	phs    []placeholder
+	paint  []painted          // what its shapes paint, in drawing order
+	static []gofastcore.Block // its own text, which shows on every slide that uses it
+	// staticBytes is the size of that text: what a slide that repeats it
+	// adds to the text of the document.
+	staticBytes int
+	repeats     []bool            // of a layout: which of static the master has too
+	styles      [3]*dml.ListStyle // a master's text styles
+	loose       bool              // it paints something whose place is not known
 }
 
 // sheet returns the layout or master in the named part, reading it the
@@ -292,6 +296,7 @@ type page struct {
 	name string
 	s    xmlscan.Scanner
 	text dml.Text
+	full bool // the document has taken all the text it may hold
 	pal  dml.Palette
 
 	rels   map[string]opc.Rel
@@ -353,7 +358,7 @@ func (pg *page) reset() {
 	if pg.link == nil {
 		pg.link = func(id []byte) string {
 			if rel, ok := pg.rels[string(id)]; ok && rel.External {
-				return clean.Label(rel.Target)
+				return rel.Target // cleaned when the relationships were read
 			}
 			return ""
 		}
@@ -368,6 +373,8 @@ func (pg *page) fail(name string, err error, own bool) {
 	case errors.Is(err, opc.ErrBudget):
 		pg.exceeded = true
 		pg.p.exceeded.Store(true)
+	case errors.Is(err, warn.ErrText):
+		pg.full = true
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 	case own:
 		pg.failure = err

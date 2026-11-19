@@ -86,13 +86,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		format   = flags.String("format", "json", "what to print: json, markdown or text")
 		output   = flags.String("o", "", "write to this file instead of standard output")
 		parts    = flags.String("parts", "", "parts to read, by number: 3, or 2-5 (the body of a Word document is part 1; sheets and slides count from 1)")
-		images   = flags.String("images", "none", "pictures: none, meta (where and how large) or data (their bytes too)")
+		images   = flags.String("images", "meta", "pictures: meta (a block for each, with its place, size and alternative text), data (their bytes too) or none")
 		spans    = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
 		workers  = flags.Int("workers", 0, "sheets or slides read at a time (0: one for each CPU)")
 		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
 		maxSpin  = flags.Int("max-spin-count", 0, "rounds of hashing an encrypted file may ask for to try a password (0: the default, 1 million; -1: no limit)")
 		maxCells = flags.Int64("max-cells", 0, "cells kept from a workbook or from the tables of a presentation (0: the default, 20 million; -1: no limit)")
 		maxBytes = flags.Int64("max-decoded-bytes", 0, "decompressed bytes read from a file (0: the default, 2 GiB; -1: no limit)")
+		maxText  = flags.Int64("max-text-bytes", 0, "bytes of text a document and the files embedded in it may hold (0: the default, 256 MiB; -1: no limit)")
 		quiet    = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
 		version  = flags.Bool("version", false, "print the version and exit")
 		// For Markdown and text.
@@ -128,9 +129,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return fail("unknown format %q: json, markdown or text", *format)
 	}
 	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password}
-	opts.Limits.MaxDecodedBytes = *maxBytes
+	opts.Limits.MaxDecodedBytes, opts.Limits.MaxTextBytes = *maxBytes, *maxText
 	switch *images {
 	case "none":
+		opts.Images = gofastcore.ImagesNone
 	case "meta":
 		opts.Images = gofastcore.ImagesMeta
 	case "data":

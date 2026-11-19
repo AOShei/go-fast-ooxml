@@ -206,8 +206,11 @@ func TestOptions(t *testing.T) {
 		}
 		return blocks, withBytes, doc
 	}
-	if blocks, _, _ := images(""); blocks != 0 {
-		t.Errorf("without -images: %d picture blocks", blocks)
+	if blocks, withBytes, _ := images(""); blocks != 1 || withBytes != 0 {
+		t.Errorf("without -images: %d picture blocks, %d with bytes", blocks, withBytes)
+	}
+	if blocks, _, _ := images("none"); blocks != 0 {
+		t.Errorf("-images none: %d picture blocks", blocks)
 	}
 	if blocks, withBytes, _ := images("meta"); blocks != 1 || withBytes != 0 {
 		t.Errorf("-images meta: %d blocks, %d with bytes", blocks, withBytes)

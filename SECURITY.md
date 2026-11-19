@@ -31,6 +31,7 @@ Any of the following is a bug to report, whatever the file:
 | **Crash the caller** | No panic on any input: every index, length and count taken from a file is checked, and every list a file can lengthen has a bound |
 | **Write what it likes into the output** | Text is valid UTF-8 with control characters removed. Names taken from the file (parts, sheets, authors, error messages) are cleaned and cut to a length before they appear in a warning or a field |
 | **Hide text from a reviewer unnoticed** | Within what the checks cover; see below |
+| **Be read two ways unnoticed** | An archive that names a member twice, or whose directory cannot be read so that its members are found by their own headers, says so (`input.ambiguous`, `input.repaired`) |
 
 ## Limits
 
@@ -41,7 +42,8 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Limit | Default | Where | When reached |
 |---|---|---|---|
 | Size of the file | 1 GiB | `Options.Limits.MaxInputBytes` | Refused before anything is read |
-| Bytes decompressed, and text produced | 2 GiB | `Options.Limits.MaxDecodedBytes` | The part being read is cut off; a file whose own structure needs more is refused |
+| Bytes decompressed, by the document and the files embedded in it together | 2 GiB | `Options.Limits.MaxDecodedBytes` | The part being read is cut off; a file whose own structure needs more is refused; embedded files after that are listed, not read |
+| Text the document holds, with the files embedded in it | 256 MiB | `Options.Limits.MaxTextBytes` | The part being read is cut off; embedded files after that are listed, not read |
 | Members of the archive | 100,000 | `Extractor.MaxArchiveMembers` | Refused |
 | Cells kept from a workbook, or from the tables of a presentation | 20 million | `Extractor.MaxCells` | The sheet or slide is cut off |
 | Rounds of hashing to try a password | 1 million | `Extractor.MaxSpinCount` | Refused |
@@ -50,6 +52,12 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Nesting of XML elements | 512 | fixed | The part is cut off |
 
 A zero in a limit means its default and a negative number means none.
+
+A document can embed thousands of files. The limits on decompressed
+bytes, on text and on password checks are therefore the document's and
+its embedded files' together: an embedded file has what the document has
+left, and what it uses is gone for the next. This holds across the go-fast
+libraries, for a caller whose child extractor passes its context on.
 
 There is no test of compression ratio: Office files compress a hundred to
 one and more, and a ratio that stops bombs stops real files. The budget of
@@ -64,12 +72,20 @@ strangers they allow more than most services want to spend:
 - **Time.** Decompressing up to the budget takes a few seconds per
   gigabyte. Pass a context with a deadline: every reader stops when it is
   cancelled, including a password check in progress.
-- **Output size.** A small file can produce a large document. The worst
-  case in the corpus is 110 KB that becomes 2 GB of cell text: one long
-  shared string that thousands of cells refer to. The text produced is
-  counted against `MaxDecodedBytes`, so lowering that limit bounds the
-  output too. A service that expects documents of a few megabytes of text
-  can set it to a few hundred megabytes and lose nothing.
+- **Output size.** A small file can say a long text many times: one
+  shared string that thousands of cells refer to, the text of a master
+  that every slide repeats. What is repeated is stored once, so the limit
+  on decompressed bytes does not see it; the worst case in the corpus is
+  110 KB that would become 2 GiB of cell text. `MaxTextBytes` is what
+  bounds it: the text of blocks and table cells, counted as often as it
+  occurs, in a document and the files embedded in it together. The
+  targets of links and the alternative text of pictures count in the same
+  way: one address, stored once, may be linked to millions of times. Every
+  other string that comes from the file (a name, a list label, an author)
+  is held to a fixed length, 512 bytes or less. The
+  default of 256 MiB is some ten times the text of a workbook of two
+  million cells; a service that expects documents of a few megabytes can
+  set it far lower and lose nothing.
 - **Memory.** A document is held in memory whole by `Extract`. `File.Parts`
   and `File.Rows` hold a part or a band of rows at a time.
 - **Encrypted files.** Trying a password costs what the file says it
@@ -112,14 +128,17 @@ do with each.
 
 ## How this is tested
 
-- Fuzz targets for the XML reader, the archive, each format's main part,
-  number formats, the compound-file container and the encryption
-  information; all run in CI on every pull request.
+- Fuzz targets for the XML reader, the archive and the recovery of one
+  cut short, each format's main part, number formats, the compound-file
+  container and the encryption information; all run in CI on every pull
+  request.
 - A soak run over 5,586 files: the corpus and the Office files in the test
   suites of LibreOffice, Apache Tika, pandoc and seven other projects,
   among them their collections of crash cases and fuzzer findings. Every
   file gives a valid document or a shared error, the same for any number
   of workers and a part at a time (`bench/soak.json`).
+- Files cut short at hundreds of places, and an archive's members found
+  by their headers in every form a member's length is written in.
 - Worst-case tests for each format: bombs, deep nesting, huge counts,
   quadratic shapes of input, each held to a time and a memory ceiling.
 - `go test -race` on Linux, macOS and Windows.

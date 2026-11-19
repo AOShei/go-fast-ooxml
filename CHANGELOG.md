@@ -29,6 +29,8 @@ v0.1.0 tag.
   parallel.
 - **Password-protected files** of all three, in both encryption schemes
   Office has used (2007, and 2010 and later), with `Options.Password`.
+- **Pictures** in all three are blocks, with their place, size and
+  alternative text, by default; their bytes with `ImagesData`.
 
 ### API
 
@@ -41,9 +43,13 @@ v0.1.0 tag.
 
 ### Safety
 
-- Limits on input size, decompressed bytes, archive members, cells and
-  password-hashing rounds; no crash, hang or unbounded allocation on any
-  input. See `SECURITY.md`.
+- Limits on input size, decompressed bytes, the text a document may hold
+  (link targets included, as often as they are written), archive members,
+  cells and password-hashing rounds; no crash, hang or unbounded
+  allocation on any input. See `SECURITY.md`.
+- A file cut short, which has lost the directory of its archive, is read
+  by its members' own headers as far as they go, and says so
+  (`input.repaired`).
 - Hidden text is extracted and flagged with its reason: hidden formatting,
   tiny text, text in the colour of its background, transparent text, text
   off the slide or under another shape, invisible characters. See the
@@ -57,5 +63,3 @@ v0.1.0 tag.
   workbook format (`.xlsb`), and the legacy binary formats (`.doc`, `.xls`,
   `.ppt`).
 - Files encrypted for a certificate or protected by rights management.
-- Recovery of archives cut off before their directory: such a file is
-  refused with a message that says so.

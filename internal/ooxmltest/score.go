@@ -3,6 +3,8 @@ package ooxmltest
 import (
 	"strings"
 	"unicode"
+
+	"github.com/AOShei/go-fast-core"
 )
 
 // Words splits text into the words that the scorers compare.
@@ -15,9 +17,7 @@ import (
 // heading mark. Without that rule a tool would be marked down for how it
 // draws a list, or up for drawing it the same way as the reference.
 func Words(text string) []string {
-	if strings.ContainsAny(text, "\uFB00\uFB01\uFB02\uFB03\uFB04\uFB05\uFB06") {
-		text = ligatures.Replace(text)
-	}
+	text = gofastcore.ExpandLigatures(text)
 	fields := strings.FieldsFunc(text, unicode.IsSpace)
 	words := fields[:0]
 	for _, f := range fields {
@@ -27,11 +27,6 @@ func Words(text string) []string {
 	}
 	return words
 }
-
-var ligatures = strings.NewReplacer(
-	"\uFB00", "ff", "\uFB01", "fi", "\uFB02", "fl", "\uFB03", "ffi",
-	"\uFB04", "ffl", "\uFB05", "st", "\uFB06", "st",
-)
 
 // Score is the word-level agreement between extracted text and a reference.
 type Score struct {
