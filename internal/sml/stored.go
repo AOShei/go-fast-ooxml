@@ -12,8 +12,9 @@ import (
 )
 
 // What a workbook holds that is shown on no sheet: its defined names (a
-// name can stand for a text that appears nowhere else) and the formulas
-// of its Excel 4 macro sheets, which are programs. Nobody who opens the
+// name can stand for a text that appears nowhere else), the formulas of
+// its Excel 4 macro sheets, which are programs, and the records of pivot
+// caches whose source is gone (pivot.go). Nobody who opens the
 // workbook sees them, so they are a place to put text for a model; they
 // are read as data, never evaluated, and given in the document's stored
 // part (gofastcore.PartStored), flagged as hidden.
@@ -58,7 +59,7 @@ type localName struct {
 // storedIndex returns the index of the stored part, or -1 if the workbook
 // has nothing for it.
 func (b *Book) storedIndex() int {
-	if len(b.names) == 0 && !b.macroSheets {
+	if len(b.names) == 0 && !b.macroSheets && b.goneCaches() == 0 {
 		return -1
 	}
 	return max(len(b.refs), 1)
@@ -101,6 +102,23 @@ func (b *Book) readStored(ctx context.Context) *unit.Result {
 		}
 		add(gofastcore.Block{Kind: gofastcore.KindCode, Text: code,
 			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredMacro, gofastcore.AttrName: ref.name, gofastcore.AttrLanguage: "excel4"}})
+	}
+	// The records of pivot caches whose source is gone.
+	for _, c := range b.caches {
+		if cut || ctx.Err() != nil {
+			break
+		}
+		if c.gone == "" {
+			continue
+		}
+		block, ok, full, damaged := b.cacheTable(c, room)
+		if damaged {
+			res.Tally.Damaged = append(res.Tally.Damaged, c.target)
+		}
+		if ok {
+			part.Blocks = append(part.Blocks, block)
+		}
+		cut = cut || full
 	}
 	if cut {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the limit on the amount of text was reached; what the workbook stores is cut off there")

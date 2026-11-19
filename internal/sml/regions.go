@@ -113,7 +113,7 @@ func (sh *sheet) regions(declared []declaredTable) []placed {
 				continue
 			}
 			at := t.at
-			if b.table(group{list: list}, &at, t.headerRows, t.name) {
+			if b.table(group{list: list}, &at, t.headerRows, t.name, t.role) {
 				for _, i := range list {
 					taken[i] = true
 				}
@@ -151,7 +151,7 @@ func (sh *sheet) regions(declared []declaredTable) []placed {
 		for _, p := range pieces {
 			if changed && it.depth+1 < maxCuts {
 				work = append(work, item{p, it.depth + 1})
-			} else if !b.table(p, nil, 0, "") {
+			} else if !b.table(p, nil, 0, "", "") {
 				b.sparse(p)
 			}
 		}
@@ -234,7 +234,7 @@ func (b *builder) cut(g group, out []group) (pieces []group, changed bool) {
 // rectangle the cells span, and marks the table as inferred. It reports
 // false, having written nothing, if the rectangle is so much larger than
 // the cells in it that filling it would cost memory out of proportion.
-func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
+func (b *builder) table(g group, at *rect, headerRows int, name, role string) bool {
 	if b.full {
 		return true // the cells stay out: the sheet is cut off
 	}
@@ -332,9 +332,15 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 		}
 		block := gofastcore.Block{Kind: gofastcore.KindTable, Table: t}
 		block.Loc.Range = rangeName(part)
-		if name != "" {
+		if name != "" || role != "" {
 			// On every piece, so that each says what it is a piece of.
-			block.Attrs = map[string]string{gofastcore.AttrName: name}
+			block.Attrs = map[string]string{}
+			if name != "" {
+				block.Attrs[gofastcore.AttrName] = name
+			}
+			if role != "" {
+				block.Attrs[gofastcore.AttrRole] = role
+			}
 		}
 		if at == nil {
 			block.Origin = gofastcore.OriginInferred
@@ -358,7 +364,7 @@ func (b *builder) sparse(g group) {
 				continue
 			}
 		}
-		b.table(g.slice(start, i), nil, 0, "")
+		b.table(g.slice(start, i), nil, 0, "", "")
 		start = i
 	}
 }

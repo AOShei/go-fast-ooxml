@@ -435,6 +435,59 @@ def openpyxl_charts(path):
     return json.dumps(sheets, ensure_ascii=False)
 
 
+def openpyxl_pivots(path):
+    """The pivot tables of a workbook, as openpyxl reads them, as JSON:
+    per sheet, each pivot table's name and the range it fills; and the
+    caches whose source is not in the workbook (another workbook, a
+    connection, scenarios, or a sheet, name or table the workbook does not
+    have), judged here from what openpyxl reads, with the names of their
+    fields and the number of their records. It is the oracle for pivot
+    tables and for the stored part's pivot caches.
+    """
+    import json
+
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path)
+    sheets = {n.lower() for n in wb.sheetnames}
+    names = {n.lower() for n in wb.defined_names}
+    tables = set()
+    for ws in wb.worksheets:
+        names |= {n.lower() for n in ws.defined_names}
+        tables |= {n.lower() for n in ws.tables}
+    out, caches, seen = [], [], set()
+    for ws in wb.worksheets:
+        pivots = []
+        for pt in getattr(ws, "_pivots", []):
+            pivots.append({"name": pt.name or "", "ref": pt.location.ref if pt.location is not None else ""})
+            cache = pt.cache
+            if cache is None or id(cache) in seen:
+                continue
+            seen.add(id(cache))
+            src = cache.cacheSource
+            gone = False
+            if src is None:
+                continue
+            if src.type in ("external", "scenario"):
+                gone = True
+            elif src.type == "worksheet" and src.worksheetSource is not None:
+                w = src.worksheetSource
+                if getattr(w, "id", None):
+                    gone = True
+                elif w.sheet:
+                    gone = w.sheet.lower() not in sheets
+                elif w.name:
+                    gone = w.name.lower() not in names and w.name.lower() not in tables
+            if not gone:
+                continue
+            records = None
+            if cache.records is not None:
+                records = len(cache.records.r or [])
+            caches.append({"fields": [f.name or "" for f in cache.cacheFields], "records": records})
+        out.append({"sheet": ws.title, "pivots": pivots})
+    return json.dumps({"sheets": out, "caches": caches}, ensure_ascii=False)
+
+
 # Adapters that are test oracles only: they do not extract text, so they are
 # not part of the baseline measurements.
 ORACLES = {
@@ -444,6 +497,7 @@ ORACLES = {
     "python-pptx-slides": ("python-pptx", python_pptx_slides, {"pptx"}),
     "python-pptx-charts": ("python-pptx", python_pptx_charts, {"pptx"}),
     "openpyxl-charts": ("openpyxl", openpyxl_charts, {"xlsx"}),
+    "openpyxl-pivots": ("openpyxl", openpyxl_pivots, {"xlsx"}),
     "msoffcrypto-decrypt": ("msoffcrypto-tool", msoffcrypto_decrypt, {"docx", "xlsx", "pptx"}),
 }
 

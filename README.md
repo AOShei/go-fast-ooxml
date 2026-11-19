@@ -11,7 +11,7 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 | Format | State |
 |---|---|
 | Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. Hidden text is flagged (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
-| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. Hidden text is flagged (see below). Sheets are read in parallel |
+| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. Hidden text is flagged (see below). Sheets are read in parallel |
 | PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. Hidden text is flagged (see below). Slides are read in parallel |
 
 ## How fast
@@ -315,9 +315,27 @@ chart is anchored to, and its role is `chart` (see
 [Charts and SmartArt](#charts-and-smartart)). A chart sheet is a part with
 no cells; its chart's blocks have no `loc.range`.
 
-**Not read:** pivot table definitions (what a pivot table shows is in the
-cells and is read), dialog sheets (counted in `ooxml.unread_content`), and
-VBA projects. Macro sheets and VBA projects are reported as
+**Pivot tables.** A pivot table is the cells it fills, written when it was
+last laid out: they are read as one table, like a declared table, with the
+pivot table's name and `role` `pivot`, its header rows those above its
+first row of values. A pivot table that is laid out only when the file is
+opened has no cells yet, and gives no table. Its style is not applied in
+judging contrast. A pivot table is drawn from a cache, the records of its
+source kept in the workbook. Where the source is a range or table of the
+workbook, the records repeat cells that are read and are not read again.
+Where it is another workbook, a connection to a database, scenarios, or a
+sheet or name the workbook no longer has, the records are data the file
+holds and shows nowhere: they are a table in the stored part, flagged
+`invisible`, with `stored` `pivot_cache`, the names of the cache's fields
+as its header row and a row for each record (or, for a cache that keeps no
+records, the values each field takes, a column each). Over the corpus and
+the soak set, every pivot table openpyxl finds whose region has cells is
+such a table, and every cache whose source is gone is in the stored part
+with its fields and its number of records (`TestPivotsAsOpenpyxl`,
+`GOFAST_PIVOTS_SOAK=1` for the soak set).
+
+**Not read:** dialog sheets (counted in `ooxml.unread_content`), the
+formulas of a pivot table's calculated fields, and VBA projects. Macro sheets and VBA projects are reported as
 `input.active_content`.
 
 ## PowerPoint presentations
@@ -515,14 +533,16 @@ flagged. What this means for a reviewer:
   the values of drop-down lists,
   the series a chart's filter leaves out and the SmartArt nodes a layout
   does not draw (both flagged `invisible`),
-  and, flagged as hidden in the stored part, a workbook's defined names
-  and the code of its macro sheets. Each has its own place in the model
+  and, flagged as hidden in the stored part, a workbook's defined names,
+  the code of its macro sheets and the records of pivot caches whose
+  source is gone. Each has its own place in the model
   (metadata, `image` blocks, `note` blocks, the `stored` part), so a
   consumer can treat it apart. Formulas, with `Options.Cells`, are in
   `Table.Cells`, apart from what cells show.
 - **Content not extracted at all**, which therefore cannot reach a model
   through this library: field codes, custom XML data, document variables;
-  in Excel, pivot caches.
+  in Excel, the records of a pivot cache whose source is in the workbook
+  (they repeat its cells).
 
 The contrast test is the shared model's (`gofastcore.LowContrast`): text
 is taken to be indiscernible when its contrast with what is behind it is

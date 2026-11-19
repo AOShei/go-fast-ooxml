@@ -89,6 +89,7 @@ type Book struct {
 	names       []definedName
 	localNames  []localName
 	macroSheets bool
+	caches      []pivotCache
 	raw         []byte
 }
 
@@ -164,6 +165,8 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 				b.macroSheets = b.macroSheets || ref.kind == ns.RelMacrosheet || ref.kind == ns.RelIntlMacrosheet
 			case s.Depth() == 2 && s.Is(ns.Sheet, "definedNames"):
 				b.readNames(s)
+			case s.Depth() == 2 && s.Is(ns.Sheet, "pivotCaches"):
+				b.readCaches(s, byID)
 			}
 		}
 	})
@@ -173,6 +176,12 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 			n := &b.names[l.index]
 			n.name = b.refs[l.sheet].name + "!" + n.name
 		}
+	}
+
+	// Pivot caches whose source is not in the workbook hold data that is
+	// shown nowhere: the stored part reads it.
+	if len(b.caches) > 0 && !b.budget {
+		b.judgeCaches()
 	}
 
 	// What the sheets share. If no sheet is asked for there is nothing to
