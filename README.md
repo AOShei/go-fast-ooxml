@@ -455,18 +455,26 @@ block says what it is in `stored`:
 
 | `stored` | What |
 |---|---|
-| `macro` | The code of a VBA project, in all three formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes; text in code pages 1252, 28591 and UTF-8 is decoded, and in others what is not ASCII is U+FFFD, counted by `text.unmapped_glyphs`. The 246 modules of the corpus and the soak set agree with olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
+| `macro` | The code of a VBA project, in all three formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes, and decoded from the project's code page: the Windows code pages 874, 932, 936, 949, 950 and 1250 to 1258, Mac Roman, ISO 8859-1 and UTF-8, from Microsoft's tables of them. A character a code page does not define, or text in another code page, is U+FFFD, counted by `text.unmapped_glyphs`. All 246 modules of the corpus and the soak set are the same as olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
 | `custom_xml` | Custom XML data with text, in all three formats: a block for each part, a line for each element with text of its own (`Abstract: …`). Attribute values are not read. Data a content control is bound to is also in the body, where the control shows it |
 | `document_variable` | Word's document variables, `name: value` |
 | `defined_name` | Excel's defined names |
 | `pivot_cache` | The records of an Excel pivot cache whose source is gone, as a table, and the formulas of calculated fields (`Margin: =Sales*0.1`) |
 
-**Field codes** in Word are the instructions of fields whose results are
-the text (`PAGE`, `MERGEFIELD Name`, `XE "an index entry"`): each is a
-`note` block of type `field` after the paragraph its field ends in, flagged
-`invisible`. A field in another's code is written into that code in
-braces, as Word shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its
-result, which nothing shows, is not text.
+**Field codes** in Word are the instructions of fields, whose results are
+the text. Most are structure: a page number, a cross-reference, a table of
+contents, a date, a merge field, a document property, a calculation.
+What they show is the text, and their
+codes are not kept. A code that holds text of its own, shown nowhere, is a
+`note` block of type `field` after the paragraph its field ends in,
+flagged `invisible`: an index entry (`XE "…"`), the branches of `IF`, the
+text of `SET`, `ASK` or `FILLIN`, a citation tool's data (`ADDIN`), a
+field this library does not know, and a structural field whose code holds
+more than it needs (over 512 bytes, or a quoted argument over 128). A
+field in another's code is written into that code in braces, as Word
+shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its result, which
+nothing shows, is not text. An equation field (`EQ`) and a macro button
+(`MACROBUTTON`) show their codes' text; their notes are not flagged.
 
 The renderers write hidden text unless `RenderOptions.ExcludeHidden` says
 otherwise, so by default Markdown and text include field codes and the

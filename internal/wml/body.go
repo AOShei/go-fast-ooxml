@@ -127,15 +127,82 @@ func (p *parser) fieldChar() {
 	}
 }
 
-// fieldNote keeps the code of a field as a note after the paragraph.
+// fieldNote keeps the code of a field as a note after the paragraph, if
+// the code holds text that is shown nowhere. Most fields are structure:
+// a page number, a cross-reference, a table of contents, a merge field.
+// Their codes say what to show, and what they show is the text; they are
+// not kept. A field that is not one of those, or whose code holds more
+// than such a field needs, is kept and flagged as hidden: an index entry,
+// the branches of IF, the text of SET, ASK or FILLIN, a citation tool's
+// data. An equation field (EQ) and a macro button (MACROBUTTON) show
+// their codes' text, and their notes are not flagged.
 func (p *parser) fieldNote(code []byte) {
 	text := p.clean(code, clean.Prose)
 	if text == "" {
 		return
 	}
+	keyword, _, _ := strings.Cut(text, " ")
+	keyword = strings.ToUpper(keyword)
+	// A link's address is no text of the field's: its length is a link's.
+	if keyword == "HYPERLINK" && len(text) <= maxPlainCode+len(fieldLink(code)) && plainCode(strings.Replace(text, fieldLink(code), "", 1)) {
+		return
+	}
+	if (structuralFields[keyword] || strings.HasPrefix(keyword, "=")) && plainCode(text) {
+		return // a calculation (=SUM(A1,B1)) is structure too
+	}
+	hidden := gofastcore.HiddenInvisible
+	if keyword == "EQ" || keyword == "MACROBUTTON" {
+		hidden = 0 // shown: an equation, the text of a button
+	}
 	p.r.fields++
-	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: gofastcore.HiddenInvisible,
+	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: hidden,
 		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField}})
+}
+
+// structuralFields are the fields whose codes name what to show (a page
+// number, a bookmark, a style, a property, a column of merged data) and
+// carry no text of their own.
+var structuralFields = map[string]bool{
+	"PAGE": true, "NUMPAGES": true, "SECTIONPAGES": true, "SECTION": true, "PAGEREF": true,
+	"REF": true, "NOTEREF": true, "SEQ": true, "TOC": true, "TOA": true, "INDEX": true,
+	"STYLEREF": true, "DATE": true, "TIME": true, "CREATEDATE": true, "SAVEDATE": true,
+	"PRINTDATE": true, "EDITTIME": true, "FILENAME": true, "FILESIZE": true, "NUMWORDS": true,
+	"NUMCHARS": true, "REVNUM": true, "TEMPLATE": true, "LISTNUM": true, "AUTONUM": true,
+	"AUTONUMLGL": true, "AUTONUMOUT": true, "HYPERLINK": true, "FORMTEXT": true,
+	"FORMCHECKBOX": true, "FORMDROPDOWN": true, "MERGEFIELD": true, "MERGEREC": true,
+	"MERGESEQ": true, "NEXT": true, "BIBLIOGRAPHY": true, "CITATION": true,
+	"DOCPROPERTY": true, "DOCVARIABLE": true, "SYMBOL": true, "INCLUDEPICTURE": true,
+	"INCLUDETEXT": true, "LINK": true, "EMBED": true, "SHAPE": true, "BARCODE": true,
+	"TITLE": true, "SUBJECT": true, "AUTHOR": true, "KEYWORDS": true, "COMMENTS": true,
+	"LASTSAVEDBY": true, "USERNAME": true, "USERINITIALS": true, "USERADDRESS": true,
+	"QUOTE": true, "INFO": true, "DOCPROPERTIES": true, "GREETINGLINE": true, "ADDRESSBLOCK": true,
+}
+
+// Bounds on the code of a structural field that is not kept: past them it
+// holds more than it needs, which is kept.
+const (
+	maxPlainCode   = 512
+	maxPlainQuoted = 128
+)
+
+// plainCode reports whether a structural field's code is no more than such
+// a field needs: short, with short quoted arguments (a bookmark, a style,
+// a format, an address).
+func plainCode(code string) bool {
+	if len(code) > maxPlainCode {
+		return false
+	}
+	for rest := code; ; {
+		_, after, found := strings.Cut(rest, `"`)
+		if !found {
+			return true
+		}
+		quoted, next, closed := strings.Cut(after, `"`)
+		if !closed || len(quoted) > maxPlainQuoted {
+			return !closed && len(after) <= maxPlainQuoted
+		}
+		rest = next
+	}
 }
 
 // alternate tracks one mc:AlternateContent element: a file may hold the
