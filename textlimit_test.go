@@ -3,6 +3,7 @@ package gofastooxml_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -236,6 +237,120 @@ func TestTextLimitIsSharedWithEmbeddedFiles(t *testing.T) {
 		}
 		if got := documentText(doc); got > limit || got < limit*9/10 {
 			t.Errorf("reading %d: %d bytes of text", reading, got)
+		}
+	}
+}
+
+// A document cut off by a limit may have files embedded in it, and a
+// caller that extracts those. They are listed with the reason, and the
+// child extractor is not called with nothing to read. (It was, and this
+// library's own Extract, called so, did not survive it.)
+func TestEmbeddedFilesOfADocumentCutOffByALimit(t *testing.T) {
+	inner := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Inner", Data: xlRow(1, xlStr("A1", "inside"))}).Bytes()
+	long := strings.Repeat("text ", 100)
+	slide := ooxmltest.Slide{Shapes: box(2, 10, 10, 600, 300, "", dpara("", plain(long)), dpara("", plain("more")))}
+	for name, c := range map[string]struct {
+		pkg  *ooxmltest.Package
+		from string
+	}{
+		"Word":       {ooxmltest.Docx(ooxmltest.Para(long) + ooxmltest.Para("more")), "word/document.xml"},
+		"Excel":      {ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: xlRow(1, xlStr("A1", long)) + xlRow(2, xlStr("A2", "more"))}), "xl/worksheets/sheet1.xml"},
+		"PowerPoint": {deck(slide), "ppt/slides/slide1.xml"},
+	} {
+		dir, _, _ := strings.Cut(c.from, "/")
+		c.pkg.Rel(c.from, ooxmltest.RelPackage, "/"+dir+"/embeddings/book.xlsx")
+		c.pkg.AddBytes(dir+"/embeddings/book.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", inner)
+		data := c.pkg.Bytes()
+		called := 0
+		child := func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+			called++
+			if r == nil {
+				t.Errorf("%s: the child extractor was called with nothing to read", name)
+				return nil, fmt.Errorf("nothing to read")
+			}
+			return gofastooxml.Extract(ctx, r, size, o)
+		}
+		whole, err := extract(t, data, &gofastcore.Options{Child: child})
+		if err != nil || len(whole.Children) != 1 || !strings.Contains(whole.Children[0].Text(), "inside") || called != 1 {
+			t.Fatalf("%s, within the limits: %v, %d children, %d calls", name, err, len(whole.Children), called)
+		}
+		for _, limits := range []gofastcore.Limits{{MaxTextBytes: 50}, {MaxDecodedBytes: 2500}} {
+			called = 0
+			doc, err := extract(t, data, &gofastcore.Options{Child: child, Limits: limits})
+			if err != nil {
+				// The limit may stop the file before there is a document.
+				if !errors.Is(err, gofastcore.ErrLimitExceeded) {
+					t.Errorf("%s, %+v: %v", name, limits, err)
+				}
+				continue
+			}
+			ooxmltest.CheckDocument(t, doc)
+			for _, c := range doc.Children {
+				listed := len(c.Parts) == 0 && len(c.Warnings) == 1 && c.Warnings[0].Code == gofastcore.WarnChildNotExtracted && strings.Contains(c.Warnings[0].Message, "limit")
+				if !listed && called == 0 {
+					t.Errorf("%s, %+v: the embedded file has %d parts and warnings %v", name, limits, len(c.Parts), c.Warnings)
+				}
+			}
+			// (A decompression limit this small may stop the part before
+			// it is known what it embeds.)
+			if n := len(doc.Children); n > 1 || n == 0 && limits.MaxTextBytes != 0 {
+				t.Errorf("%s, %+v: %d embedded files listed", name, limits, n)
+			}
+		}
+	}
+	// And asked directly.
+	if doc, err := gofastooxml.Extract(context.Background(), nil, 100, nil); doc != nil || !errors.Is(err, gofastcore.ErrMalformed) {
+		t.Errorf("nothing to read: %v", err)
+	}
+}
+
+// The limit on decompressed bytes is a document's and its embedded
+// files' together. Each of twenty workbooks here decompresses to half a
+// megabyte and is well inside a limit of three; together they are not,
+// and the ones the limit has no room for are not read.
+func TestDecompressionLimitIsSharedWithEmbeddedFiles(t *testing.T) {
+	var rows strings.Builder
+	for r := 1; r <= 2500; r++ {
+		rows.WriteString(xlRow(r, xlStr(fmt.Sprintf("A%d", r), strings.Repeat("a", 150))))
+	}
+	inner := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "A", Data: rows.String()}).Bytes()
+	pkg := ooxmltest.Docx(ooxmltest.Para("Twenty attachments."))
+	const files = 20
+	for i := range files {
+		name := fmt.Sprintf("embeddings/book%d.xlsx", i)
+		pkg.Rel("word/document.xml", ooxmltest.RelPackage, name)
+		pkg.AddBytes("word/"+name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", inner)
+	}
+	data := pkg.Bytes()
+	read := func(doc *gofastcore.Document) (n int) {
+		for _, c := range doc.Children {
+			switch {
+			case strings.Contains(c.Text(), "aaaa") && len(c.Warnings) == 0 && !c.Parts[0].Has(gofastcore.WarnLimitExceeded):
+				n++
+			case len(c.Warnings) == 0 && !c.Parts[0].Has(gofastcore.WarnLimitExceeded) && !c.Parts[0].Has(gofastcore.WarnPartFailed):
+				t.Errorf("an embedded file neither read whole nor saying why not: %v, %v", c.Warnings, c.Parts[0].Warnings)
+			}
+		}
+		return n
+	}
+	whole, err := extract(t, data, &gofastcore.Options{Child: childExtractor})
+	if err != nil || len(whole.Children) != files || read(whole) != files {
+		t.Fatalf("with the default limit: %v, %d of %d read", err, read(whole), files)
+	}
+	var first string
+	for _, workers := range []int{1, 8} {
+		doc, err := extract(t, data, &gofastcore.Options{Child: childExtractor, Workers: workers, Limits: gofastcore.Limits{MaxDecodedBytes: 3 << 20}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ooxmltest.CheckDocument(t, doc)
+		if n := read(doc); len(doc.Children) != files || n < 2 || n > 7 {
+			t.Errorf("%d workers: %d of %d embedded files read within 3 MB, each decompressing to about half a megabyte", workers, n, len(doc.Children))
+		}
+		if json := asJSON(t, doc); first == "" {
+			first = json
+		} else if json != first {
+			t.Errorf("the document differs with %d workers", workers)
 		}
 	}
 }

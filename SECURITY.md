@@ -42,7 +42,7 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Limit | Default | Where | When reached |
 |---|---|---|---|
 | Size of the file | 1 GiB | `Options.Limits.MaxInputBytes` | Refused before anything is read |
-| Bytes decompressed | 2 GiB | `Options.Limits.MaxDecodedBytes` | The part being read is cut off; a file whose own structure needs more is refused |
+| Bytes decompressed, by the document and the files embedded in it together | 2 GiB | `Options.Limits.MaxDecodedBytes` | The part being read is cut off; a file whose own structure needs more is refused; embedded files after that are listed, not read |
 | Text the document holds, with the files embedded in it | 256 MiB | `Options.Limits.MaxTextBytes` | The part being read is cut off; embedded files after that are listed, not read |
 | Members of the archive | 100,000 | `Extractor.MaxArchiveMembers` | Refused |
 | Cells kept from a workbook, or from the tables of a presentation | 20 million | `Extractor.MaxCells` | The sheet or slide is cut off |
@@ -52,6 +52,12 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Nesting of XML elements | 512 | fixed | The part is cut off |
 
 A zero in a limit means its default and a negative number means none.
+
+A document can embed thousands of files. The limits on decompressed
+bytes, on text and on password checks are therefore the document's and
+its embedded files' together: an embedded file has what the document has
+left, and what it uses is gone for the next. This holds across the go-fast
+libraries, for a caller whose child extractor passes its context on.
 
 There is no test of compression ratio: Office files compress a hundred to
 one and more, and a ratio that stops bombs stops real files. The budget of

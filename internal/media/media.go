@@ -61,6 +61,16 @@ func budget(err error) error {
 	return nil
 }
 
+// listed is an embedded file that is named and not read, because a limit
+// was reached before it. The child extractor is not called for it: there
+// is nothing to give it.
+func listed(name, mime string, size int64) *gofastcore.Document {
+	doc := gofastcore.New("")
+	doc.Source.Name, doc.Source.MIME, doc.Source.Size = name, mime, size
+	doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnChildNotExtracted, "a limit was reached before this file could be read")
+	return doc
+}
+
 // Embedded hands the files a part embeds (another document, an OLE
 // object) to the caller's child extractor and returns the results. seen
 // records the parts already handed over, so that a file embedded from two
@@ -80,9 +90,13 @@ func Embedded(ctx context.Context, pkg *opc.Package, opts *gofastcore.Options, r
 		}
 		seen[rel.Target] = true
 		name, mime, size := clean.Label(path.Base(pkg.Written(rel.Target))), clean.Label(pkg.ContentType(rel.Target)), pkg.Size(rel.Target)
-		if opts.Child == nil || !read || failure != nil {
+		if opts.Child == nil {
 			// Listed, not read: there is nobody to read it.
 			out = append(out, opts.ExtractChild(ctx, name, mime, nil, size))
+			continue
+		}
+		if !read || failure != nil {
+			out = append(out, listed(name, mime, size))
 			continue
 		}
 		rc, err := pkg.Open(rel.Target)
@@ -95,12 +109,22 @@ func Embedded(ctx context.Context, pkg *opc.Package, opts *gofastcore.Options, r
 		if err != nil {
 			if errors.Is(err, opc.ErrBudget) {
 				failure = opc.ErrBudget
-				out = append(out, opts.ExtractChild(ctx, name, mime, nil, size))
+				out = append(out, listed(name, mime, size))
 				continue
 			}
 			damaged = append(damaged, rel.Target)
 		}
+		// The limit on decompressed bytes is the document's and its
+		// embedded files' together. The package has counted what the
+		// document read so far; the budget the child draws on is brought
+		// to that, and what the child used is then taken from what the
+		// package may still read.
+		decoded := gofastcore.DecodeBudgetFrom(ctx)
+		decoded.Take(decoded.Left() - pkg.Budget())
 		out = append(out, opts.ExtractChild(ctx, name, mime, bytes.NewReader(data), int64(len(data))))
+		if left := decoded.Left(); left < pkg.Budget() {
+			pkg.Restore(max(left, 0))
+		}
 	}
 	return out, damaged, failure
 }

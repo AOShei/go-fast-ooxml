@@ -35,7 +35,7 @@
   "part.image_only": 225,
   "part.no_text": 1109,
   "structure.heading_level_clamped": 10,
-  "text.hidden": 251,
+  "text.hidden": 256,
   "text.tracked_changes": 118,
   "text.unmapped_glyphs": 13
  },
@@ -43,7 +43,7 @@
   "clipped": 1,
   "invisible": 203,
   "invisible_chars": 3,
-  "low_contrast": 42,
+  "low_contrast": 47,
   "occluded": 2,
   "off_page": 4,
   "tiny": 5,

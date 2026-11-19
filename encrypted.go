@@ -47,19 +47,33 @@ func (f *File) allowance(ctx context.Context) *atomic.Int64 {
 // tree returns the context for one reading of this file's parts and of
 // the files embedded in it: ctx, carrying what the document and the
 // files embedded in it share, which is the text they may hold
-// (gofastcore.Limits.MaxTextBytes) and what is left for their password
-// checks. A file that is itself embedded draws on what the document it
+// (gofastcore.Limits.MaxTextBytes), the bytes they may decompress
+// (MaxDecodedBytes) and what is left for their password checks. A file that is itself embedded draws on what the document it
 // is in has left; otherwise each reading counts afresh, as it does every
 // limit. done is to be called when the reading is over: it hands what
 // the file used back to the document it is embedded in.
 func (f *File) tree(ctx context.Context) (_ context.Context, done func()) {
 	ctx, room := gofastcore.WithTextBudget(ctx, f.opts.Limits)
+	ctx, decoded := gofastcore.WithDecodeBudget(ctx, f.opts.Limits, DefaultMaxDecodedBytes)
 	if _, ok := ctx.Value(spinKey{}).(*atomic.Int64); !ok {
 		if left := f.allowance(ctx); left != nil {
 			ctx = context.WithValue(ctx, spinKey{}, left)
 		}
 	}
-	return ctx, room.Close
+	return ctx, func() {
+		// What the package decompressed is counted by the package as it
+		// reads. It is settled with the document's budget here, and
+		// before each embedded file is read (media.Embedded), so that the
+		// document this file is embedded in is told what it cost.
+		f.mu.Lock()
+		sess := f.sess
+		f.mu.Unlock()
+		if sess != nil {
+			decoded.Take(decoded.Left() - sess.pkg.Budget())
+		}
+		decoded.Close()
+		room.Close()
+	}
 }
 
 // unlock looks at whether the file is a compound file and, if it is a

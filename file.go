@@ -50,6 +50,7 @@ type File struct {
 	source   gofastcore.Source
 	meta     gofastcore.Metadata
 	opened   []gofastcore.Warning // warnings about the document known when it was opened
+	within   int64                // for a file embedded in a document: the bytes that document has left to decompress; 0 otherwise
 	checked  gofastcore.Hidden
 	parts    int
 	noun     string
@@ -152,6 +153,15 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 	if opts != nil {
 		f.opts = *opts
 	}
+	if r == nil {
+		return nil, fmt.Errorf("gofastooxml: no input to read: %w", gofastcore.ErrMalformed)
+	}
+	// A file embedded in a document may decompress what that document
+	// has left to decompress, and no more: the limit is the document's
+	// and its embedded files' together.
+	if parent := gofastcore.DecodeBudgetFrom(ctx); parent != nil {
+		f.within = max(parent.Left(), 1)
+	}
 	if limit := gofastcore.ResolveLimit(f.opts.Limits.MaxInputBytes, DefaultMaxInputBytes); size > limit {
 		return nil, fmt.Errorf("gofastooxml: input is %d bytes, limit is %d: %w", size, limit, gofastcore.ErrLimitExceeded)
 	}
@@ -184,10 +194,11 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 func (f *File) open(first bool) (*session, error) {
 	opts := &f.opts
 	members := int(gofastcore.ResolveLimit(int64(f.e.MaxArchiveMembers), DefaultMaxArchiveMembers))
-	pkg, err := opc.Open(f.body, f.bodySize, opc.Limits{
-		MaxDecodedBytes: gofastcore.ResolveLimit(opts.Limits.MaxDecodedBytes, DefaultMaxDecodedBytes),
-		MaxMembers:      members,
-	})
+	decoded := gofastcore.ResolveLimit(opts.Limits.MaxDecodedBytes, DefaultMaxDecodedBytes)
+	if f.within > 0 {
+		decoded = min(decoded, f.within)
+	}
+	pkg, err := opc.Open(f.body, f.bodySize, opc.Limits{MaxDecodedBytes: decoded, MaxMembers: members})
 	if err != nil {
 		return nil, wrap(err)
 	}

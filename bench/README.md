@@ -167,7 +167,7 @@ suite.
 Among the documents read, 36 have a part that failed (a sheet the
 workbook lists and does not contain, XML that breaks off, a member cut
 short) and 28 have a damaged part that is not the main one; each
-says so in its warnings. 251 documents have hidden text.
+says so in its warnings. 256 documents have hidden text.
 
 The run found one defect: asking for spans changed how consecutive
 paragraphs of code in a Word document were grouped. It is fixed, and

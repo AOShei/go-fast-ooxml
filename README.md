@@ -406,8 +406,9 @@ flagged. What this means for a reviewer:
 
 The contrast test is the shared model's (`gofastcore.LowContrast`): text
 is taken to be indiscernible when its contrast with what is behind it is
-under 1.2 and its colour is close to it as well. Pale cream on white is
-flagged; bright yellow on white, which a reader can see, is not.
+under 1.2 and its red and green are close to the background's. Yellow and
+cream on white are flagged; green on red, which is as bright and plain to
+see, is not.
 
 ## Layout
 
