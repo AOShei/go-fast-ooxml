@@ -15,6 +15,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/AOShei/go-fast-core"
 )
 
 // Flags select the conventions to apply beyond validity and control
@@ -32,8 +34,6 @@ const (
 	// Verbatim is for code: nothing beyond validity and control characters.
 	Verbatim Flags = 0
 )
-
-var ligatures = [...]string{"ff", "fi", "fl", "ffi", "ffl", "st", "st"}
 
 // String returns b as a string that obeys the conventions selected by
 // flags, and the number of control characters it had to remove.
@@ -109,7 +109,7 @@ func Append(dst, b []byte, flags Flags) ([]byte, int) {
 		case r < 0xA0:
 			removed++ // a C1 control character
 		case flags&Ligatures != 0 && r >= 0xFB00 && r <= 0xFB06:
-			dst = append(dst, ligatures[r-0xFB00]...)
+			dst = append(dst, gofastcore.Ligature(r)...) // the letters, by the series' rule
 		default:
 			dst = utf8.AppendRune(dst, r)
 		}

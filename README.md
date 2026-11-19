@@ -24,20 +24,20 @@ the method and the versions are in [`bench/comparison.md`](bench/comparison.md).
 <!-- comparison:begin -->
 | File | Tool | Time | Peak memory | Time against this library |
 |---|---|---|---|---|
-| `large.docx`: 1.5 million words | **this library**, all workers | 0.105 s | 35 MB |  |
-|  | **this library**, one worker | 0.108 s | 35 MB | 1.0 times |
-|  | docx2txt | 0.158 s | 154 MB | 1.5 times |
-|  | markitdown | 3.79 s | 328 MB | 36 times |
-|  | python-docx | 4.15 s | 211 MB | 40 times |
-| `large.xlsx`: 2 million cells | **this library**, all workers | 0.293 s | 177 MB |  |
-|  | **this library**, one worker | 0.697 s | 134 MB | 2.4 times |
-|  | openpyxl-readonly | 9.31 s | 310 MB | 32 times |
-|  | openpyxl | 12.29 s | 1,138 MB | 42 times |
-|  | markitdown | 65.01 s | 1,394 MB | 222 times |
-| `large.pptx`: 1,500 slides | **this library**, all workers | 0.018 s | 35 MB |  |
-|  | **this library**, one worker | 0.057 s | 34 MB | 3.2 times |
-|  | python-pptx | 0.363 s | 115 MB | 20 times |
-|  | markitdown | 1.77 s | 217 MB | 98 times |
+| `large.docx`: 1.5 million words | **this library**, all workers | 0.108 s | 35 MB |  |
+|  | **this library**, one worker | 0.106 s | 37 MB | 1.0 times |
+|  | docx2txt | 0.158 s | 152 MB | 1.5 times |
+|  | markitdown | 3.71 s | 325 MB | 34 times |
+|  | python-docx | 4.18 s | 199 MB | 39 times |
+| `large.xlsx`: 2 million cells | **this library**, all workers | 0.294 s | 187 MB |  |
+|  | **this library**, one worker | 0.689 s | 132 MB | 2.3 times |
+|  | openpyxl-readonly | 9.54 s | 307 MB | 32 times |
+|  | openpyxl | 12.41 s | 1,136 MB | 42 times |
+|  | markitdown | 66.49 s | 1,391 MB | 226 times |
+| `large.pptx`: 1,500 slides | **this library**, all workers | 0.018 s | 37 MB |  |
+|  | **this library**, one worker | 0.055 s | 32 MB | 3.1 times |
+|  | python-pptx | 0.362 s | 113 MB | 20 times |
+|  | markitdown | 1.78 s | 214 MB | 99 times |
 <!-- comparison:end -->
 
 The time for this library is the whole run of its command, writing text;
@@ -68,12 +68,30 @@ fmt.Println(doc.Markdown())
 
 `Extract` reads from anything that can be read at an offset (a file, bytes
 in memory); the format is decided from the file itself, never from its
-name. Options are `gofastcore.Options`; the two settings only this library
-has are fields of `Extractor` (`MaxCells`, `MaxArchiveMembers`), which
-implements `gofastcore.Extractor`. Errors wrap the shared ones
-(`ErrMalformed`, `ErrUnsupported`, `ErrLimitExceeded`,
-`ErrNoPartsSelected`, `ErrPasswordRequired`, `ErrWrongPassword`). A file that is damaged in part is not an error: what
-could be read is returned, with warnings that say what could not.
+name. Options are `gofastcore.Options`; the settings only this library
+has are fields of `Extractor` (`MaxCells`, `MaxArchiveMembers`,
+`MaxSpinCount`), which implements `gofastcore.Extractor`. Errors wrap the
+shared ones (`ErrMalformed`, `ErrUnsupported`, `ErrLimitExceeded`,
+`ErrNoPartsSelected`, `ErrPasswordRequired`, `ErrWrongPassword`). A file
+that is damaged in part is not an error: what could be read is returned,
+with warnings that say what could not.
+
+- **Pictures are blocks.** Every picture is an `image` block with its
+  place, its size and its alternative text, unless `Options.Images` is
+  `ImagesNone`; `ImagesData` adds the bytes.
+- **A file cut short** has lost the directory at the end of its archive.
+  Its members are then found by their own headers, as far as they go: a
+  file that lost only its directory gives the whole document, one cut
+  inside its body gives the body up to there. The document carries
+  `input.repaired`, which says how many members were found and which one
+  breaks off. Where too little is left to tell what the file is, the
+  error is `ErrMalformed`.
+- **A document holds at most `Limits.MaxTextBytes` of text**, 256 MiB by
+  default, counted as often as it occurs and together with the files
+  embedded in it. A small file can say a long text many times (one string
+  that every cell refers to); the part that reaches the limit is cut off
+  there with `limit.exceeded`. The other limits are in
+  [`SECURITY.md`](SECURITY.md).
 
 **A part at a time.** `Open` gives a `File`, which reads a part when it is
 asked for: the body of a Word document, a sheet, a slide.
@@ -130,12 +148,12 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 | `-format json\|markdown\|text` | What to print. JSON is the shared document; with several inputs each document is one line |
 | `-o file` | Write there instead of standard output |
 | `-parts 3`, `-parts 2-5` | Only those parts: sheets or slides by number |
-| `-images none\|meta\|data` | Pictures: not at all, where and how large, or their bytes too |
+| `-images meta\|data\|none` | Pictures: a block for each, with its place, size and alternative text (the default); their bytes too; or not at all |
 | `-spans` | Bold, italic and the like, and links, as spans |
 | `-exclude-hidden`, `-exclude-hidden=tiny,low_contrast` | In Markdown and text, leave out hidden text: all of it, or what is hidden for the reasons named. JSON always has everything, flagged |
 | `-furniture`, `-part-markers` | In Markdown and text: include running headers and footers; mark where each part begins |
 | `-workers n` | Sheets or slides read at a time |
-| `-max-cells n`, `-max-decoded-bytes n` | The limits; `-1` for none |
+| `-max-cells n`, `-max-decoded-bytes n`, `-max-text-bytes n` | The limits; `-1` for none |
 | `-password p` | The password of an encrypted file, and of encrypted files embedded in it |
 | `-max-spin-count n` | Rounds of hashing an encrypted file may ask for when a password is tried |
 | `-quiet`, `-version` | |
@@ -257,7 +275,7 @@ placeholder it takes after, on the layout or the master.
 | Subtitle | `heading` level 2 |
 | Body text and text boxes | `list_item` where the paragraph has a bullet or a number, with its level, and the bullet or the number as shown in `Marker` (`•`, `3.`, `b)`, `IV.`); `paragraph` where it has none |
 | Table | `table`, with merged cells, and the first row as header where the table says it is one |
-| Picture | `image`, with its description as text, when `Options.Images` asks for pictures |
+| Picture | `image`, with its description as text, unless `Options.Images` asks for none |
 | Date, footer and slide-number placeholders | `footer`. A slide-number field shows the slide's number |
 | Text the layout or the master has of its own | `header` if it is in the upper half of the slide, `footer` if in the lower; on every slide that shows it, once where layout and master repeat each other |
 | Speaker's notes | `note` blocks of type `speaker`, one for each paragraph |
@@ -386,8 +404,10 @@ flagged. What this means for a reviewer:
   in Excel, formula text, defined names, data validation lists and pivot
   caches.
 
-The contrast test is the shared model's (`gofastcore.LowContrast`): bright
-yellow text on a white page is under its threshold and is flagged.
+The contrast test is the shared model's (`gofastcore.LowContrast`): text
+is taken to be indiscernible when its contrast with what is behind it is
+under 1.2 and its colour is close to it as well. Pale cream on white is
+flagged; bright yellow on white, which a reader can see, is not.
 
 ## Layout
 
@@ -396,7 +416,7 @@ yellow text on a white page is under its threshold and is flagged.
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for reading a part at a time |
 | `cmd/gofastooxml` | The command |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
-| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget |
+| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget; finding the members of an archive that has lost its directory |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting and what lies behind text |
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes |
 | `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
