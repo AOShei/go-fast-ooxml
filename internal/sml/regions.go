@@ -227,10 +227,6 @@ func (b *builder) cut(g group, out []group) (pieces []group, changed bool) {
 	return out, changed
 }
 
-// attrName is the key of a table's name in Block.Attrs (proposed for core
-// as gofastcore.AttrName).
-const attrName = "name"
-
 // table writes a group of cells as a table block, or as several if it is
 // very large. at is the rectangle of a declared table; nil takes the
 // rectangle the cells span, and marks the table as inferred. It reports
@@ -293,7 +289,7 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 		block.Loc.Range = rangeName(part)
 		if name != "" {
 			// On every piece, so that each says what it is a piece of.
-			block.Attrs = map[string]string{attrName: name}
+			block.Attrs = map[string]string{gofastcore.AttrName: name}
 		}
 		if at == nil {
 			block.Origin = gofastcore.OriginInferred
