@@ -111,7 +111,7 @@ func (sh *sheet) regions(declared []declaredTable) []placed {
 				continue
 			}
 			at := t.at
-			if b.table(group{list: list}, &at, t.headerRows) {
+			if b.table(group{list: list}, &at, t.headerRows, t.name) {
 				for _, i := range list {
 					taken[i] = true
 				}
@@ -149,7 +149,7 @@ func (sh *sheet) regions(declared []declaredTable) []placed {
 		for _, p := range pieces {
 			if changed && it.depth+1 < maxCuts {
 				work = append(work, item{p, it.depth + 1})
-			} else if !b.table(p, nil, 0) {
+			} else if !b.table(p, nil, 0, "") {
 				b.sparse(p)
 			}
 		}
@@ -227,12 +227,16 @@ func (b *builder) cut(g group, out []group) (pieces []group, changed bool) {
 	return out, changed
 }
 
+// attrName is the key of a table's name in Block.Attrs (proposed for core
+// as gofastcore.AttrName).
+const attrName = "name"
+
 // table writes a group of cells as a table block, or as several if it is
 // very large. at is the rectangle of a declared table; nil takes the
 // rectangle the cells span, and marks the table as inferred. It reports
 // false, having written nothing, if the rectangle is so much larger than
 // the cells in it that filling it would cost memory out of proportion.
-func (b *builder) table(g group, at *rect, headerRows int) bool {
+func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 	cells := b.sh.cells
 	n := g.len()
 	var r rect
@@ -287,6 +291,10 @@ func (b *builder) table(g group, at *rect, headerRows int) bool {
 		}
 		block := gofastcore.Block{Kind: gofastcore.KindTable, Table: t}
 		block.Loc.Range = rangeName(part)
+		if name != "" {
+			// On every piece, so that each says what it is a piece of.
+			block.Attrs = map[string]string{attrName: name}
+		}
 		if at == nil {
 			block.Origin = gofastcore.OriginInferred
 		}
@@ -309,7 +317,7 @@ func (b *builder) sparse(g group) {
 				continue
 			}
 		}
-		b.table(g.slice(start, i), nil, 0)
+		b.table(g.slice(start, i), nil, 0, "")
 		start = i
 	}
 }

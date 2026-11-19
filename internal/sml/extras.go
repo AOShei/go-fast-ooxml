@@ -19,6 +19,7 @@ import (
 type declaredTable struct {
 	at         rect
 	headerRows int
+	name       string // the name Excel shows for it
 }
 
 // declared reads the sheet's table parts.
@@ -43,6 +44,13 @@ func (sh *sheet) declared() []declaredTable {
 					return
 				}
 				t := declaredTable{at: at, headerRows: 1}
+				// The name the workbook shows; name is the one formulas
+				// use, and is the same unless it was changed by hand.
+				if v, ok := s.Attr(xmlscan.NoSpace, "displayName"); ok && len(v) > 0 {
+					t.name = clean.Name(string(v))
+				} else if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+					t.name = clean.Name(string(v))
+				}
 				if n, ok := intAttr(s, "headerRowCount"); ok {
 					t.headerRows = min(n, 1)
 				}

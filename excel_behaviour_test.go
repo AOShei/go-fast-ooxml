@@ -268,7 +268,7 @@ func TestExcelDeclaredTablesAndMerges(t *testing.T) {
 	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "T", Data: data,
 		Extra: `<mergeCells><mergeCell ref="A8:B8"/><mergeCell ref="A9:A10"/><mergeCell ref="E20:F21"/><mergeCell ref="C9:C30"/></mergeCells><tableParts><tablePart r:id="rId1"/><tablePart r:id="rId2"/></tableParts>`})
 	pkg.Rel(firstSheet, relBase+"table", "../tables/table1.xml")
-	pkg.Add("xl/tables/table1.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" id="1" name="Sales" displayName="Sales" ref="A2:C4"><tableColumns count="3"/></table>`)
+	pkg.Add("xl/tables/table1.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" id="1" name="Table1" displayName="Sales" ref="A2:C4"><tableColumns count="3"/></table>`)
 	// A second table that declares no header row.
 	pkg.Rel(firstSheet, relBase+"table", "../tables/table2.xml")
 	pkg.Add("xl/tables/table2.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" id="2" name="Lower" displayName="Lower" ref="A8:C10" headerRowCount="0"/>`)
@@ -276,10 +276,11 @@ func TestExcelDeclaredTablesAndMerges(t *testing.T) {
 		`sheet 1 "T"`,
 		`  table A1:A1 inferred [["Title over the table"]]`,
 		// Declared: its own rectangle, an empty cell included, and its header row.
-		`  table A2:C4 header=1 [["Region" "Q1" "Q2"] ["North" "10" "12"] ["South" "7" ""]]`,
+		// The name the workbook shows, not the one it was made with.
+		`  table A2:C4 name=Sales header=1 [["Region" "Q1" "Q2"] ["North" "10" "12"] ["South" "7" ""]]`,
 		`  table A5:A5 inferred [["next to the table's last row"]]`,
 		// Merges are cut to the table; one whose first cell is empty is left out.
-		`  table A8:C10 [["Merged across" "" "c"] ["tall" "x" "y"] ["" "z" ""]] merges=[{0 0 1 2} {1 0 2 1} {1 2 2 1}]`,
+		`  table A8:C10 name=Lower [["Merged across" "" "c"] ["tall" "x" "y"] ["" "z" ""]] merges=[{0 0 1 2} {1 0 2 1} {1 2 2 1}]`,
 	)
 }
 
