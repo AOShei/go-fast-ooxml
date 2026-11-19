@@ -36,6 +36,8 @@ SOURCES = [
     ("python-pptx", "https://github.com/scanny/python-pptx.git", "278b47b1dedd5b46ee84c286e77cdfb0bf4594be", "MIT"),
     ("excelize", "https://github.com/qax-os/excelize.git", "ec40786f0b6554bbed6fae2a33e8eef52342b0d2", "BSD-3-Clause"),
     ("closedxml", "https://github.com/ClosedXML/ClosedXML.git", "057f5976c788d97e8eac86d1a528bd5411d9386e", "MIT"),
+    ("open-xml-sdk", "https://github.com/OfficeDev/Open-XML-SDK.git", "431ab05cf160248cc3885a4a766026d4f8243792", "MIT"),
+    ("shapecrawler", "https://github.com/ShapeCrawler/ShapeCrawler.git", "2ab474918ac89e7bbb8d7c649aca708d298171e2", "MIT"),
 ]
 
 

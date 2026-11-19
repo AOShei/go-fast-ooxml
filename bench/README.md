@@ -34,7 +34,7 @@ test whose tool is missing skips itself.
 | File | Produced by | Content |
 |---|---|---|
 | `comparison.json`, `comparison.md` | `python bench/compare.py` | This library against the tools in use today, on the large files and the corpus, each measured as a process. The table in the top-level README is written by the same run |
-| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 5,586 files: how many were read, what the rest were, which warnings and hidden-text reasons occur |
+| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,571 files: how many were read, what the rest were, which warnings and hidden-text reasons occur |
 | `accuracy.json` | `go test -run TestBaselineAccuracy -update .` | How well each tool recovers the known text of each fixture: precision, recall, F1 and word order, scored by the same code that scores this library |
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
@@ -118,13 +118,13 @@ of its own, which is most of its 63.
 
 ## Soak run
 
-`TestSoak` reads every file of the corpus and of the soak set: 5,586
-files, 258 MB. The soak set (`testdata/soak.py`) is the Office files in the
+`TestSoak` reads every file of the corpus and of the soak set: 6,571
+files, 355 MB. The soak set (`testdata/soak.py`) is the Office files in the
 test suites of LibreOffice, Apache Tika, pandoc, PhpSpreadsheet, PHPWord,
-ClosedXML, Excelize, mammoth.js, python-docx and python-pptx, at pinned
-commits: 4,798 files that those projects keep because something once went
-wrong with them, among them LibreOffice's collections of crash cases and
-fuzzer findings.
+ClosedXML, Excelize, mammoth.js, python-docx, python-pptx, the Open XML SDK
+and ShapeCrawler, at pinned commits: 5,783 files that those projects keep
+because something once went wrong with them, among them LibreOffice's
+collections of crash cases and fuzzer findings.
 
 Each file is read with one worker and with eight, with spans, with
 pictures, under a small cell limit and a small decompression budget, and a
@@ -141,13 +141,13 @@ it: two files of the set are made to produce that much.
 
 | | Files |
 |---|---|
-| Read | 5,540 (2,827 Word, 1,765 Excel, 948 PowerPoint) |
-| Refused, each with a reason | 46 |
+| Read | 6,521 (3,328 Word, 1,920 Excel, 1,273 PowerPoint) |
+| Refused, each with a reason | 50 |
 | Crashes, hangs, invalid documents | 0 |
 
 | Refused because | Files |
 |---|---|
-| Needs a password | 20 (13 of them from the soak set, all opened with the password their project's tests give) |
+| Needs a password | 24 (17 of them from the soak set; 13 of those are opened with the password their project's tests give) |
 | Not an archive at all | 9 |
 | An archive of another format (4 OpenDocument files named `.docx`, a package with only a theme, a plain zip) | 6 |
 | An archive without a readable directory, with too little left to read a document from | 5 |

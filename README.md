@@ -49,7 +49,7 @@ seconds.
 On the 788 real files of the corpus, which include damaged, encrypted and
 hostile ones, this library reads 740 and refuses 48 with a reason (damaged
 archives, files that need a password, other formats); none makes it crash
-or hang. The same holds for 4,798 more
+or hang. The same holds for 5,783 more
 from other projects' test suites ([`bench/README.md`](bench/README.md)).
 
 ## Using it
@@ -452,7 +452,7 @@ see, is not.
 | `testdata/api.txt` | The exported declarations of the package; a test fails when they change |
 | `testdata/numfmt` | What LibreOffice displays for 6,048 pairs of a number format and a value: the table the number-format engine is held to |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 788 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |
-| `testdata/soak.py` | Fetches the soak set: 4,798 Office files from the test suites of ten other projects, at pinned commits. Not in the repository |
+| `testdata/soak.py` | Fetches the soak set: 5,783 Office files from the test suites of twelve other projects, at pinned commits. Not in the repository |
 | `bench` | Measurements: the comparison with the tools in use today, the soak run, the benchmarks; see `bench/README.md` |
 | `SECURITY.md`, `CHANGELOG.md` | What is promised about untrusted files, and how to report a problem; what changes between versions |
 
@@ -467,7 +467,7 @@ downloaded corpus skip themselves when those are absent. To run everything,
 see `bench/README.md` and `python3 testdata/fetch.py`.
 
 ```sh
-python3 testdata/soak.py && go test -run TestSoak -v .   # 5,586 files, under a minute
+python3 testdata/soak.py && go test -run TestSoak -v .   # 6,571 files, under a minute
 go test -run 'Budgets' -v -speed .                       # allocation budgets and the speed targets
 ```
 
