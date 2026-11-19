@@ -12,8 +12,10 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
+	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -38,10 +40,9 @@ type parser struct {
 	box color       // the fill of the text box being read; unset outside one
 	tbl *tableState // the table being read
 
-	href      string // target of the hyperlink being read, when links are asked for
-	hrefDepth int    // depth of its element
-	instr     []byte // the code of the field being read
-	inInstr   bool
+	href      string     // target of the hyperlink being read, when links are asked for
+	hrefDepth int        // depth of its element
+	fields    []field    // the fields being read, innermost last
 	fieldHref string     // target of the HYPERLINK field whose result is being read
 	cell      *cellProps // properties of the table cell being read, if any
 	row       *rowProps
@@ -50,6 +51,91 @@ type parser struct {
 	produced int // text and images emitted so far, for alternate content
 	alts     []alternate
 	polls    int
+}
+
+// field is a field being read: its code (the instruction, such as
+// MERGEFIELD Name), then its result, which is what the document shows.
+type field struct {
+	code   []byte
+	inCode bool   // its separator, or its end, has not come yet
+	nested bool   // it began in the code of the field around it
+	href   string // where its result leads, for a HYPERLINK field
+}
+
+// Bounds on the fields kept track of.
+const (
+	maxFieldDepth = 64
+	maxFieldCode  = 1 << 16
+)
+
+// inCode reports whether the parser is in the code of a field, where
+// nothing is shown: the result of a field nested in that code is not.
+func (p *parser) inCode() bool {
+	for i := range p.fields {
+		if p.fields[i].inCode {
+			return true
+		}
+	}
+	return false
+}
+
+// fieldChar reads w:fldChar: a field begins, its code ends, or it ends.
+// The code of a field is never shown; it is kept as a note after the
+// paragraph its field ends in, flagged as hidden. A field in the code of
+// another is part of that one's code, written in braces as Word shows it.
+func (p *parser) fieldChar() {
+	typ, _ := p.s.Attr(ns.Word, "fldCharType")
+	switch string(typ) {
+	case "begin":
+		nested := p.inCode()
+		if len(p.fields) < maxFieldDepth {
+			p.fields = append(p.fields, field{inCode: true, nested: nested})
+		}
+	case "separate":
+		if n := len(p.fields); n > 0 && p.fields[n-1].inCode {
+			f := &p.fields[n-1]
+			f.inCode = false
+			if p.r.opts.Spans {
+				f.href = fieldLink(f.code)
+			}
+		}
+	case "end":
+		n := len(p.fields)
+		if n == 0 {
+			return
+		}
+		f := p.fields[n-1]
+		p.fields = p.fields[:n-1]
+		code := bytes.TrimSpace(f.code)
+		switch {
+		case len(code) == 0:
+		case f.nested && n > 1 && p.fields[n-2].inCode:
+			outer := &p.fields[n-2]
+			if len(outer.code)+len(code)+4 <= maxFieldCode {
+				outer.code = append(append(append(outer.code, "{ "...), code...), " }"...)
+			}
+		default:
+			p.fieldNote(code)
+		}
+	}
+	p.fieldHref = ""
+	for i := len(p.fields) - 1; i >= 0; i-- {
+		if f := &p.fields[i]; !f.inCode && f.href != "" {
+			p.fieldHref = f.href
+			break
+		}
+	}
+}
+
+// fieldNote keeps the code of a field as a note after the paragraph.
+func (p *parser) fieldNote(code []byte) {
+	text := p.clean(code, clean.Prose)
+	if text == "" {
+		return
+	}
+	p.r.fields++
+	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: gofastcore.HiddenInvisible,
+		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField}})
 }
 
 // alternate tracks one mc:AlternateContent element: a file may hold the
@@ -80,6 +166,9 @@ type paraState struct {
 	behind    color             // what lies behind its text
 	flags     clean.Flags       // how its text is cleaned
 	verbatim  bool              // it is code: its text is kept as written
+	display   []byte            // the text of its display equations
+	seq       int               // its number, in the order paragraphs begin
+	section   int               // the section it is in: properties it carries end it, after it
 }
 
 var noFormatting runProps
@@ -134,11 +223,17 @@ func (p *parser) document(out *[]gofastcore.Block) {
 		if s.Depth() == 2 && s.Is(ns.Word, "background") {
 			// The page colour. Word shows it only when the document's
 			// settings say so. A child element makes it a gradient or a
-			// picture, which is not a colour to judge text against.
+			// picture, which is not one colour; with DeepHidden, text is
+			// judged against the gradient's two colours or the picture's.
 			c := readColor(s, "color", "themeColor", p.r.theme)
+			first := c
 			for s.Next() != xmlscan.EOF && s.Depth() >= 2 {
-				if s.Kind() == xmlscan.Start {
-					c = unknown
+				if s.Kind() != xmlscan.Start {
+					continue
+				}
+				c = unknown
+				if p.r.opts.DeepHidden && s.Is(ns.VML, "fill") {
+					c.under = p.pageFill(s, first)
 				}
 			}
 			if p.r.showBackground && c.set && !c.auto {
@@ -286,10 +381,37 @@ func (p *parser) section() {
 	s := &p.s
 	titlePage := false
 	var notes [2]notePr
-	defer func() { p.r.endSection(notes) }()
+	g := letter
+	defer func() {
+		p.r.endSection(notes)
+		if len(p.r.pages) < 1<<16 {
+			p.r.pages = append(p.r.pages, g)
+		}
+	}()
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
+			continue
+		}
+		if s.Depth() == depth+1 && (s.Is(ns.Word, "pgSz") || s.Is(ns.Word, "pgMar")) {
+			// Lengths in twentieths of a point; a margin given as
+			// negative is one that text does not push.
+			twips := func(name string, into *float64) {
+				if v, ok := s.Attr(ns.Word, name); ok {
+					if n, err := strconv.ParseInt(string(v), 10, 32); err == nil {
+						*into = abs(float64(n)) / 20
+					}
+				}
+			}
+			if s.Is(ns.Word, "pgSz") {
+				twips("w", &g.w)
+				twips("h", &g.h)
+			} else {
+				twips("top", &g.top)
+				twips("bottom", &g.bottom)
+				twips("left", &g.left)
+				twips("right", &g.right)
+			}
 			continue
 		}
 		if s.Depth() == depth+1 && s.Is(ns.Word, "titlePg") {
@@ -414,7 +536,8 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 	// A paragraph can sit inside another's run, in a text box; the outer
 	// one's state is put back when this one is done.
 	outer, outerHref, outerDepth := p.para, p.href, p.hrefDepth
-	p.para = paraState{start: len(p.text), spanStart: len(p.spans)}
+	p.para = paraState{start: len(p.text), spanStart: len(p.spans), seq: p.r.paragraphs, section: len(p.r.sections)}
+	p.r.paragraphs++
 	p.href, p.hrefDepth = "", 0
 	p.format(&pp)
 	depth := s.Depth()
@@ -432,12 +555,13 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 		if p.r.opts.Spans && s.Is(ns.Word, "hyperlink") {
 			p.href, p.hrefDepth = p.linkTarget(), s.Depth()
 		}
-		if p.r.opts.Spans && s.Is(ns.Word, "fldSimple") {
+		if s.Is(ns.Word, "fldSimple") {
 			// A field written in one piece: its code is an attribute.
 			if code, ok := s.Attr(ns.Word, "instr"); ok {
-				if target := fieldLink(code); target != "" {
+				if target := fieldLink(code); target != "" && p.r.opts.Spans {
 					p.href, p.hrefDepth = target, s.Depth()
 				}
+				p.fieldNote(bytes.TrimSpace(code))
 			}
 		}
 		if transparent, skip := p.wrapper(); transparent {
@@ -463,16 +587,31 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 				s.Skip()
 			}
 		case ns.Math:
-			// An equation: its characters are kept in order, its layout
-			// (fractions, exponents) is not reconstructed.
+			// An equation, in UnicodeMath, the linear form Word shows.
+			display := s.Is(ns.Math, "oMathPara")
 			start := len(p.text)
-			p.text = s.AppendText(p.text)
+			p.text = omml.Linear(s, p.text)
 			p.tidy(start)
+			if display {
+				if len(p.para.display) > 0 {
+					p.para.display = append(p.para.display, '\n')
+				}
+				p.para.display = append(p.para.display, p.text[start:]...)
+			}
 		default:
 			s.Skip()
 		}
 	}
 	b, ok := p.block(&pp)
+	// A paragraph that is a display equation and nothing else is one.
+	if ok && b.Kind == gofastcore.KindParagraph && len(p.para.display) > 0 && b.Marker == "" &&
+		b.Text == string(bytes.TrimSpace(p.para.display)) {
+		b.Kind = gofastcore.KindFormula
+		if b.Attrs == nil {
+			b.Attrs = map[string]string{}
+		}
+		b.Attrs[gofastcore.AttrNotation] = gofastcore.NotationUnicodeMath
+	}
 	p.text = p.text[:p.para.start]
 	p.spans = p.spans[:p.para.spanStart]
 	p.para, p.href, p.hrefDepth = outer, outerHref, outerDepth
@@ -766,13 +905,13 @@ func (p *parser) run(deleted bool) {
 		case "rPr":
 			readRunProps(s, &direct, p.r.theme)
 		case "t":
-			if deleted {
+			if deleted || p.inCode() {
 				s.Skip()
 				continue
 			}
 			p.runText(p.runFont(&direct))
 		case "delText":
-			if deleted {
+			if deleted && !p.inCode() {
 				p.runText(p.runFont(&direct))
 			} else {
 				s.Skip()
@@ -800,18 +939,11 @@ func (p *parser) run(deleted bool) {
 		case "fldChar":
 			// A field: its code, then what it displays. The code of a
 			// HYPERLINK field says where the displayed text leads.
-			typ, _ := s.Attr(ns.Word, "fldCharType")
-			switch string(typ) {
-			case "begin":
-				p.inInstr, p.instr, p.fieldHref = true, p.instr[:0], ""
-			case "separate":
-				p.inInstr, p.fieldHref = false, fieldLink(p.instr)
-			case "end":
-				p.inInstr, p.fieldHref = false, ""
-			}
-		case "instrText":
-			if p.inInstr && p.r.opts.Spans && len(p.instr) < 2048 {
-				p.instr = s.AppendText(p.instr)
+			p.fieldChar()
+		case "instrText", "delInstrText":
+			n := len(p.fields)
+			if n > 0 && p.fields[n-1].inCode && (s.Is(ns.Word, "delInstrText") == deleted) && len(p.fields[n-1].code) < maxFieldCode {
+				p.fields[n-1].code = s.AppendText(p.fields[n-1].code)
 			} else {
 				s.Skip()
 			}
@@ -1132,6 +1264,11 @@ func (p *parser) drawing() {
 	shapes := 0      // shapes seen: sizes are only understood for one alone
 	shapeProps := 0  // depth of the shape's properties while they are read
 	ownFill := false // the shape sets its fill itself, not through its style
+	// Where it floats, if it is anchored at a place of its own, and the
+	// fill of its one shape, which may hide what is under it.
+	anchor := float{paragraph: p.para.seq, section: p.para.section}
+	anchored := false
+	var shapeFill color
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -1151,6 +1288,15 @@ func (p *parser) drawing() {
 			shapeProps = 0
 		}
 		switch {
+		case s.Is(ns.WordDraw, "anchor"):
+			anchored = true
+			readAnchor(s, &anchor)
+		case s.Is(ns.WordDraw, "simplePos"):
+			readSimplePos(s, &anchor)
+		case s.Is(ns.WordDraw, "positionH"):
+			readPosition(s, &anchor.h)
+		case s.Is(ns.WordDraw, "positionV"):
+			readPosition(s, &anchor.v)
 		case s.Is(ns.WordShape, "wsp"):
 			fill, ownFill, shapeProps = color{}, false, 0
 			shapes++
@@ -1158,7 +1304,7 @@ func (p *parser) drawing() {
 			shapeProps = s.Depth()
 		case shapeProps > 0 && s.Depth() == shapeProps+1 && s.Space() == ns.Draw:
 			if f, ok := dml.ReadFill(s); ok {
-				fill, ownFill = p.r.drawingFill(f), true
+				fill, ownFill = p.r.drawingFill(p.picture(f)), true
 			} else if s.Is(ns.Draw, "ln") {
 				s.Skip() // the outline has a fill of its own
 			}
@@ -1220,6 +1366,7 @@ func (p *parser) drawing() {
 		case s.Is(ns.Word, "txbxContent"):
 			// A text box: its paragraphs follow the one it hangs on.
 			hasBox = true
+			shapeFill = fill
 			if !fill.set {
 				fill = p.backdrop() // nothing of its own: what the box sits on shows through
 			}
@@ -1240,6 +1387,12 @@ func (p *parser) drawing() {
 				hideWhole(b, gofastcore.HiddenClipped)
 			}
 		}
+	}
+	if !shapeFill.set {
+		shapeFill = fill
+	}
+	if anchored && shapes <= 1 && len(p.r.floats) < maxFloats {
+		p.float(anchor, boxes, hasBox, shapeFill, target, external, width, height)
 	}
 	if target == "" || p.r.opts.Images == gofastcore.ImagesNone {
 		if target != "" {
@@ -1622,4 +1775,39 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 			s.Skip()
 		}
 	}
+}
+
+// picture turns the relationship of a fill's picture into its part's
+// name, as this part sees it.
+func (p *parser) picture(f dml.Fill) dml.Fill {
+	if f.Blip == "" {
+		return f
+	}
+	if rel, ok := p.rels[f.Blip]; ok && !rel.External {
+		f.Blip = rel.Target
+	} else {
+		f.Blip = ""
+	}
+	return f
+}
+
+// pageFill reads the v:fill of the page's background: a gradient from the
+// page colour to color2, or a picture, stretched or tiled, whose colours
+// are those of the page either way.
+func (p *parser) pageFill(s *xmlscan.Scanner, first color) []theme.Color {
+	typ, _ := s.Attr(xmlscan.NoSpace, "type")
+	if id, ok := s.Attr(ns.Rel, "id"); ok && string(typ) != "gradient" && string(typ) != "gradientRadial" && string(typ) != "pattern" {
+		return p.r.deepColors(p.picture(dml.Fill{Paint: dml.PaintOther, Blip: string(id)}))
+	}
+	if string(typ) != "gradient" && string(typ) != "gradientRadial" {
+		return nil
+	}
+	second := white
+	if v, ok := s.Attr(xmlscan.NoSpace, "color2"); ok {
+		second = vmlColor(v)
+	}
+	if !first.set || first.auto || first.unknown || !second.set || second.unknown {
+		return nil
+	}
+	return []theme.Color{{R: first.r, G: first.g, B: first.b}, {R: second.r, G: second.g, B: second.b}}
 }

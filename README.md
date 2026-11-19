@@ -278,9 +278,13 @@ document, since a formula can hold text nobody sees on the sheet.
 
 **What a workbook stores and shows on no sheet** is in a last part of
 kind `stored`, flagged as hidden: its defined names (`Rate: 0.2`; a name
-can stand for a text that appears nowhere else), and the code of its
-Excel 4 macro sheets, one formula to a line. It is read as data, never
-evaluated, and comes with the whole document, not with a range of parts.
+can stand for a text that appears nowhere else), the code of its Excel 4
+macro sheets, one formula to a line, the code of its VBA project, the
+records of pivot caches whose source is gone and the formulas of
+calculated fields, and custom XML data (see
+[What a file stores and shows nowhere](#what-a-file-stores-and-shows-nowhere)).
+It is read as data, never evaluated, and comes with the whole document,
+not with a range of parts.
 
 **Drop-down lists** (data validations of type list) are `note` blocks of
 type `choices` at the cells they are for, with those cells in `loc.range`:
@@ -334,9 +338,10 @@ such a table, and every cache whose source is gone is in the stored part
 with its fields and its number of records (`TestPivotsAsOpenpyxl`,
 `GOFAST_PIVOTS_SOAK=1` for the soak set).
 
-**Not read:** dialog sheets (counted in `ooxml.unread_content`), the
-formulas of a pivot table's calculated fields, and VBA projects. Macro sheets and VBA projects are reported as
-`input.active_content`.
+**Not read:** dialog sheets (counted in `ooxml.unread_content`), and the
+formulas of a pivot table's calculated items. Macro sheets and VBA
+projects are reported as `input.active_content`, and their code is read
+as text, never run.
 
 ## PowerPoint presentations
 
@@ -438,6 +443,45 @@ diagram paragraphs it shows are in this library's text
 Where a diagram has no drawing, LibreOffice lays the model out itself and
 may leave text out; that text is given here, unflagged.
 
+## What a file stores and shows nowhere
+
+A file can keep text that nobody who opens it sees: it is a place to put
+text for a model. All of it is read as data, never run or followed,
+bounded by the limits, and flagged `invisible`, so that a consumer, and
+the renderers asked to leave hidden text out, can keep it from a model.
+What belongs to the file as a whole is in a last part of kind `stored`,
+which comes with the whole document, not with a range of parts; each
+block says what it is in `stored`:
+
+| `stored` | What |
+|---|---|
+| `macro` | The code of a VBA project, in all three formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes; text in code pages 1252, 28591 and UTF-8 is decoded, and in others what is not ASCII is U+FFFD, counted by `text.unmapped_glyphs`. The 246 modules of the corpus and the soak set agree with olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
+| `custom_xml` | Custom XML data with text, in all three formats: a block for each part, a line for each element with text of its own (`Abstract: …`). Attribute values are not read. Data a content control is bound to is also in the body, where the control shows it |
+| `document_variable` | Word's document variables, `name: value` |
+| `defined_name` | Excel's defined names |
+| `pivot_cache` | The records of an Excel pivot cache whose source is gone, as a table, and the formulas of calculated fields (`Margin: =Sales*0.1`) |
+
+**Field codes** in Word are the instructions of fields whose results are
+the text (`PAGE`, `MERGEFIELD Name`, `XE "an index entry"`): each is a
+`note` block of type `field` after the paragraph its field ends in, flagged
+`invisible`. A field in another's code is written into that code in
+braces, as Word shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its
+result, which nothing shows, is not text.
+
+The renderers write hidden text unless `RenderOptions.ExcludeHidden` says
+otherwise, so by default Markdown and text include field codes and the
+stored part.
+
+## Equations
+
+Equations in Word and PowerPoint are written in UnicodeMath, the linear
+form Word shows when an equation is switched to linear (Unicode Technical
+Note 28): `x=(-b±√(b^2-4ac))/(2a)`, `∑_(k=0)^n▒((n¦k)x^k a^(n-k))`,
+`lim┬(n→∞)⁡a_n`, `■(a&b@c&d)`. Every character of the equation is kept, in
+order. A Word paragraph that is a display equation and nothing else is a
+`formula` block with `notation` `unicodemath`; an equation in a sentence
+stays in the sentence.
+
 ## Hidden text
 
 Text that a person reading the document cannot see is extracted like any other
@@ -458,13 +502,15 @@ What is flagged in a Word document:
 |---|---|
 | `invisible` | Text formatted as hidden, on the run or through its character style, its paragraph's style or the document defaults. A header or footer that no page shows: one no section names, a first-page one where no section has a different first page, an even-page one where the document does not have different odd and even pages. A footnote, text box or picture anchored in hidden text |
 | `tiny` | A font size under 2 points, resolved through the same layers. Characters narrowed, or text fitted into a width, so that it is under 2 points |
-| `low_contrast` | A text colour set explicitly (on the run, through a style, or as a Word 2010 text fill) that cannot be told from what is behind it: the run's shading or highlight, the paragraph's shading, the table cell's shading whether set on the cell or given by the table's style, the fill of the shape or text box the text is in, the page colour where Word displays it. Theme colours are resolved. Text in the "automatic" colour is never flagged: Word draws it to contrast with its background |
+| `low_contrast` | A text colour set explicitly (on the run, through a style, or as a Word 2010 text fill) that cannot be told from what is behind it: the run's shading or highlight, the paragraph's shading, the table cell's shading whether set on the cell or given by the table's style, the fill of the shape or text box the text is in, the page colour where Word displays it. Theme colours are resolved. Text in the "automatic" colour is never flagged: Word draws it to contrast with its background. With `DeepHidden`, also a text box's gradient or picture fill, and a page background that is a gradient or a picture |
+| `off_page` | A text box anchored at a place on the page whose every possible place is off the page: measured from the page or a margin its place is known; from a column, a paragraph or a line it is somewhere between the margins, and is flagged only if it is off the page wherever that is |
+| `occluded` | A floating text box wholly under an opaque picture or filled shape in front of it, anchored in the same paragraph (two drawings anchored in one paragraph are on one page) |
 | `transparent` | A Word 2010 text fill that is fully transparent, or no fill |
 | `clipped` | Text in a text box of fixed size under 2 points in either direction, or in a table row of an exact height under 2 points |
 | `invisible_chars` | Characters with no visible form, found by the shared model itself |
 
-In Word, `transparent` and `clipped` are flagged where found but only the
-forms above are looked for.
+In Word, `transparent`, `clipped`, `off_page` and `occluded` are flagged
+where found but only the forms above are looked for.
 
 What is flagged in an Excel workbook:
 
@@ -472,7 +518,7 @@ What is flagged in an Excel workbook:
 |---|---|
 | `invisible` | A hidden or very hidden sheet: the part and all its blocks. Hidden rows and columns, including those of no height or width. A value its number format displays as nothing (`;;;`), other than zero. Text in a shape marked hidden |
 | `tiny` | A cell or a run of shape text in a font under 2 points |
-| `low_contrast` | A cell whose font colour, named in its style, cannot be told from its fill, or from white where it has none. Shape text in the colour of its shape. Theme colours, tints and the old colour palette are resolved |
+| `low_contrast` | A cell whose font colour, named in its style, cannot be told from its fill, or from white where it has none, with the colours conditional formatting gives where its rules match. Shape text in the colour of its shape. Theme colours, tints and the old colour palette are resolved. With `DeepHidden`, also a cell with a gradient fill, against its stops |
 | `invisible_chars` | Characters with no visible form, found by the shared model itself |
 
 In a table the flags are on regions of cells (`table.hidden`); cells side by
@@ -485,7 +531,7 @@ What is flagged in a PowerPoint presentation:
 |---|---|
 | `invisible` | A hidden slide: the part and all its blocks, its notes included. A shape or a group marked hidden. Text with no fill and no outline. Text in a table cell that a merged cell covers |
 | `tiny` | Text under 2 points, with the size taken from the run, the paragraph's level in the shape, the placeholders it takes after, the master's styles or the presentation's defaults, and after any shrinking to fit the shape |
-| `low_contrast` | Text whose colour cannot be told from what it is seen against. The colour is the run's, or inherited as the size is, or the one the shape's style or the table's style gives it. What it is seen against is the run's highlight, the fill of its shape or table cell, or, for a shape with no fill, the last thing drawn under it: a filled rectangle on the slide, the layout or the master, or the slide's background. Theme colours go through the colour map in force, including one a slide or layout replaces, and lightened, darkened and partly transparent colours are worked out |
+| `low_contrast` | Text whose colour cannot be told from what it is seen against. The colour is the run's, or inherited as the size is, or the one the shape's style or the table's style gives it. What it is seen against is the run's highlight, the fill of its shape or table cell, or, for a shape with no fill, the last thing drawn under it: a filled rectangle on the slide, the layout or the master, or the slide's background. Theme colours go through the colour map in force, including one a slide or layout replaces, and lightened, darkened and partly transparent colours are worked out. With `DeepHidden`, also gradients and pictures: a shape's own gradient or picture fill, a picture or a gradient-filled shape under the text, and a slide background that is one |
 | `transparent` | Text filled with a colour of zero opacity |
 | `off_page` | A shape that lies wholly outside the slide |
 | `occluded` | Text whose shape lies wholly under a later shape that hides it: a rectangle filled with one opaque colour, or a JPEG or a PNG that has no transparency. A shape that an animation acts on is not counted as hiding anything |
@@ -494,16 +540,38 @@ What is flagged in a PowerPoint presentation:
 
 A slide with more overlapping shapes than the checks compare (some hundreds
 of thousands of pairs) carries `ooxml.hidden_unchecked`: its text was not all
-compared with what lies under and over it.
+compared with what lies under and over it. So does a sheet with cells whose
+colours conditional formatting gives by rules that are formulas.
+
+**Conditional formatting in Excel.** Where a rule gives a colour of text
+or a fill, the rules are decided from the values the file stores, in
+order of priority and with stop-if-true: comparisons with constants, text
+tests, blanks and errors, duplicates, top and bottom N, above and below
+average, and colour scales. A rule that gives no colour (bold, a data bar,
+an icon set) changes nothing. A rule that is a formula, or a date relative
+to today, is tried matching and not matching: where that makes a
+difference the cell is not judged, and `ooxml.hidden_unchecked` counts it.
+Over the corpus and the soak set this flags 236 cells the rules hide
+(zeros made white, a cell made red on red) and leaves 1,128 unjudged.
+
+**`Options.DeepHidden`** asks for the checks that cost decoding pictures:
+text is judged against a gradient's stops, or against the colours of the
+part of a picture under it (PNG, JPEG and GIF, decoded with the standard
+library and reduced to a grid of 64 by 64 colours), and is
+`low_contrast` if it cannot be told from at least 95% of them. A picture
+that is tiled (on a slide), rotated, partly transparent, larger than 40
+million pixels, or in another format is not judged. The command's
+`-deep-hidden` sets it.
 
 A flag states a fact, so where the facts cannot be established nothing is
 flagged. What this means for a reviewer:
 
-- **Backgrounds that are not one known colour.** Against a gradient, a
-  picture or a striped pattern, text colour is not judged. On a slide that
-  includes text over a picture, over a shape that is not a rectangle, or
-  over the edge of one: only a rectangle of one colour that lies under all
-  of the text's shape is taken as what the text is seen against.
+- **Backgrounds that are not one known colour.** Without `DeepHidden`,
+  text colour is not judged against a gradient or a picture; with it,
+  only as described above. Against a striped pattern it is not judged. On
+  a slide, only a rectangle that lies under all of the text's shape is
+  taken as what the text is seen against: text over a shape that is not a
+  rectangle, or over the edge of one, is not judged.
 - **Table styles that are not known.** Office has table styles built in,
   and a file may name one without defining it (Excel always does; files
   written by python-pptx do too). Excel's 60 are taken from the standard.
@@ -516,16 +584,17 @@ flagged. What this means for a reviewer:
 - **What a slide looks like during the show.** Animations are not played.
   Text that an animation reveals, hides or moves is judged where the slide
   stores it.
-- **Conditional formatting in Excel.** It changes a cell's colours by its
-  value, which is not worked out. Text in a range it applies to is not
-  judged against its fill.
+- **Conditional formatting in Excel** by rules that are formulas: see
+  above.
 - **Table styles in Word.** The shading a table's style gives cells is used; the text
   colour it gives them is not. Whether a cell is in the last row or column is
   used only where the file states it.
-- **Position in Word and Excel.** This library does no page layout. Text
-  covered by a floating shape or picture, or pushed off the page, is not
-  detected there. On a slide, where shapes say where they are, it is; but
-  text that runs out of its shape is taken to be where the shape is.
+- **Position in Word and Excel.** This library does no page layout. In
+  Word, only floating text boxes are judged for where they are, as above;
+  text in the flow of the body that a floating shape covers is not
+  detected, nor is anything in Excel covered by a shape. On a slide, where
+  shapes say where they are, it is; but text that runs out of its shape is
+  taken to be where the shape is.
 - **Fonts and spacing.** A font whose glyphs are blank, or spacing that piles
   characters on each other, is not detected.
 - **Content never shown on a page but extracted by design**: document
@@ -533,16 +602,17 @@ flagged. What this means for a reviewer:
   the values of drop-down lists,
   the series a chart's filter leaves out and the SmartArt nodes a layout
   does not draw (both flagged `invisible`),
-  and, flagged as hidden in the stored part, a workbook's defined names,
-  the code of its macro sheets and the records of pivot caches whose
-  source is gone. Each has its own place in the model
-  (metadata, `image` blocks, `note` blocks, the `stored` part), so a
-  consumer can treat it apart. Formulas, with `Options.Cells`, are in
-  `Table.Cells`, apart from what cells show.
+  field codes, flagged as hidden, and what a file stores and shows nowhere
+  (see above), flagged as hidden in the stored part. Each has its own
+  place in the model (metadata, `image` blocks, `note` blocks, the
+  `stored` part), so a consumer can treat it apart. Formulas, with
+  `Options.Cells`, are in `Table.Cells`, apart from what cells show.
 - **Content not extracted at all**, which therefore cannot reach a model
-  through this library: field codes, custom XML data, document variables;
-  in Excel, the records of a pivot cache whose source is in the workbook
-  (they repeat its cells).
+  through this library: in Excel, the records of a pivot cache whose
+  source is in the workbook (they repeat its cells), and the formulas of
+  a pivot table's calculated items; in Word, the building blocks of its
+  glossary document; in PowerPoint, the tags that add-ins store on slides
+  and shapes; attribute values of custom XML data.
 
 The contrast test is the shared model's (`gofastcore.LowContrast`): text
 is taken to be indiscernible when its contrast with what is behind it is

@@ -1,6 +1,7 @@
 package gofastooxml_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -387,7 +388,9 @@ func TestWordInlineFormattingAndLinks(t *testing.T) {
 		`paragraph "A paragraph bold by its style."`,
 		`paragraph "See the site or section 2." ["the " ->https://example.org/page] ["site" bold ->https://example.org/page] ["section 2" ->#_Toc123]`,
 		`paragraph "Or a field link then plain." ["a field link" ->https://example.org/field]`,
+		`note "HYPERLINK \"https://example.org/field\" \\o \"tip\"" hidden=invisible type=field`,
 		`paragraph "Or a simple field." ["a simple field" ->#Annex]`,
+		`note "HYPERLINK \\l \"Annex\"" hidden=invisible type=field`,
 		`paragraph "Bold and hidden." hidden=invisible ["Bold and hidden." bold]`,
 	)
 	ooxmltest.CheckDocument(t, doc)
@@ -401,7 +404,9 @@ func TestWordInlineFormattingAndLinks(t *testing.T) {
 		`paragraph "A paragraph bold by its style."`,
 		`paragraph "See the site or section 2."`,
 		`paragraph "Or a field link then plain."`,
+		`note "HYPERLINK \"https://example.org/field\" \\o \"tip\"" hidden=invisible type=field`,
 		`paragraph "Or a simple field."`,
+		`note "HYPERLINK \\l \"Annex\"" hidden=invisible type=field`,
 		`paragraph "Bold and hidden." hidden=invisible`,
 	)
 }
@@ -598,6 +603,61 @@ func TestWordBuiltInTableStyles(t *testing.T) {
 		`table header=0 [["head"] ["body"]]`,
 		// Not known: the text is judged against the page.
 		`table hidden=low_contrast header=0 [["head"] ["body"]] hidden_cell(0,0 low_contrast) hidden_cell(1,0 low_contrast)`,
+	)
+	ooxmltest.CheckDocument(t, doc)
+}
+
+// A text box anchored at a place on the page that lies wholly off the
+// page is off_page; one that an opaque picture or filled shape in front of
+// it, anchored in the same paragraph, covers wholly is occluded. One whose
+// place depends on where its paragraph falls is judged only where every
+// place it could be is off the page.
+func TestWordFloatingTextBoxes(t *testing.T) {
+	const emu = 12700 // to the point
+	anchor := func(attrs, h, v string, w, ht int, inner string) string {
+		return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" ` + attrs + `>` +
+			`<wp:simplePos x="0" y="0"/>` + h + v + fmt.Sprintf(`<wp:extent cx="%d" cy="%d"/>`, w*emu, ht*emu) + `<wp:wrapNone/><wp:docPr id="1" name="Box"/>` +
+			`<a:graphic xmlns:a="` + ooxmltest.NSDraw + `"><a:graphicData uri="x">` + inner + `</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`
+	}
+	pos := func(axis, from string, at int) string {
+		return fmt.Sprintf(`<wp:position%s relativeFrom="%s"><wp:posOffset>%d</wp:posOffset></wp:position%s>`, axis, from, at*emu, axis)
+	}
+	align := func(axis, from string) string {
+		return `<wp:position` + axis + ` relativeFrom="` + from + `"><wp:align>center</wp:align></wp:position` + axis + `>`
+	}
+	box := func(text, fill string) string {
+		return `<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr>` + fill + `</wps:spPr><wps:txbx><w:txbxContent>` +
+			ooxmltest.Para(text) + `</w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>`
+	}
+	solid := `<a:solidFill xmlns:a="` + ooxmltest.NSDraw + `"><a:srgbClr val="FFFFFF"/></a:solidFill>`
+	shape := `<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr>` + solid + `</wps:spPr><wps:bodyPr/></wps:wsp>`
+	body := para(run(text("Body."))+
+		// On the page.
+		anchor(`relativeHeight="1" behindDoc="0"`, pos("H", "page", 100), pos("V", "page", 100), 200, 50, box("On the page", ""))+
+		// To the right of a page 612 points wide.
+		anchor(`relativeHeight="2" behindDoc="0"`, pos("H", "page", 700), pos("V", "page", 100), 200, 50, box("Off to the right", ""))+
+		// Above the page, measured from the paragraph, wherever it is.
+		anchor(`relativeHeight="3" behindDoc="0"`, align("H", "column"), pos("V", "paragraph", -900), 200, 50, box("Far above", ""))+
+		// Measured from the paragraph, and maybe on the page.
+		anchor(`relativeHeight="4" behindDoc="0"`, align("H", "column"), pos("V", "paragraph", -100), 200, 50, box("Maybe above", ""))) +
+		// A text box, and an opaque shape over it in front.
+		para(run(text("Second."))+
+			anchor(`relativeHeight="10" behindDoc="0"`, pos("H", "margin", 0), pos("V", "paragraph", 0), 100, 40, box("Under a shape", ""))+
+			anchor(`relativeHeight="11" behindDoc="0"`, pos("H", "margin", -10), pos("V", "paragraph", -10), 150, 80, shape)+
+			// A shape behind the text cannot hide it.
+			anchor(`relativeHeight="12" behindDoc="0"`, pos("H", "page", 300), pos("V", "page", 300), 100, 40, box("In front", ""))+
+			anchor(`relativeHeight="5" behindDoc="1"`, pos("H", "page", 290), pos("V", "page", 290), 150, 80, shape))
+	pkg := ooxmltest.DocxSection(body, `<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>`)
+	doc := word(t, pkg, nil)
+	expectBlocks(t, doc,
+		`paragraph "Body."`,
+		`paragraph "On the page"`,
+		`paragraph "Off to the right" hidden=off_page`,
+		`paragraph "Far above" hidden=off_page`,
+		`paragraph "Maybe above"`,
+		`paragraph "Second."`,
+		`paragraph "Under a shape" hidden=occluded`,
+		`paragraph "In front"`,
 	)
 	ooxmltest.CheckDocument(t, doc)
 }

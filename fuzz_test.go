@@ -37,7 +37,7 @@ func FuzzOpen(f *testing.F) {
 	}
 	// A small budget keeps a fuzzed decompression bomb cheap, and a low
 	// bound on the rounds of hashing keeps a fuzzed password check cheap.
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, DeepHidden: true}
 	e := &gofastooxml.Extractor{MaxSpinCount: 2000}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
@@ -104,7 +104,7 @@ func FuzzDocx(f *testing.F) {
 	}
 	f.Add([]byte(`<w:document`+ooxmltest.WordNS+`><w:background w:color="000000"><v:background><v:fill type="gradient"/></v:background></w:background><w:body>`+
 		ooxmltest.Para("x")+`<w:sectPr><w:headerReference w:type="first" r:id="rId5"/><w:titlePg/></w:sectPr></w:body></w:document>`), formatted, numbering, []byte(ooxmltest.Para("note")))
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Spans: true}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Spans: true, DeepHidden: true}
 	f.Fuzz(func(t *testing.T, body, styles, numbering, note []byte) {
 		pkg := ooxmltest.Docx("")
 		pkg.AddBytes("word/document.xml", ooxmltest.CTDocument, body)
@@ -151,11 +151,20 @@ func FuzzXlsx(f *testing.F) {
 			xlRow(2, `<c r="A2"><f t="shared" si="0"/><v>4</v></c>`, `<c r="B2"><f t="shared" si="9"/><v>5</v></c>`, `<c r="C2" t="e"><v>#REF!</v></c>`),
 			`<hyperlinks><hyperlink ref="A1:B2" r:id="rId9"/><hyperlink ref="D1" location="Sheet2!A1"/><hyperlink ref="A1:XFD1048576" location="x"/></hyperlinks>`),
 		sheet(xlRow(1, xlNum("A1", "1"), xlNum("C1", "2"), xlNum("E1", "3"))+xlRow(3, xlNum("B3", "4"))+xlRow(4, xlNum("D4", "1e308"), xlNum("E4", "-0"), xlNum("F4", "abc")), ``),
+		// Conditional formatting of every kind.
+		sheet(xlRow(1, xlNum("A1", "1"), xlStyled("B1", 1, "5"), xlStr("C1", "secret"), `<c r="D1" t="e"><v>#N/A</v></c>`, `<c r="E1" t="b"><v>0</v></c>`)+xlRow(2, xlNum("A2", "1"), xlNum("B2", "7")),
+			`<conditionalFormatting sqref="A1:E9 G1"><cfRule type="cellIs" dxfId="0" priority="1" operator="between"><formula>0</formula><formula>"x"</formula></cfRule>`+
+				`<cfRule type="colorScale" priority="2"><colorScale><cfvo type="percentile" val="50"/><cfvo type="max"/><color theme="1"/><color rgb="FF000000"/></colorScale></cfRule>`+
+				`<cfRule type="duplicateValues" dxfId="0" priority="3"/><cfRule type="top10" dxfId="0" priority="4" percent="1" rank="50" bottom="1"/>`+
+				`<cfRule type="aboveAverage" dxfId="0" priority="5" stdDev="1" aboveAverage="0"/><cfRule type="expression" dxfId="0" priority="6" stopIfTrue="1"><formula>A1</formula></cfRule>`+
+				`<cfRule type="containsText" dxfId="0" priority="7" text="cre"/><cfRule type="notContainsBlanks" dxfId="1" priority="8"/></conditionalFormatting>`+
+				`<extLst><ext><x14:conditionalFormattings xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">`+
+				`<x14:cfRule type="expression"/><xm:sqref>B1:B2</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst>`),
 	} {
 		f.Add(s, styles, strs, drawing)
 		f.Add(s, symbolStyles, strs, drawing)
 	}
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Cells: true, Spans: true}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Cells: true, Spans: true, DeepHidden: true}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
 	f.Fuzz(func(t *testing.T, sheet, styles, strs, drawing []byte) {
 		pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S"}, ooxmltest.Sheet{Name: "T", State: "hidden", Data: xlRow(1, `<c r="A1" t="s"><v>1</v></c>`)})
@@ -289,7 +298,7 @@ func FuzzPptx(f *testing.F) {
 	// A table in one of PowerPoint's built-in styles, which the file
 	// does not define.
 	f.Add(bytes.Replace(slide, []byte(style), []byte("{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"), 1), layout, master, extras[0])
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Spans: true}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Spans: true, DeepHidden: true}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
 	picture := jpegBytes(f, 2, 2)
 	f.Fuzz(func(t *testing.T, slide, layout, master, extra []byte) {

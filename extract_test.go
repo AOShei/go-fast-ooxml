@@ -530,3 +530,12 @@ func TestCorpus(t *testing.T) {
 	}
 	t.Logf("%d files: %v; slowest %s (%v)", n, counts, slowest.f.Name, slowest.dur.Round(time.Millisecond))
 }
+
+// pageCount returns the number of the document's parts apart from its
+// stored part, which comes last: its pages, sheets or slides.
+func pageCount(doc *gofastcore.Document) int {
+	if n := len(doc.Parts); n > 0 && doc.Parts[n-1].Kind == gofastcore.PartStored {
+		return n - 1
+	}
+	return len(doc.Parts)
+}

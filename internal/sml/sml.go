@@ -18,6 +18,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -28,8 +29,10 @@ import (
 // completely: hidden sheets, rows and columns and values a format blanks
 // (invisible), fonts under two points (tiny), text in the colour of its
 // cell (low_contrast), and invisible characters. Where conditional
-// formatting applies, the colours a cell shows depend on its value and
-// are not worked out: text there is not judged against its fill.
+// formatting gives a colour, the rules are decided from the stored values
+// and the cell is judged with the colours of those that match; where a
+// rule is a formula and it makes a difference whether it matches, the
+// cell is not judged, and a warning on the sheet counts it.
 const HiddenChecked = gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars
 
 // Config holds the limits that are this format's own.
@@ -90,6 +93,8 @@ type Book struct {
 	localNames  []localName
 	macroSheets bool
 	caches      []pivotCache
+	calculated  []calcField
+	extra       stored.Source // the VBA project and custom XML data
 	raw         []byte
 }
 
@@ -135,6 +140,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 	for _, rel := range rels {
 		byID[rel.ID] = rel
 	}
+	b.extra = stored.Find(pkg, rels)
 	load(main, func(s *xmlscan.Scanner) {
 		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start || s.Space() != ns.Sheet {
@@ -207,7 +213,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		}
 		switch {
 		case ns.IsRel(rel.Type, ns.RelStyles):
-			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, wb.theme) })
+			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, wb.theme, opts.DeepHidden) })
 		case ns.IsRel(rel.Type, ns.RelSharedStrings):
 			load(rel.Target, func(s *xmlscan.Scanner) {
 				var full bool
@@ -494,7 +500,7 @@ func (sh *sheet) chartContent() (sawImage bool) {
 func (sh *sheet) tablesOf(declared []declaredTable) []placed {
 	sh.order()
 	sh.sortDetails()
-	sh.unjudge()
+	sh.applyConditional(declared)
 	return sh.regions(declared)
 }
 

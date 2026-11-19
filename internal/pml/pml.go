@@ -20,6 +20,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -79,7 +80,8 @@ type shared struct {
 	sheets map[string]*layout
 	themes map[string]*themeEntry
 	images map[string]*gofastcore.Image
-	opaque map[string]bool // pictures: whether one hides what is behind it
+	opaque map[string]bool        // pictures: whether one hides what is behind it
+	grids  map[string]*media.Grid // pictures reduced to colours, for DeepHidden
 
 	// What the notes master [0] and the handout master [1] put on every
 	// page they make, read once, and the bytes of its text.
@@ -203,6 +205,7 @@ type Deck struct {
 	after    int64 // the decompression budget once the presentation part was read
 	external int   // links from the presentation to things outside the file
 	pages    sync.Pool
+	extra    stored.Source // the VBA project and custom XML data
 }
 
 // Open reads the presentation in main. It does not fail: what could not
@@ -215,6 +218,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 
 	rels, err := pkg.Rels(main)
 	p.note(opc.RelsName(main), err)
+	d.extra = stored.Find(pkg, rels)
 	byID := make(map[string]opc.Rel, len(rels))
 	for _, rel := range rels {
 		byID[rel.ID] = rel
@@ -279,11 +283,23 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 }
 
 // Len returns the number of parts: one for each slide, and one for a
-// presentation that has none.
-func (d *Deck) Len() int { return max(len(d.refs), 1) }
+// presentation that has none; then the stored part, if there is one.
+func (d *Deck) Len() int {
+	if i := d.Stored(); i >= 0 {
+		return i + 1
+	}
+	return max(len(d.refs), 1)
+}
 
-// Stored returns -1: a presentation has no stored part yet.
-func (d *Deck) Stored() int { return -1 }
+// Stored returns the index of the stored part, or -1 if the presentation
+// has nothing for one: what it stores and shows on no slide is the code of
+// its VBA project and custom XML data.
+func (d *Deck) Stored() int {
+	if d.extra.Empty() {
+		return -1
+	}
+	return max(len(d.refs), 1)
+}
 
 // Noun names the parts of a presentation.
 func (d *Deck) Noun() string { return "slides" }
@@ -303,6 +319,15 @@ func (d *Deck) Limited() bool { return d.p.exceeded.Load() }
 
 // Read reads the slide with the given index into a part.
 func (d *Deck) Read(ctx context.Context, index int) *unit.Result {
+	if index == d.Stored() {
+		p := stored.NewPart(ctx, index+1)
+		d.extra.Macros(ctx, d.p.pkg, p)
+		d.extra.XML(ctx, d.p.pkg, p)
+		res := &unit.Result{}
+		res.Limited = p.Finish()
+		res.Part, res.Damaged = p.Part, p.Damaged
+		return res
+	}
 	if len(d.refs) == 0 {
 		// A presentation with no slides, which a template may be. A
 		// document has at least one part, and this one says it is empty.

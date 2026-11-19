@@ -175,7 +175,8 @@ func match(list []placeholder, ref phRef, byNumber bool) *placeholder {
 type painted struct {
 	box   dml.Rect
 	color theme.Color
-	lit   bool // one known colour over all of the box
+	lit   bool     // one known colour over all of the box
+	fill  dml.Fill // otherwise, for DeepHidden: a gradient or a picture, upright
 }
 
 // layout is a slide layout or a slide master as the slides that use it
@@ -278,6 +279,7 @@ type props struct {
 	paint   dml.Fill // what fills it, its own or inherited
 	behind  theme.Color
 	lit     bool
+	under   []theme.Color // with DeepHidden, where it is not one colour: the colours behind its text
 }
 
 // shape is a shape that has been read, for ordering the page and for
@@ -321,9 +323,11 @@ type page struct {
 	bg         dml.Fill
 	found      *dml.ColorMap // a colour map the part states
 
-	// The background, resolved.
+	// The background, resolved: one colour, or with DeepHidden a gradient
+	// or a picture.
 	backdrop theme.Color
 	lit      bool
+	bgFill   dml.Fill
 
 	shapes  []shape
 	blocks  []gofastcore.Block
@@ -530,7 +534,7 @@ func (pg *page) background() {
 				}
 				if f, ok := dml.ReadFill(s); ok {
 					if pg.bg.Paint == dml.PaintUnset {
-						pg.bg = f
+						pg.bg = pg.resolveFill(f)
 					}
 					continue
 				}
@@ -553,11 +557,15 @@ func (pg *page) settle() {
 	for l := pg.parent; fill.Paint == dml.PaintUnset && l != nil; l = l.master {
 		fill = l.bg
 	}
+	pg.bgFill = dml.Fill{}
 	switch fill.Paint {
 	case dml.PaintUnset, dml.PaintNone:
 		pg.backdrop, pg.lit = theme.White, true
 	default:
 		pg.backdrop, pg.lit = pg.pal.Opaque(fill, nil)
+		if !pg.lit && fill.Paint == dml.PaintOther {
+			pg.bgFill = fill
+		}
 	}
 	// Each shape may be compared with a few others; a page that asks for
 	// more than this is not checked to the end, and says so.
@@ -701,7 +709,7 @@ func (pg *page) shapeProps(sh *props) {
 		}
 		if f, ok := dml.ReadFill(s); ok {
 			if sh.fill.Paint == dml.PaintUnset {
-				sh.fill = f
+				sh.fill = pg.resolveFill(f)
 			}
 			continue
 		}
@@ -780,22 +788,26 @@ func (pg *page) place(sh *props, g *group) {
 	for in := sh.in; sh.paint.Paint == dml.PaintUnset && in != nil; in = in.up {
 		sh.paint = in.fill
 	}
+	sh.under = nil
 	switch sh.paint.Paint {
 	case dml.PaintSolid:
 		sh.behind, sh.lit = pg.pal.Opaque(sh.paint, nil)
 	case dml.PaintOther:
 		sh.lit = false
+		if sh.boxed && sh.upright {
+			sh.under = pg.samples(sh.paint, sh.box, sh.box)
+		}
 	default:
-		sh.behind, sh.lit = pg.behind(sh.box, sh.boxed)
+		sh.behind, sh.lit, sh.under = pg.behind(sh.box, sh.boxed)
 	}
 }
 
 // behind works out what something in the given box, with no fill of its
 // own, is seen against: the last thing painted under it, if that is one
 // colour over the whole box, or the page's background if nothing is.
-func (pg *page) behind(box dml.Rect, boxed bool) (theme.Color, bool) {
+func (pg *page) behind(box dml.Rect, boxed bool) (theme.Color, bool, []theme.Color) {
 	if pg.role.paper() {
-		return theme.White, true // a notes page is paper
+		return theme.White, true, nil // a notes page is paper
 	}
 	// What the layout and the master draw is under the slide's shapes,
 	// unless the slide hides it; a layout may hide its master's.
@@ -818,27 +830,33 @@ func (pg *page) behind(box dml.Rect, boxed bool) (theme.Color, bool) {
 		// Where it is, or where something painted is, is not known: it is
 		// seen against the background only if nothing is painted at all.
 		if len(lists[0])+len(lists[1])+len(lists[2]) == 0 && !loose {
-			return pg.backdrop, pg.lit
+			return pg.backdrop, pg.lit, nil
 		}
-		return theme.Color{}, false
+		return theme.Color{}, false, nil
 	}
 	for _, list := range lists {
 		for i := len(list) - 1; i >= 0; i-- {
 			if pg.effort--; pg.effort < 0 {
 				pg.skipped++
-				return theme.Color{}, false
+				return theme.Color{}, false, nil
 			}
 			pt := &list[i]
 			if !pt.box.Overlaps(box) {
 				continue
 			}
 			if pt.lit && pt.box.Contains(box) {
-				return pt.color, true
+				return pt.color, true, nil
 			}
-			return theme.Color{}, false
+			if pt.fill.Paint == dml.PaintOther && pt.box.Contains(box) {
+				return theme.Color{}, false, pg.samples(pt.fill, pt.box, box)
+			}
+			return theme.Color{}, false, nil
 		}
 	}
-	return pg.backdrop, pg.lit
+	if !pg.lit && pg.bgFill.Paint == dml.PaintOther {
+		return pg.backdrop, false, pg.samples(pg.bgFill, dml.Rect{X1: pg.p.width, Y1: pg.p.height}, box)
+	}
+	return pg.backdrop, pg.lit, nil
 }
 
 // paints records that the shape paints its box, for text drawn after it.
@@ -853,6 +871,9 @@ func (pg *page) paints(sh *props, lit bool) {
 	pt := painted{box: sh.box}
 	if lit && sh.upright {
 		pt.color, pt.lit = sh.behind, sh.lit
+	}
+	if sh.upright && sh.paint.Paint == dml.PaintOther && pg.p.opts.DeepHidden {
+		pt.fill = sh.paint
 	}
 	pg.paint = append(pg.paint, pt)
 }

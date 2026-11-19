@@ -88,6 +88,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		parts    = flags.String("parts", "", "parts to read, by number: 3, or 2-5 (the body of a Word document is part 1; sheets and slides count from 1)")
 		images   = flags.String("images", "meta", "pictures: meta (a block for each, with its place, size and alternative text), data (their bytes too) or none")
 		spans    = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
+		deep     = flags.Bool("deep-hidden", false, "also judge text against the gradients and pictures under it, which takes decoding the pictures")
 		workers  = flags.Int("workers", 0, "sheets or slides read at a time (0: one for each CPU)")
 		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
 		maxSpin  = flags.Int("max-spin-count", 0, "rounds of hashing an encrypted file may ask for to try a password (0: the default, 1 million; -1: no limit)")
@@ -128,7 +129,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if *format != "json" && *format != "markdown" && *format != "text" {
 		return fail("unknown format %q: json, markdown or text", *format)
 	}
-	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password}
+	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password, DeepHidden: *deep}
 	opts.Limits.MaxDecodedBytes, opts.Limits.MaxTextBytes = *maxBytes, *maxText
 	switch *images {
 	case "none":

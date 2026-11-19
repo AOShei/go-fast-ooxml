@@ -432,18 +432,66 @@ func TestExcelCellsThatHideTheirText(t *testing.T) {
 // Conditional formatting changes colours by value, which this library
 // does not work out. White text in such a range is not judged; white text
 // outside it still is.
-func TestExcelConditionalFormattingIsNotJudged(t *testing.T) {
-	styles := xlStyles(nil, []string{`<sz val="11"/><color rgb="FFFFFFFF"/>`, `<sz val="1"/><color rgb="FFFFFFFF"/>`}, nil,
-		`numFmtId="0" fontId="0" fillId="0"`, `numFmtId="0" fontId="1" fillId="0"`, `numFmtId="0" fontId="2" fillId="0"`)
-	data := xlRow(1, xlStyledStr("A1", 1, "white, outside"), xlStyledStr("B1", 1, "white, in a range"), xlStyledStr("C1", 1, "white, in another"), xlStyledStr("D1", 2, "white and tiny, in a range"), xlStyledStr("E1", 1, "white, in a newer kind"))
-	extra := `<conditionalFormatting sqref="B1:B9 C1"><cfRule type="cellIs" dxfId="0" priority="1" operator="greaterThan"><formula>5</formula></cfRule></conditionalFormatting>` +
-		`<conditionalFormatting sqref="D1"><cfRule type="colorScale" priority="2"/></conditionalFormatting>` +
+// Whether text can be seen is judged with the colours conditional
+// formatting gives where its rules match, as Excel decides them from the
+// stored values; a rule that gives no colour changes nothing, and one
+// that is a formula leaves the cells where it makes a difference
+// unjudged, and counted. A sheet read a band at a time is judged alike.
+func TestExcelConditionalFormatting(t *testing.T) {
+	styles := xlStyles(nil, []string{`<sz val="11"/><color rgb="FFFFFFFF"/>`, `<sz val="11"/><color rgb="FF000000"/>`}, nil,
+		`numFmtId="0" fontId="0" fillId="0"`, `numFmtId="0" fontId="1" fillId="0"`, `numFmtId="0" fontId="2" fillId="0"`) +
+		`<dxfs count="3"><dxf><fill><patternFill><bgColor rgb="FF000000"/></patternFill></fill></dxf>` + // 0: a black fill
+		`<dxf><font><color rgb="FFFFFFFF"/></font></dxf>` + // 1: white text
+		`<dxf><font><b/></font></dxf></dxfs>` // 2: bold, no colour
+	rule := func(sqref, attrs, formula string) string {
+		f := ""
+		if formula != "" {
+			f = `<formula>` + ooxmltest.EscapeXML(formula) + `</formula>`
+		}
+		return `<conditionalFormatting sqref="` + sqref + `"><cfRule ` + attrs + `>` + f + `</cfRule></conditionalFormatting>`
+	}
+	data := xlRow(1, xlStyledStr("A1", 1, "white, no rule"), xlStyled("B1", 1, "10"), xlStyled("C1", 1, "3"), xlStr("D1", "Secret plan"),
+		xlStr("E1", "public"), xlStyledStr("F1", 1, "white, a formula"), xlStr("G1", "bold by a formula"), xlStyledStr("H1", 1, "white, a data bar")) +
+		// Black text, under a scale from a white fill to a black one.
+		xlRow(2, xlStyled("A2", 2, "1"), xlStyled("B2", 2, "2"), xlStyled("C2", 2, "3")) +
+		xlRow(3, xlStr("A3", "x"), xlStr("B3", "X"), xlStr("C3", "y")) +
+		xlRow(4, xlNum("A4", "5"), xlNum("B4", "9"), xlNum("C4", "7")) +
+		xlRow(5, xlNum("A5", "10"), xlNum("B5", "3"))
+	extra := rule("B1:C1", `type="cellIs" dxfId="0" priority="1" operator="greaterThan"`, "5") +
+		rule("D1:E1", `type="containsText" dxfId="1" priority="2" operator="containsText" text="SECRET"`, `NOT(ISERROR(SEARCH("SECRET",D1)))`) +
+		rule("F1", `type="expression" dxfId="0" priority="3"`, "$Z$1>0") +
+		rule("G1", `type="expression" dxfId="2" priority="4"`, "$Z$1>0") +
+		`<conditionalFormatting sqref="A2:C2"><cfRule type="colorScale" priority="5"><colorScale><cfvo type="min"/><cfvo type="max"/>` +
+		`<color rgb="FFFFFFFF"/><color rgb="FF000000"/></colorScale></cfRule></conditionalFormatting>` +
+		rule("A3:C3", `type="duplicateValues" dxfId="1" priority="6"`, "") +
+		rule("A4:C4", `type="top10" dxfId="1" priority="7" rank="1"`, "") +
+		rule("A5:B5", `type="cellIs" dxfId="2" priority="8" operator="greaterThan" stopIfTrue="1"`, "5") +
+		rule("A5:B5", `type="cellIs" dxfId="1" priority="9" operator="greaterThan"`, "0") +
 		`<extLst><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"><x14:conditionalFormattings xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">` +
-		`<x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><x14:cfRule type="dataBar" id="{1}"/><xm:sqref>E1:E5</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst>`
-	expectSheets(t, excel(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "C", Data: data, Extra: extra}).WithSheetStyles(styles), nil),
+		`<x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><x14:cfRule type="dataBar" id="{1}"/><xm:sqref>H1:H5</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst>`
+	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "C", Data: data, Extra: extra}).WithSheetStyles(styles)
+	doc := excel(t, pkg, nil)
+	expectSheets(t, doc,
 		`sheet 1 "C"`,
-		`  table A1:E1 inferred hidden=tiny+low_contrast [["white, outside" "white, in a range" "white, in another" "white and tiny, in a range" "white, in a newer kind"]] hidden(0,0 1x1 low_contrast) hidden(0,3 1x1 tiny)`,
+		`  table A1:H5 inferred hidden=low_contrast [["white, no rule" "10" "3" "Secret plan" "public" "white, a formula" "bold by a formula" "white, a data bar"] ["1" "2" "3" "" "" "" "" ""] ["x" "X" "y" "" "" "" "" ""] ["5" "9" "7" "" "" "" "" ""] ["10" "3" "" "" "" "" "" ""]] `+
+			`hidden(0,0 1x1 low_contrast) hidden(0,2 1x2 low_contrast) hidden(0,7 1x1 low_contrast) hidden(1,2 1x1 low_contrast) hidden(2,0 1x2 low_contrast) hidden(3,1 2x1 low_contrast)`,
 	)
+	if p := doc.Parts[0]; !p.Has(gofastooxml.WarnHiddenUnchecked) {
+		t.Errorf("no warning of the cell not judged: %v", p.Warnings)
+	}
+	// A band at a time, the same.
+	f, err := gofastooxml.OpenBytes(pkg.Bytes(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bands []gofastcore.Part
+	for part, err := range f.Rows(context.Background(), 1, 2) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		bands = append(bands, part)
+	}
+	sameCells(t, "bands of 2", cellsOf(t, bands...), cellsOf(t, doc.Parts[0]))
 }
 
 // A column of a thousand cells in white is one region, not a thousand.

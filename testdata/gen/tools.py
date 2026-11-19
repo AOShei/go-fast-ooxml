@@ -488,6 +488,29 @@ def openpyxl_pivots(path):
     return json.dumps({"sheets": out, "caches": caches}, ensure_ascii=False)
 
 
+def olevba_modules(path):
+    """The modules of the file's VBA project as olevba (oletools) reads
+    them, as JSON: each module's name and source code, decoded with the
+    project's code page. It is the oracle for macro code in the stored
+    part.
+    """
+    import json
+
+    from oletools.olevba import VBA_Parser
+
+    parser = VBA_Parser(path)
+    out = []
+    try:
+        if parser.detect_vba_macros():
+            for _, _, filename, code in parser.extract_macros():
+                if isinstance(code, bytes):
+                    code = code.decode("latin-1")
+                out.append({"name": filename, "code": code})
+    finally:
+        parser.close()
+    return json.dumps(out, ensure_ascii=False)
+
+
 # Adapters that are test oracles only: they do not extract text, so they are
 # not part of the baseline measurements.
 ORACLES = {
@@ -498,6 +521,7 @@ ORACLES = {
     "python-pptx-charts": ("python-pptx", python_pptx_charts, {"pptx"}),
     "openpyxl-charts": ("openpyxl", openpyxl_charts, {"xlsx"}),
     "openpyxl-pivots": ("openpyxl", openpyxl_pivots, {"xlsx"}),
+    "olevba-modules": ("oletools", olevba_modules, {"docx", "xlsx", "pptx"}),
     "msoffcrypto-decrypt": ("msoffcrypto-tool", msoffcrypto_decrypt, {"docx", "xlsx", "pptx"}),
 }
 

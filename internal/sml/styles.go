@@ -5,6 +5,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
@@ -31,6 +32,9 @@ type cellStyle struct {
 	ink             theme.Color
 	fill            uint8
 	fillColor       theme.Color
+	// With DeepHidden, the colours of a gradient fill (fill 2), which text
+	// is judged against as against one colour.
+	stops []theme.Color
 }
 
 type styleSheet struct {
@@ -107,10 +111,11 @@ type fontInfo struct {
 type fillInfo struct {
 	kind  uint8 // 0 none, 1 one colour, 2 something else: a pattern, a gradient
 	color colorRef
+	stops []colorRef // of a gradient
 }
 
 // readStyles reads a styles part.
-func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
+func readStyles(s *xmlscan.Scanner, th *theme.Scheme, deep bool) *styleSheet {
 	codes := map[int]string{}
 	type dxfRef struct {
 		ink, fill colorRef
@@ -196,6 +201,8 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 						}
 					case s.Depth() == inner+1:
 						f.kind = 2 // a gradient
+					case s.Depth() == inner+3 && s.Is(ns.Sheet, "color") && len(f.stops) < 16:
+						f.stops = append(f.stops, readColorRef(s)) // a stop of a gradient
 					case s.Depth() == inner+2 && s.Is(ns.Sheet, "fgColor"):
 						// The colour of a solid fill is its foreground.
 						f.color = readColorRef(s)
@@ -309,6 +316,9 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 				}
 			case 2:
 				cs.fill = 2
+				if deep {
+					cs.stops = resolveAll(fill.stops, resolve)
+				}
 			}
 		}
 		if x.font >= 0 && x.font < len(fonts) {
@@ -331,11 +341,30 @@ func readStyles(s *xmlscan.Scanner, th *theme.Scheme) *styleSheet {
 				if known && gofastcore.LowContrast(ink.R, ink.G, ink.B, behind.R, behind.G, behind.B) {
 					cs.hidden |= gofastcore.HiddenLowContrast
 				}
+				if !known && dml.LowOnMost(ink, 1, cs.stops) {
+					cs.hidden |= gofastcore.HiddenLowContrast
+				}
 			}
 		}
 		st.styles[i] = cs
 	}
 	return st
+}
+
+// resolveAll resolves every colour, or gives nil if any is not known.
+func resolveAll(refs []colorRef, resolve func(colorRef) (theme.Color, bool)) []theme.Color {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]theme.Color, len(refs))
+	for i, c := range refs {
+		rgb, ok := resolve(c)
+		if !ok {
+			return nil
+		}
+		out[i] = rgb
+	}
+	return out
 }
 
 func intAttr(s *xmlscan.Scanner, name string) (int, bool) {

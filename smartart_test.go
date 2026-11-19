@@ -175,14 +175,14 @@ func TestSmartArtAsLibreOffice(t *testing.T) {
 			continue
 		}
 		lo, ok := ooxmltest.LibreOfficeSlidesOK(t, data)
-		if !ok || len(lo) != len(doc.Parts) {
+		if !ok || len(lo) != pageCount(doc) {
 			continue
 		}
 		dgm := map[string]bool{}
 		for k := range diagramTexts(data) {
 			dgm[norm(k)] = true
 		}
-		for k := range doc.Parts {
+		for k := range pageCount(doc) {
 			if doc.Parts[k].Hidden != 0 {
 				continue // a hidden slide: everything on it is flagged
 			}

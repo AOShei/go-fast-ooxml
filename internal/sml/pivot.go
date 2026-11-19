@@ -19,6 +19,15 @@ import (
 // the records are data the file holds and shows nowhere: they are read
 // into the stored part, as a table flagged hidden.
 
+// calcField is a calculated field of a cache: a formula over the other
+// fields, which no cell shows.
+type calcField struct {
+	name, formula string
+}
+
+// maxCalculated bounds the calculated fields kept from a workbook.
+const maxCalculated = 1 << 12
+
 // pivotCache is a cache the workbook lists.
 type pivotCache struct {
 	target string // its definition part
@@ -50,7 +59,8 @@ func (b *Book) readCaches(s *xmlscan.Scanner, byID map[string]opc.Rel) {
 
 // judgeCaches decides, for each cache, whether its source is in the
 // workbook. A source named by a table or a defined name is in it if the
-// workbook has a table or name of that name.
+// workbook has a table or name of that name. It also reads the formulas
+// of the caches' calculated fields.
 func (b *Book) judgeCaches() {
 	sheets := map[string]bool{}
 	for _, r := range b.refs {
@@ -71,9 +81,9 @@ func (b *Book) judgeCaches() {
 		if err != nil {
 			continue
 		}
-		typ, sheet, name, external, found := "", "", "", false, false
+		typ, sheet, name, external := "", "", "", false
 		consolidation := []string{}
-		for s.Next() != xmlscan.EOF && !found {
+		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start {
 				continue
 			}
@@ -97,8 +107,19 @@ func (b *Book) judgeCaches() {
 				if v, ok := s.Attr(xmlscan.NoSpace, "sheet"); ok && len(consolidation) < 256 {
 					consolidation = append(consolidation, string(v))
 				}
-			case s.Is(ns.Sheet, "cacheFields"):
-				found = true // the source comes before the fields
+			case s.Is(ns.Sheet, "cacheField"):
+				// A calculated field has a formula; what it holds of
+				// values is not wanted here.
+				if f, ok := s.Attr(xmlscan.NoSpace, "formula"); ok && len(b.calculated) < maxCalculated {
+					formula, _ := clean.String(f, clean.Prose)
+					n, _ := s.Attr(xmlscan.NoSpace, "name")
+					if formula != "" {
+						b.calculated = append(b.calculated, calcField{name: clean.Name(string(n)), formula: strings.TrimPrefix(formula, "=")})
+					}
+				}
+				s.Skip()
+			case s.Is(ns.Sheet, "extLst"), s.Is(ns.Sheet, "cacheHierarchies"), s.Is(ns.Sheet, "kpis"), s.Is(ns.Sheet, "dimensions"):
+				s.Skip()
 			}
 		}
 		closer.Close()

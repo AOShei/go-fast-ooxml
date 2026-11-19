@@ -56,11 +56,10 @@ type sheet struct {
 	hiddenRows []int32
 	hiddenCols []span
 	merges     []rect
-	varying    []rect    // where conditional formatting may change how cells look
-	varyAll    bool      // or everywhere: a range of it could not be read
-	tables     []string  // parts of the tables the sheet declares
-	charts     []opc.Rel // what the charts read embed: their workbooks
-	chartSheet bool      // a sheet that is one chart
+	cond       conditional // conditional formatting (conditional.go)
+	tables     []string    // parts of the tables the sheet declares
+	charts     []opc.Rel   // what the charts read embed: their workbooks
+	chartSheet bool        // a sheet that is one chart
 	lists      []choiceList
 	listRanges int // the ranges of all of them
 	drawings   []string
@@ -184,16 +183,11 @@ func (sh *sheet) read() {
 			}
 		case "conditionalFormatting":
 			// Formatting that depends on values: a cell's colours there
-			// are not what its style says.
-			if v, ok := s.Attr(xmlscan.NoSpace, "sqref"); ok {
-				sh.vary(v)
-			}
-			s.Skip()
+			// may not be what its style says.
+			sh.readConditional(s)
 		case "extLst":
-			// Newer kinds of conditional formatting are kept here, with
-			// their ranges as text.
-			// Newer data validations are kept here too: their lists are
-			// read, and their ranges are not conditional formatting.
+			// Newer kinds of conditional formatting are kept here, and
+			// newer data validations, whose lists are read.
 			depth := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 				if s.Kind() != xmlscan.Start {
@@ -206,9 +200,8 @@ func (sh *sheet) read() {
 					} else {
 						s.Skip()
 					}
-				case "sqref":
-					sh.raw = s.AppendText(sh.raw[:0])
-					sh.vary(sh.raw)
+				case "conditionalFormatting":
+					sh.readExtConditional(s)
 				}
 			}
 		case "dataValidations":
@@ -255,46 +248,6 @@ const (
 	maxTables  = 1 << 12
 	maxVarying = 1 << 12
 )
-
-// vary records the ranges of a conditional format: a list such as
-// "A1:B9 D4".
-func (sh *sheet) vary(sqref []byte) {
-	for _, ref := range bytes.Fields(sqref) {
-		r, ok := parseRange(ref)
-		if !ok || len(sh.varying) >= maxVarying {
-			sh.varyAll = true
-			return
-		}
-		sh.varying = append(sh.varying, r)
-	}
-}
-
-// unjudge takes back the judgement that a cell's text is in the colour of
-// its fill wherever conditional formatting applies: the colours shown
-// there depend on the values, and are not worked out.
-func (sh *sheet) unjudge() {
-	if !sh.varyAll && len(sh.varying) == 0 {
-		return
-	}
-	var judged []int
-	for i := range sh.cells {
-		if sh.cells[i].hidden&gofastcore.HiddenLowContrast != 0 {
-			judged = append(judged, i)
-		}
-	}
-	all := sh.varyAll || len(judged)*len(sh.varying) > 1<<22
-	for _, i := range judged {
-		c := &sh.cells[i]
-		clear := all
-		for k := 0; !clear && k < len(sh.varying); k++ {
-			r := sh.varying[k]
-			clear = c.row >= r.r0 && c.row <= r.r1 && c.col >= r.c0 && c.col <= r.c1
-		}
-		if clear {
-			c.hidden &^= gofastcore.HiddenLowContrast
-		}
-	}
-}
 
 // target returns the part that the current element's r:id names, if the
 // relationship is of the given kind and stays inside the package.

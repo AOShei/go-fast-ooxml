@@ -358,6 +358,11 @@ func (p *Package) Budget() int64 { return p.budget.Load() }
 // Restore sets the decompression budget. See Budget.
 func (p *Package) Restore(budget int64) { p.budget.Store(budget) }
 
+// Charge takes n bytes from the decompression budget, for what a reader
+// decompresses itself from a part it has read (the code of a VBA project).
+// It reports false if the budget has run out.
+func (p *Package) Charge(n int64) bool { return p.budget.Add(-n) >= 0 }
+
 // Open returns a reader for a part's decompressed content. Every byte read
 // is charged to the package's budget, and a read that goes over it fails
 // with ErrBudget, so no part can expand without bound however small it is

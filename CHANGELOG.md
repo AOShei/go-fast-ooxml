@@ -42,9 +42,16 @@ when the work planned before the release is done.
 - With `Options.Cells`, the formulas of cells (shared formulas moved to
   each cell) and the types and stored values of what they hold; with
   `Options.Spans`, cell hyperlinks; both in `Table.Cells`.
-- A last part of kind `stored` for what a workbook stores and shows on no
-  sheet: defined names and the code of Excel 4 macro sheets, flagged as
-  hidden.
+- A last part of kind `stored`, in all three formats, for what a file
+  stores and shows nowhere, flagged as hidden: the code of VBA projects,
+  custom XML data, Word's document variables, Excel's defined names, the
+  code of Excel 4 macro sheets, and the formulas of pivot caches'
+  calculated fields.
+- Word's field codes as `note` blocks of type `field` after their
+  paragraph, flagged as hidden.
+- Equations in Word and PowerPoint written in UnicodeMath, with their
+  structure; a Word display equation as a `formula` block.
+- The command's `-deep-hidden`.
 - Excel's drop-down lists as `note` blocks of type `choices` at their
   cells: the values, one per line, or the reference they are taken from.
 - Charts in all three formats, both kinds, as a caption with the title
@@ -80,6 +87,11 @@ when the work planned before the release is done.
 - Contrast in tables is judged against what their table style paints:
   Excel's 60 built-in styles from the standard, the workbook's own, and
   PowerPoint's built-in styles that a file names without defining.
+- Contrast in Excel is judged with the colours conditional formatting
+  gives, its rules decided from stored values; cells whose colours depend
+  on formulas are counted by `ooxml.hidden_unchecked`.
+- Floating text boxes in Word off the page or under an opaque drawing.
+- With `Options.DeepHidden`, text judged against gradients and pictures.
 - A file protected by rights management is refused with a message that
   says what it is.
 - Macros, external references and encrypted content are reported, never

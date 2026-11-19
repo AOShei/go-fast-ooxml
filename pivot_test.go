@@ -202,7 +202,7 @@ func TestPivotTablesAndCaches(t *testing.T) {
 	// 1: from a sheet of the workbook. 2: from a connection, with records.
 	// 3: from another workbook's sheet that is not here, no records.
 	pkg.Add("xl/pivotCache/pivotCacheDefinition1.xml", ct, cacheDef(`<cacheSource type="worksheet"><worksheetSource ref="A1:B2" sheet="Data"/></cacheSource>`,
-		`<cacheField name="Region"><sharedItems/></cacheField>`, false))
+		`<cacheField name="Region"><sharedItems/></cacheField><cacheField name="Margin" formula="Sales*0.1" databaseField="0"><sharedItems/></cacheField>`, false))
 	pkg.Add("xl/pivotCache/pivotCacheDefinition2.xml", ct, cacheDef(`<cacheSource type="external" connectionId="1"/>`,
 		`<cacheField name="Customer"><sharedItems><s v="Ada"/><s v="Grace"/></sharedItems></cacheField><cacheField name="Spent"><sharedItems containsNumber="1"/></cacheField>`+
 			`<cacheField name="When"><sharedItems/></cacheField><cacheField name="Paid"><sharedItems/></cacheField>`, true))
@@ -225,5 +225,6 @@ func TestPivotTablesAndCaches(t *testing.T) {
 		`stored 2 "" hidden=invisible`,
 		`  table  hidden=invisible stored=pivot_cache header=1 [["Customer" "Spent" "When" "Paid"] ["Grace" "1250.5" "2026-03-04" "TRUE"] ["Ada" "7" "2026-03-05T14:30:00" ""]]`,
 		`  table  hidden=invisible stored=pivot_cache header=1 [["Code" "Kind"] ["X1" "old"] ["Y2" ""]]`,
+		`  paragraph  "Margin: =Sales*0.1" hidden=invisible name=Margin stored=pivot_cache`,
 	)
 }

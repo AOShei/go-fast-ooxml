@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
@@ -31,6 +32,9 @@ type color struct {
 	set, auto bool
 	unknown   bool // there is a colour, and it could not be worked out
 	r, g, b   uint8
+	// With DeepHidden, what an unknown colour is made of: the stops of a
+	// gradient, the colours of a picture.
+	under []theme.Color
 }
 
 var white = color{set: true, r: 255, g: 255, b: 255}
@@ -352,7 +356,12 @@ func (p *runProps) hiddenReasons(background color) gofastcore.Hidden {
 		if !behind.set || behind.auto {
 			behind = white
 		}
-		if !behind.unknown && gofastcore.LowContrast(p.color.r, p.color.g, p.color.b, behind.r, behind.g, behind.b) {
+		switch {
+		case !behind.unknown:
+			if gofastcore.LowContrast(p.color.r, p.color.g, p.color.b, behind.r, behind.g, behind.b) {
+				h |= gofastcore.HiddenLowContrast
+			}
+		case dml.LowOnMost(theme.Color{R: p.color.r, G: p.color.g, B: p.color.b}, 1, behind.under):
 			h |= gofastcore.HiddenLowContrast
 		}
 	}

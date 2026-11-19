@@ -105,12 +105,14 @@ const (
 	// extracted all the same.
 	WarnIntegrityMismatch = "ooxml.integrity_mismatch"
 
-	// The code below is raised while a PowerPoint presentation is read.
+	// The code below is raised while a presentation or a workbook is read.
 
-	// WarnHiddenUnchecked: a slide has more overlapping shapes than the
-	// hidden-text checks compare. Some of its text was not compared with
-	// what lies under it (low_contrast) or over it (occluded), so the
-	// absence of those flags on the slide says less than usual.
+	// WarnHiddenUnchecked: some text was not compared with what lies
+	// under it (low_contrast) or over it (occluded), so the absence of
+	// those flags on the part says less than usual. On a slide: it has
+	// more overlapping shapes than the checks compare. On a sheet: cells
+	// have colours that conditional formatting gives by rules that are
+	// formulas, which are not evaluated.
 	WarnHiddenUnchecked = warn.HiddenUnchecked
 )
 

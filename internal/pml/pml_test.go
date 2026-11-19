@@ -2,6 +2,7 @@ package pml
 
 import (
 	"bytes"
+	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"image"
 	"image/color"
 	"image/gif"
@@ -54,7 +55,7 @@ func TestOpaqueHeader(t *testing.T) {
 		"nothing":                          {nil, false},
 		"a PNG cut off in its header":      {encode(opaqueRGBA, "png")[:20], false},
 	} {
-		if got := opaqueHeader(c.data); got != c.want {
+		if got := media.OpaqueHeader(c.data); got != c.want {
 			t.Errorf("%s: %v, want %v", name, got, c.want)
 		}
 	}
