@@ -95,10 +95,17 @@ func (f *File) unlock(ctx context.Context) error {
 		// Too damaged to say what it holds.
 		return fmt.Errorf("gofastooxml: a compound file, the container of legacy binary and of encrypted Office files, that cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
 	}
+	// Rights management ([MS-OFFCRYPTO] 2.2.11, 2.6): the content is
+	// encrypted with a key held in a licence that a rights-management
+	// server issues to the people the document names.
+	rights := cf.Has("\x06DataSpaces", "DataSpaceInfo", "\x09DRMEncryptedDataSpace") ||
+		cf.Has("\x06DataSpaces", "TransformInfo", "\x09DRMEncryptedTransform") || cf.Has("\x09DRMContent")
 	switch {
+	case rights:
+		return fmt.Errorf("gofastooxml: %s: %w", rightsManaged, gofastcore.ErrUnsupported)
 	case cf.Has("EncryptionInfo") && cf.Has("EncryptedPackage"):
-	case cf.Has("\x06DataSpaces") || cf.Has("EncryptedPackage") || cf.Has("\x09DRMContent"):
-		return fmt.Errorf("gofastooxml: encrypted Office document that is not protected with a password (rights management): %w", gofastcore.ErrUnsupported)
+	case cf.Has("\x06DataSpaces") || cf.Has("EncryptedPackage"):
+		return fmt.Errorf("gofastooxml: encrypted Office document that is not protected with a password, and whose encryption is not stated: %w", gofastcore.ErrUnsupported)
 	default:
 		return fmt.Errorf("gofastooxml: %s: %w", legacy, gofastcore.ErrUnsupported)
 	}
@@ -178,3 +185,8 @@ func (f *File) unlock(ctx context.Context) error {
 }
 
 var _ io.ReaderAt = (*crypt.Package)(nil)
+
+// rightsManaged says what a rights-managed file is, as the error about it.
+const rightsManaged = "encrypted Office document protected by rights management (Information Rights Management): " +
+	"its key is in a licence that a rights-management server issues to the people the document names, " +
+	"and this library contacts no server"

@@ -216,6 +216,11 @@ unencrypted, with an `ooxml.decrypted` warning that names the scheme.
 certificate, ciphers other than AES, and the legacy binary formats
 (`.doc`, `.xls`, `.ppt`), which share the container of encrypted files:
 each is refused with `ErrUnsupported` and a message that says which it is.
+A file protected by rights management cannot be read here at all: its key
+is in a licence that a rights-management server issues to the people the
+document names, and this library contacts no server. The message says so,
+and an embedded one is listed with `child.unsupported` and the same
+message.
 
 ## Excel workbooks
 
