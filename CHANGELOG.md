@@ -21,7 +21,7 @@ when the work planned before the release is done.
 - **Excel** (`.xlsx`, `.xlsm`, `.xltx`, `.xltm`): every sheet as a part,
   its cells as tables with what each cell displays (number formats, dates
   in ISO 8601, stored results of formulas), declared tables with their
-  names, merged cells, comments, drop-down lists, text in shapes with its
+  names, pivot tables, merged cells, comments, drop-down lists, text in shapes with its
   links, pictures, embedded files. Sheets are read in parallel.
 - **PowerPoint** (`.pptx`, `.pptm`, `.ppsx`, `.ppsm`, `.potx`, `.potm`):
   every slide as a part, with titles, body text with bullets and numbers,
@@ -51,6 +51,9 @@ when the work planned before the release is done.
   and tables of their data with role `chart`, the chart's type, name and
   axis titles; series a filter leaves out, flagged invisible; Excel chart
   sheets; the workbook a chart embeds as an embedded file.
+- Pivot tables, as one table with role `pivot` and the pivot table's name;
+  the records of pivot caches whose source is not in the workbook, in the
+  stored part, flagged.
 - SmartArt in all three formats: the text of each node as list items in
   the model's order and nesting, placed and judged for hidden text by the
   drawing Office made of it; nodes the layout draws nowhere flagged
@@ -84,6 +87,6 @@ when the work planned before the release is done.
 
 ### Not in this release
 
-- Pivot tables, the binary workbook format
+- The binary workbook format
   (`.xlsb`), and the legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files encrypted for a certificate or protected by rights management.

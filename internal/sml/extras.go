@@ -21,6 +21,7 @@ type declaredTable struct {
 	headerRows int
 	totalRows  int
 	name       string // the name Excel shows for it
+	role       string // gofastcore.RolePivot for a pivot table; empty for a table
 	// Its style, and which of the style's elements it shows.
 	style                                              string
 	firstColumn, lastColumn, rowStripes, columnStripes bool
@@ -75,6 +76,51 @@ func (sh *sheet) declared() []declaredTable {
 				}
 				out = append(out, t)
 				return
+			}
+		})
+	}
+	return sh.pivots(out)
+}
+
+// maxPivots bounds the pivot tables read from a sheet.
+const maxPivots = 1 << 10
+
+// pivots adds the sheet's pivot tables to its declared tables. Each says
+// which cells it fills; what they show is in the cells, written when the
+// pivot table was last laid out, and is read from there as one table.
+func (sh *sheet) pivots(out []declaredTable) []declaredTable {
+	n := 0
+	for _, rel := range sh.list {
+		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) || n >= maxPivots {
+			continue
+		}
+		n++
+		sh.load(rel.Target, func(s *xmlscan.Scanner) {
+			t := declaredTable{role: gofastcore.RolePivot}
+			for s.Next() != xmlscan.EOF {
+				if s.Kind() != xmlscan.Start {
+					continue
+				}
+				switch {
+				case s.Is(ns.Sheet, "pivotTableDefinition"):
+					if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+						t.name = clean.Name(string(v))
+					}
+				case s.Is(ns.Sheet, "location"):
+					ref, _ := s.Attr(xmlscan.NoSpace, "ref")
+					at, ok := parseRange(ref)
+					if !ok {
+						return
+					}
+					t.at = at
+					// The rows above the first row of values are its
+					// headers: the labels of the column fields.
+					if n, ok := intAttr(s, "firstDataRow"); ok && n > 0 {
+						t.headerRows = int(min(int64(n), int64(at.r1-at.r0+1)))
+					}
+					out = append(out, t)
+					return
+				}
 			}
 		})
 	}
