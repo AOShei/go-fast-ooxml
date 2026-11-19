@@ -16,6 +16,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
@@ -106,6 +107,7 @@ type reader struct {
 	children       map[string]bool              // embedded parts already handed on
 
 	inserted, deleted int  // tracked changes seen
+	fields            int  // codes of fields kept as notes
 	removed           int  // control characters removed
 	unmapped          int  // symbol-font characters with no known Unicode equivalent
 	flattened         int  // tables written as text
@@ -373,7 +375,12 @@ func (r *reader) readFurniture(name string, kind gofastcore.Kind, shown bool) []
 	p := r.newParser(name, byID)
 	var out []gofastcore.Block
 	add := func(b gofastcore.Block) {
-		if b.Kind == gofastcore.KindImage {
+		// Pictures stay pictures, and notes (the code of a field, a
+		// deletion) notes.
+		if b.Kind == gofastcore.KindImage || b.Kind == gofastcore.KindNote {
+			if !shown && b.Kind == gofastcore.KindNote {
+				hideWhole(&b, gofastcore.HiddenInvisible)
+			}
 			out = append(out, b)
 			return
 		}
@@ -635,19 +642,37 @@ type Body struct {
 	main  string
 	opts  *gofastcore.Options
 	after int64 // the decompression budget when it was opened
+
+	settings string        // the settings part, if it has document variables
+	extra    stored.Source // the VBA project and custom XML data
 }
 
-// Open prepares the Word document whose main part is named main. Nothing
-// is read until Read.
+// Open prepares the Word document whose main part is named main. Only
+// what says whether the document has a stored part is read until Read.
 func Open(pkg *opc.Package, main string, opts *gofastcore.Options) *Body {
-	return &Body{pkg: pkg, main: main, opts: opts, after: pkg.Budget()}
+	b := &Body{pkg: pkg, main: main, opts: opts}
+	b.settings, b.extra = findStored(pkg, main)
+	b.after = pkg.Budget()
+	return b
 }
 
-// Len returns the number of parts, which is one.
-func (b *Body) Len() int { return 1 }
+// Len returns the number of parts: the body, and the stored part if the
+// document has one.
+func (b *Body) Len() int {
+	if b.Stored() < 0 {
+		return 1
+	}
+	return 2
+}
 
-// Stored returns -1: a Word document has no stored part yet.
-func (b *Body) Stored() int { return -1 }
+// Stored returns the index of the stored part, which is 1, or -1 if the
+// document has nothing for one.
+func (b *Body) Stored() int {
+	if b.settings == "" && b.extra.Empty() {
+		return -1
+	}
+	return 1
+}
 
 // Noun names the parts of a Word document.
 func (b *Body) Noun() string { return "parts" }
@@ -662,9 +687,12 @@ func (b *Body) Begin() { b.pkg.Restore(b.after) }
 // there is one part, and nothing shared.
 func (b *Body) Limited() bool { return false }
 
-// Read reads the body. The warnings about the document and the files
+// Read reads the body, or the stored part. The warnings about the document and the files
 // embedded in it come with the result.
 func (b *Body) Read(ctx context.Context, index int) *unit.Result {
+	if index == 1 {
+		return b.readStored(ctx)
+	}
 	doc := &gofastcore.Document{}
 	Extract(ctx, b.pkg, b.main, b.opts, doc)
 	res := &unit.Result{Part: doc.Parts[0]}
@@ -674,11 +702,14 @@ func (b *Body) Read(ctx context.Context, index int) *unit.Result {
 }
 
 // Summary returns the warnings about the document, which the reading of
-// the body made.
+// the body made, and names the parts the stored part could not read.
 func (b *Body) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	var out []gofastcore.Warning
 	for _, t := range tallies {
 		out = append(out, t.Warnings...)
+		for _, name := range t.Damaged {
+			out = append(out, gofastcore.Warning{Code: WarnPartDamaged, Severity: gofastcore.SeverityWarning, Message: clean.Label(name)})
+		}
 	}
 	return out
 }

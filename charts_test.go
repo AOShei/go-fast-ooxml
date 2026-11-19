@@ -350,7 +350,7 @@ func TestChartsAsOracles(t *testing.T) {
 				var slides [][]struct {
 					Series []oracleSeries `json:"series"`
 				}
-				if json.Unmarshal([]byte(res.Text), &slides) != nil || len(slides) != len(doc.Parts) {
+				if json.Unmarshal([]byte(res.Text), &slides) != nil || len(slides) != pageCount(doc) {
 					continue
 				}
 				for k, charts := range slides {

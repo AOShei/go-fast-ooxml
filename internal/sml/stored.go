@@ -7,14 +7,16 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // What a workbook holds that is shown on no sheet: its defined names (a
 // name can stand for a text that appears nowhere else), the formulas of
-// its Excel 4 macro sheets, which are programs, and the records of pivot
-// caches whose source is gone (pivot.go). Nobody who opens the
+// its Excel 4 macro sheets and the code of its VBA project, which are
+// programs, the records of pivot caches whose source is gone and the
+// formulas of calculated fields (pivot.go), and custom XML data. Nobody who opens the
 // workbook sees them, so they are a place to put text for a model; they
 // are read as data, never evaluated, and given in the document's stored
 // part (gofastcore.PartStored), flagged as hidden.
@@ -59,75 +61,72 @@ type localName struct {
 // storedIndex returns the index of the stored part, or -1 if the workbook
 // has nothing for it.
 func (b *Book) storedIndex() int {
-	if len(b.names) == 0 && !b.macroSheets && b.goneCaches() == 0 {
+	if len(b.names) == 0 && !b.macroSheets && b.goneCaches() == 0 && len(b.calculated) == 0 && b.extra.Empty() {
 		return -1
 	}
 	return max(len(b.refs), 1)
 }
 
-// readStored reads the stored part: the defined names, then the code of
-// each macro sheet.
+// readStored reads the stored part: the defined names, the code of each
+// macro sheet and of the VBA project, the records of pivot caches whose
+// source is gone and the formulas of calculated fields, then the custom
+// XML data.
 func (b *Book) readStored(ctx context.Context) *unit.Result {
-	res := &unit.Result{Part: gofastcore.Part{Kind: gofastcore.PartStored, Number: b.storedIndex() + 1, Hidden: gofastcore.HiddenInvisible}}
-	part := &res.Part
-	room := gofastcore.TextBudgetFrom(ctx)
-	cut := false
-	add := func(blk gofastcore.Block) bool {
-		if cut || !room.Take(gofastcore.BlockCost+len(blk.Text)) {
-			cut = true
-			return false
-		}
-		part.Blocks = append(part.Blocks, blk)
-		return true
-	}
+	p := stored.NewPart(ctx, b.storedIndex()+1)
+	res := &unit.Result{}
 	for _, n := range b.names {
-		if !add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: n.name + ": " + n.formula,
+		if !p.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: n.name + ": " + n.formula,
 			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredDefinedName, gofastcore.AttrName: n.name}}) {
 			break
 		}
 	}
 	for _, ref := range b.refs {
-		if cut || ctx.Err() != nil {
+		if p.Full() || ctx.Err() != nil {
 			break
 		}
 		if ref.kind != ns.RelMacrosheet && ref.kind != ns.RelIntlMacrosheet || ref.target == "" {
 			continue
 		}
-		code, damaged := b.macroCode(ref.target, room.Left())
+		code, damaged := b.macroCode(ref.target, p.Room().Left())
 		if damaged {
-			res.Tally.Damaged = append(res.Tally.Damaged, ref.target)
+			p.Damaged = append(p.Damaged, ref.target)
 		}
 		if code == "" {
 			continue
 		}
-		add(gofastcore.Block{Kind: gofastcore.KindCode, Text: code,
+		p.Add(gofastcore.Block{Kind: gofastcore.KindCode, Text: code,
 			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredMacro, gofastcore.AttrName: ref.name, gofastcore.AttrLanguage: "excel4"}})
 	}
+	b.extra.Macros(ctx, b.wb.pkg, p)
 	// The records of pivot caches whose source is gone.
 	for _, c := range b.caches {
-		if cut || ctx.Err() != nil {
+		if p.Full() || ctx.Err() != nil {
 			break
 		}
 		if c.gone == "" {
 			continue
 		}
-		block, ok, full, damaged := b.cacheTable(c, room)
+		block, ok, full, damaged := b.cacheTable(c, p.Room())
 		if damaged {
-			res.Tally.Damaged = append(res.Tally.Damaged, c.target)
+			p.Damaged = append(p.Damaged, c.target)
 		}
 		if ok {
-			part.Blocks = append(part.Blocks, block)
+			p.Blocks = append(p.Blocks, block)
 		}
-		cut = cut || full
+		if full {
+			p.Cut()
+		}
 	}
-	if cut {
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the limit on the amount of text was reached; what the workbook stores is cut off there")
-		res.Tally.Limited = true
+	// The formulas of calculated fields.
+	for _, f := range b.calculated {
+		if !p.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: f.name + ": =" + f.formula,
+			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredPivotCache, gofastcore.AttrName: f.name}}) {
+			break
+		}
 	}
-	if len(part.Blocks) == 0 {
-		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")
-	}
-	part.MarkHidden()
+	b.extra.XML(ctx, b.wb.pkg, p)
+	res.Limited = p.Finish()
+	res.Part, res.Damaged = p.Part, p.Damaged
 	return res
 }
 

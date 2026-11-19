@@ -101,8 +101,8 @@ func TestPowerPointCorpus(t *testing.T) {
 			unread++ // python-pptx cannot read the file
 			continue
 		}
-		if len(theirs) != len(doc.Parts) && len(theirs) > 0 {
-			t.Errorf("%s: %d slides, python-pptx reads %d", f.Name, len(doc.Parts), len(theirs))
+		if len(theirs) != pageCount(doc) && len(theirs) > 0 {
+			t.Errorf("%s: %d slides, python-pptx reads %d", f.Name, pageCount(doc), len(theirs))
 			continue
 		}
 		smartArt := diagramTexts(data)

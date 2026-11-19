@@ -387,7 +387,9 @@ func TestWordInlineFormattingAndLinks(t *testing.T) {
 		`paragraph "A paragraph bold by its style."`,
 		`paragraph "See the site or section 2." ["the " ->https://example.org/page] ["site" bold ->https://example.org/page] ["section 2" ->#_Toc123]`,
 		`paragraph "Or a field link then plain." ["a field link" ->https://example.org/field]`,
+		`note "HYPERLINK \"https://example.org/field\" \\o \"tip\"" hidden=invisible type=field`,
 		`paragraph "Or a simple field." ["a simple field" ->#Annex]`,
+		`note "HYPERLINK \\l \"Annex\"" hidden=invisible type=field`,
 		`paragraph "Bold and hidden." hidden=invisible ["Bold and hidden." bold]`,
 	)
 	ooxmltest.CheckDocument(t, doc)
@@ -401,7 +403,9 @@ func TestWordInlineFormattingAndLinks(t *testing.T) {
 		`paragraph "A paragraph bold by its style."`,
 		`paragraph "See the site or section 2."`,
 		`paragraph "Or a field link then plain."`,
+		`note "HYPERLINK \"https://example.org/field\" \\o \"tip\"" hidden=invisible type=field`,
 		`paragraph "Or a simple field."`,
+		`note "HYPERLINK \\l \"Annex\"" hidden=invisible type=field`,
 		`paragraph "Bold and hidden." hidden=invisible`,
 	)
 }

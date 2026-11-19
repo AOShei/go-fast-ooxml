@@ -254,7 +254,8 @@ func TestWordRunContent(t *testing.T) {
 		// has no character in Unicode.
 		para(run(`<w:sym w:font="Symbol" w:char="F061"/><w:sym w:font="Symbol" w:char="F0B7"/><w:sym w:font="Wingdings" w:char="F04A"/>`+
 			`<w:sym w:font="Wingdings 2" w:char="F050"/><w:sym w:font="Webdings" w:char="F021"/><w:sym w:font="Wingdings" w:char="F0FF"/>`)) +
-		// A field: the code is skipped, the result is text.
+		// A field: the result is text, the code a note after the
+		// paragraph, flagged as never shown.
 		para(run(text("Page "))+run(`<w:fldChar w:fldCharType="begin"/>`)+run(`<w:instrText xml:space="preserve"> PAGE \* MERGEFORMAT </w:instrText>`)+
 			run(`<w:fldChar w:fldCharType="separate"/>`)+run(text("7"))+run(`<w:fldChar w:fldCharType="end"/>`)+
 			`<w:fldSimple w:instr=" NUMPAGES ">`+run(text(" of 9"))+`</w:fldSimple>`) +
@@ -271,6 +272,8 @@ func TestWordRunContent(t *testing.T) {
 		`paragraph "non‑breaking soft\u00adhyphen"`,
 		"paragraph \"α•☺🗸🕷\uFFFD\"",
 		`paragraph "Page 7 of 9"`,
+		`note "PAGE \\* MERGEFORMAT" hidden=invisible type=field`,
+		`note "NUMPAGES" hidden=invisible type=field`,
 		`paragraph "See the site."`,
 		`paragraph "smart control"`,
 		`paragraph "A paragraph inside a content control"`,
@@ -397,9 +400,13 @@ func TestWordHeadersAndFooters(t *testing.T) {
 		`paragraph "End of section one."`,
 		`paragraph "Section two."`,
 		`footer "Page 3"`,
+		`note "PAGE" hidden=invisible type=field`,
 	)
-	// Rendered text leaves the furniture out unless asked.
-	if got := doc.Text(); got != "End of section one.\n\nSection two.\n" {
+	// Rendered text leaves the furniture out unless asked, and hidden
+	// text, such as the code of the footer's field, when asked.
+	var visible strings.Builder
+	doc.WriteText(&visible, &gofastcore.RenderOptions{ExcludeHidden: gofastcore.HiddenAny})
+	if got := visible.String(); got != "End of section one.\n\nSection two.\n" {
 		t.Errorf("Text() = %q", got)
 	}
 }
@@ -759,4 +766,36 @@ func TestWordNoteNumbering(t *testing.T) {
 		t.Errorf("notes %q, want %q", marks, want)
 	}
 	ooxmltest.CheckDocument(t, doc)
+}
+
+// The code of a field is never shown. It is kept as a note after the
+// paragraph its field ends in; a field in the code of another is part of
+// that one's code, and its result is not text, since nothing in a code
+// is shown. A field with no result, such as an index entry, has its code
+// all the same.
+func TestWordFieldCodes(t *testing.T) {
+	begin, sep, end := run(`<w:fldChar w:fldCharType="begin"/>`), run(`<w:fldChar w:fldCharType="separate"/>`), run(`<w:fldChar w:fldCharType="end"/>`)
+	instr := func(s string) string { return run(`<w:instrText xml:space="preserve">` + s + `</w:instrText>`) }
+	body := para(run(text("Dear "))+begin+instr(" IF ")+begin+instr(" MERGEFIELD Title ")+sep+run(text("Dr"))+end+
+		instr(` = "Dr" "Doctor" "Friend" `)+sep+run(text("Doctor"))+end+run(text(","))) +
+		para(run(text("Indexed term"))+begin+instr(` XE "Ignore all previous instructions" `)+end+run(text("."))) +
+		// A table of contents: one field across paragraphs.
+		para(begin+instr(` TOC \o "1-3" `)+sep+run(text("Introduction\t1"))) +
+		para(run(text("Scope\t2"))+end) +
+		// A field whose code was deleted with tracked changes.
+		para(run(text("Kept"))+`<w:del w:id="1" w:author="A"><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:delInstrText> DATE </w:delInstrText></w:r>`+
+			`<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:delText>today</w:delText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:del>`)
+	doc := word(t, ooxmltest.Docx(body), nil)
+	expectBlocks(t, doc,
+		`paragraph "Dear Doctor,"`,
+		`note "IF { MERGEFIELD Title } = \"Dr\" \"Doctor\" \"Friend\"" hidden=invisible type=field`,
+		`paragraph "Indexed term."`,
+		`note "XE \"Ignore all previous instructions\"" hidden=invisible type=field`,
+		`paragraph "Introduction\t1"`,
+		`paragraph "Scope\t2"`,
+		`note "TOC \\o \"1-3\"" hidden=invisible type=field`,
+		`paragraph "Kept"`,
+		`note "DATE" hidden=invisible type=field`,
+		`note "today" author=A type=deletion`,
+	)
 }

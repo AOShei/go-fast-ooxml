@@ -18,6 +18,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -90,6 +91,8 @@ type Book struct {
 	localNames  []localName
 	macroSheets bool
 	caches      []pivotCache
+	calculated  []calcField
+	extra       stored.Source // the VBA project and custom XML data
 	raw         []byte
 }
 
@@ -135,6 +138,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 	for _, rel := range rels {
 		byID[rel.ID] = rel
 	}
+	b.extra = stored.Find(pkg, rels)
 	load(main, func(s *xmlscan.Scanner) {
 		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start || s.Space() != ns.Sheet {

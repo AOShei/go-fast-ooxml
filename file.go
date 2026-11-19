@@ -244,7 +244,7 @@ func (f *File) open(first bool) (*session, error) {
 				fmt.Sprintf("%d archive members are named twice or share a name; programs differ in which they read", n))
 		}
 		if pkg.HasContentType(vbaContentType) {
-			warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "a VBA project (macros); it is not read")
+			warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "a VBA project (macros); its code is read as text into the stored part, and none of it is run")
 		}
 		if errors.Is(err, opc.ErrBudget) {
 			warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading document properties")

@@ -38,10 +38,9 @@ type parser struct {
 	box color       // the fill of the text box being read; unset outside one
 	tbl *tableState // the table being read
 
-	href      string // target of the hyperlink being read, when links are asked for
-	hrefDepth int    // depth of its element
-	instr     []byte // the code of the field being read
-	inInstr   bool
+	href      string     // target of the hyperlink being read, when links are asked for
+	hrefDepth int        // depth of its element
+	fields    []field    // the fields being read, innermost last
 	fieldHref string     // target of the HYPERLINK field whose result is being read
 	cell      *cellProps // properties of the table cell being read, if any
 	row       *rowProps
@@ -50,6 +49,91 @@ type parser struct {
 	produced int // text and images emitted so far, for alternate content
 	alts     []alternate
 	polls    int
+}
+
+// field is a field being read: its code (the instruction, such as
+// MERGEFIELD Name), then its result, which is what the document shows.
+type field struct {
+	code   []byte
+	inCode bool   // its separator, or its end, has not come yet
+	nested bool   // it began in the code of the field around it
+	href   string // where its result leads, for a HYPERLINK field
+}
+
+// Bounds on the fields kept track of.
+const (
+	maxFieldDepth = 64
+	maxFieldCode  = 1 << 16
+)
+
+// inCode reports whether the parser is in the code of a field, where
+// nothing is shown: the result of a field nested in that code is not.
+func (p *parser) inCode() bool {
+	for i := range p.fields {
+		if p.fields[i].inCode {
+			return true
+		}
+	}
+	return false
+}
+
+// fieldChar reads w:fldChar: a field begins, its code ends, or it ends.
+// The code of a field is never shown; it is kept as a note after the
+// paragraph its field ends in, flagged as hidden. A field in the code of
+// another is part of that one's code, written in braces as Word shows it.
+func (p *parser) fieldChar() {
+	typ, _ := p.s.Attr(ns.Word, "fldCharType")
+	switch string(typ) {
+	case "begin":
+		nested := p.inCode()
+		if len(p.fields) < maxFieldDepth {
+			p.fields = append(p.fields, field{inCode: true, nested: nested})
+		}
+	case "separate":
+		if n := len(p.fields); n > 0 && p.fields[n-1].inCode {
+			f := &p.fields[n-1]
+			f.inCode = false
+			if p.r.opts.Spans {
+				f.href = fieldLink(f.code)
+			}
+		}
+	case "end":
+		n := len(p.fields)
+		if n == 0 {
+			return
+		}
+		f := p.fields[n-1]
+		p.fields = p.fields[:n-1]
+		code := bytes.TrimSpace(f.code)
+		switch {
+		case len(code) == 0:
+		case f.nested && n > 1 && p.fields[n-2].inCode:
+			outer := &p.fields[n-2]
+			if len(outer.code)+len(code)+4 <= maxFieldCode {
+				outer.code = append(append(append(outer.code, "{ "...), code...), " }"...)
+			}
+		default:
+			p.fieldNote(code)
+		}
+	}
+	p.fieldHref = ""
+	for i := len(p.fields) - 1; i >= 0; i-- {
+		if f := &p.fields[i]; !f.inCode && f.href != "" {
+			p.fieldHref = f.href
+			break
+		}
+	}
+}
+
+// fieldNote keeps the code of a field as a note after the paragraph.
+func (p *parser) fieldNote(code []byte) {
+	text := p.clean(code, clean.Prose)
+	if text == "" {
+		return
+	}
+	p.r.fields++
+	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: gofastcore.HiddenInvisible,
+		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField}})
 }
 
 // alternate tracks one mc:AlternateContent element: a file may hold the
@@ -432,12 +516,13 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 		if p.r.opts.Spans && s.Is(ns.Word, "hyperlink") {
 			p.href, p.hrefDepth = p.linkTarget(), s.Depth()
 		}
-		if p.r.opts.Spans && s.Is(ns.Word, "fldSimple") {
+		if s.Is(ns.Word, "fldSimple") {
 			// A field written in one piece: its code is an attribute.
 			if code, ok := s.Attr(ns.Word, "instr"); ok {
-				if target := fieldLink(code); target != "" {
+				if target := fieldLink(code); target != "" && p.r.opts.Spans {
 					p.href, p.hrefDepth = target, s.Depth()
 				}
+				p.fieldNote(bytes.TrimSpace(code))
 			}
 		}
 		if transparent, skip := p.wrapper(); transparent {
@@ -766,13 +851,13 @@ func (p *parser) run(deleted bool) {
 		case "rPr":
 			readRunProps(s, &direct, p.r.theme)
 		case "t":
-			if deleted {
+			if deleted || p.inCode() {
 				s.Skip()
 				continue
 			}
 			p.runText(p.runFont(&direct))
 		case "delText":
-			if deleted {
+			if deleted && !p.inCode() {
 				p.runText(p.runFont(&direct))
 			} else {
 				s.Skip()
@@ -800,18 +885,11 @@ func (p *parser) run(deleted bool) {
 		case "fldChar":
 			// A field: its code, then what it displays. The code of a
 			// HYPERLINK field says where the displayed text leads.
-			typ, _ := s.Attr(ns.Word, "fldCharType")
-			switch string(typ) {
-			case "begin":
-				p.inInstr, p.instr, p.fieldHref = true, p.instr[:0], ""
-			case "separate":
-				p.inInstr, p.fieldHref = false, fieldLink(p.instr)
-			case "end":
-				p.inInstr, p.fieldHref = false, ""
-			}
-		case "instrText":
-			if p.inInstr && p.r.opts.Spans && len(p.instr) < 2048 {
-				p.instr = s.AppendText(p.instr)
+			p.fieldChar()
+		case "instrText", "delInstrText":
+			n := len(p.fields)
+			if n > 0 && p.fields[n-1].inCode && (s.Is(ns.Word, "delInstrText") == deleted) && len(p.fields[n-1].code) < maxFieldCode {
+				p.fields[n-1].code = s.AppendText(p.fields[n-1].code)
 			} else {
 				s.Skip()
 			}
