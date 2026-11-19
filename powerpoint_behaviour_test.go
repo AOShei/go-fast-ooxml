@@ -864,3 +864,44 @@ func TestPowerPointHiddenChecked(t *testing.T) {
 		t.Errorf("HiddenChecked = %s, want %s", doc.HiddenChecked, want)
 	}
 }
+
+// A picture on a master or a layout, such as a logo, is on every slide
+// that shows it, as their text is; the empty frame of a picture
+// placeholder is not. Its bytes are given once.
+func TestPowerPointPicturesOnLayoutsAndMasters(t *testing.T) {
+	slides := make([]ooxmltest.Slide, 3)
+	for i := range slides {
+		slides[i].Shapes = ooxmltest.Shape(2, ph("title", -1), "", ooxmltest.TextBody(dpara("", plain(fmt.Sprintf("Slide %d", i+1)))))
+	}
+	pkg := deck(slides...)
+	pkg.Master("", testMaster()+picture(40, "rId9", "Company logo", 600, 10, 100, 40, ""), "", testTxStyles)
+	for pkg.Rel("ppt/slideMasters/slideMaster1.xml", ooxmltest.RelImage, "../media/logo.png") != "rId9" {
+	}
+	pkg.Layout("", picture(41, "rId9", "Banner", 10, 500, 700, 30, "")+
+		// A placeholder for a picture, with nothing in it.
+		`<p:pic><p:nvPicPr><p:cNvPr id="42" name="Picture Placeholder"/><p:cNvPicPr/><p:nvPr><p:ph type="pic" idx="1"/></p:nvPr></p:nvPicPr><p:blipFill><a:blip r:embed="rId9"/></p:blipFill><p:spPr/></p:pic>`, "")
+	for pkg.Rel("ppt/slideLayouts/slideLayout1.xml", ooxmltest.RelImage, "../media/banner.png") != "rId9" {
+	}
+	pkg.AddBytes("ppt/media/logo.png", "image/png", pngBytes(t, 3, 2))
+	pkg.AddBytes("ppt/media/banner.png", "image/png", pngBytes(t, 4, 1))
+	doc := powerpoint(t, pkg, &gofastcore.Options{Images: gofastcore.ImagesData})
+	withData := map[string]int{}
+	for _, part := range doc.Parts {
+		var alts []string
+		for _, b := range part.Blocks {
+			if b.Kind == gofastcore.KindImage {
+				alts = append(alts, b.Text)
+				if b.Image.Data != nil {
+					withData[b.Text]++
+				}
+			}
+		}
+		if strings.Join(alts, "|") != "Company logo|Banner" {
+			t.Errorf("slide %d: pictures %q", part.Number, alts)
+		}
+	}
+	if withData["Company logo"] != 1 || withData["Banner"] != 1 {
+		t.Errorf("bytes given %v times; want once each", withData)
+	}
+	ooxmltest.CheckDocument(t, doc)
+}

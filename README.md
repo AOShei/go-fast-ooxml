@@ -302,7 +302,7 @@ order they are read in. The blocks of a slide are given title first, then
 from the top down, and from left to right among shapes that start beside
 each other. A group is read as one thing, at the place of the group. Shapes
 that lie wholly outside the slide come after those on it, then the layout's
-and master's text, the notes and the comments. The order is a reading of
+and master's text and pictures, the notes and the comments. The order is a reading of
 the layout; what each block is and where it ends are declared, so blocks
 stay `origin: native`.
 
@@ -314,7 +314,7 @@ slide past that says so with `limit.exceeded`. What a limit leaves out is
 the same for any number of workers.
 
 **Not read:** charts, diagrams (SmartArt) and sound and video clips, each
-counted in `ooxml.unread_content`; pictures on layouts and masters; the
+counted in `ooxml.unread_content`; the
 notes master and handout master; animations, other than to know which
 shapes they move (see hidden text). An action that starts a program or
 runs a macro is reported as `input.active_content` and never run.

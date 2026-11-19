@@ -137,12 +137,12 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 			case !room.Take(bytes):
 				pg.full = true
 			default:
-				blocks = append(blocks, above...)
+				blocks = appendRepeated(blocks, above)
 				// A layout often repeats what its master has, in the same
 				// place; a reader sees it once.
 				for i := range l.static {
 					if above == nil || !l.repeats[i] {
-						blocks = append(blocks, l.static[i])
+						blocks = appendRepeated(blocks, l.static[i:i+1])
 					}
 				}
 			}
@@ -278,13 +278,14 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	// Said once: the same words in the same place again add nothing,
 	// here or on the master.
 	type said struct {
-		text string
-		box  gofastcore.Rect
+		text  string
+		box   gofastcore.Rect
+		image string // a picture is the same only if it is the same picture
 	}
 	seen := map[said]bool{}
 	kept := l.static[:0]
 	for _, b := range l.static {
-		if key := (said{b.Text, b.Loc.BBox}); !seen[key] {
+		if key := (said{b.Text, b.Loc.BBox, imageID(&b)}); !seen[key] {
 			seen[key] = true
 			kept = append(kept, b)
 		}
@@ -296,7 +297,7 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	l.staticBytes = 0
 	for i := range l.static {
 		b := &l.static[i]
-		l.staticBytes += len(b.Text)
+		l.staticBytes += len(b.Text) + len(b.Attrs["href"])
 		for _, sp := range b.Spans {
 			l.staticBytes += len(sp.Href) // written with every slide, as the text is
 		}
@@ -308,11 +309,11 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	if l.master != nil && len(l.master.static) > 0 && len(l.static) > 0 {
 		above := map[said]bool{}
 		for _, b := range l.master.static {
-			above[said{b.Text, b.Loc.BBox}] = true
+			above[said{b.Text, b.Loc.BBox, imageID(&b)}] = true
 		}
 		l.repeats = make([]bool, len(l.static))
 		for i, b := range l.static {
-			l.repeats[i] = above[said{b.Text, b.Loc.BBox}]
+			l.repeats[i] = above[said{b.Text, b.Loc.BBox, imageID(&b)}]
 		}
 	} else {
 		l.repeats = make([]bool, len(l.static))
@@ -456,4 +457,29 @@ func (p *presentation) authorNames() map[string]string {
 		p.authors = authors
 	})
 	return p.authors
+}
+
+// appendRepeated appends blocks a layout or master puts on a slide. A
+// picture gets an Image of its own on each slide, so that its bytes can
+// be left with the first block that shows it and taken from the others.
+func appendRepeated(blocks, from []gofastcore.Block) []gofastcore.Block {
+	for _, b := range from {
+		if b.Image != nil {
+			img := *b.Image
+			b.Image = &img
+		}
+		blocks = append(blocks, b)
+	}
+	return blocks
+}
+
+// imageID returns the ID of a picture block's image, or "".
+func imageID(b *gofastcore.Block) string {
+	if b.Image == nil {
+		return ""
+	}
+	if b.Image.ID == "" {
+		return "\x00" + b.Attrs["href"] // a picture outside the file
+	}
+	return b.Image.ID
 }

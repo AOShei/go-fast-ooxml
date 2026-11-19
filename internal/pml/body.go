@@ -214,7 +214,10 @@ func (pg *page) pic(g *group) {
 	}
 	first := len(pg.blocks)
 	picture := ""
-	if rel, found := pg.rels[sh.blip]; sh.hasBlip && found && pg.role == roleSlide {
+	// A picture on a slide, or one a layout or master puts on every slide
+	// that shows it; not the empty frame of a placeholder there.
+	shown := pg.role == roleSlide || !sh.ph.has
+	if rel, found := pg.rels[sh.blip]; sh.hasBlip && found && shown {
 		switch {
 		case pg.p.opts.Images == gofastcore.ImagesNone:
 			pg.sawImage = true
