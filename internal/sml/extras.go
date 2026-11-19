@@ -190,6 +190,14 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 	}
 	sawImage := false
 	pal := dml.Palette{Theme: sh.wb.theme, Map: dml.DefaultMap}
+	// Where a link on the text of a shape leads: an address outside the
+	// file, cleaned when the relationships were read.
+	link := func(id []byte) string {
+		if rel, ok := byID[string(id)]; ok && rel.External {
+			return rel.Target
+		}
+		return ""
+	}
 	sh.load(target, func(s *xmlscan.Scanner) {
 		var row, col int32 // the cell the current anchor starts at
 		var alt string
@@ -262,7 +270,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 				if fill.Paint == dml.PaintUnset {
 					fill = styled
 				}
-				out = sh.textBody(s, out, &pal, row, col, fill, ink, unseen)
+				out = sh.textBody(s, out, &pal, row, col, fill, ink, unseen, link)
 			case s.Is(ns.Draw, "blip"):
 				id, ok := s.Attr(ns.Rel, "embed")
 				if !ok {
@@ -316,7 +324,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 // current): one block for each of its paragraphs that has text. Text too
 // small to read, or in the colour of what is behind it, is marked; so is
 // all of it if the shape is hidden.
-func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, row, col int32, fill dml.Fill, ink dml.Color, unseen bool) []placed {
+func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, row, col int32, fill dml.Fill, ink dml.Color, unseen bool, link func([]byte) string) []placed {
 	t := &sh.shapes
 	t.Palette, t.Chain, t.Base = pal, nil, dml.RunProps{}
 	if ink.IsSet() {
@@ -332,7 +340,7 @@ func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, ro
 	default:
 		t.Behind, t.Lit = theme.White, true
 	}
-	t.Later, t.Styles, t.Link, t.SlideNumber = false, sh.wb.opts.Spans, nil, ""
+	t.Later, t.Styles, t.Link, t.SlideNumber = false, sh.wb.opts.Spans, link, ""
 	t.Read(s)
 	sh.removed += t.Removed
 	sh.unmapped += t.Unmapped

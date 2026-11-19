@@ -789,3 +789,30 @@ func TestRowsMarkATableCarriedOverABand(t *testing.T) {
 		t.Errorf("bands: %s; want: %s", strings.Join(got, " "), want)
 	}
 }
+
+// A link on the text of a shape on a sheet is a span, as it is on a slide.
+func TestExcelLinksInShapes(t *testing.T) {
+	drawing := drawingHeader +
+		`<xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
+		`<xdr:to><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>` +
+		`<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="2" name="Shape"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr/><xdr:txBody><a:bodyPr/><a:lstStyle/>` +
+		`<a:p><a:r><a:rPr lang="en-GB"/><a:t>See </a:t></a:r><a:r><a:rPr lang="en-GB"><a:hlinkClick r:id="rId1"/></a:rPr><a:t>the source</a:t></a:r></a:p>` +
+		`</xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>`
+	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: xlRow(1, xlStr("A1", "cell")), Extra: `<drawing r:id="rId1"/>`})
+	pkg.Rel(firstSheet, relBase+"drawing", "../drawings/drawing1.xml")
+	pkg.Add("xl/drawings/drawing1.xml", ctDrawing, drawing)
+	pkg.ExternalRel("xl/drawings/drawing1.xml", ooxmltest.RelHyperlink, "https://example.org/source")
+	doc := excel(t, pkg, &gofastcore.Options{Spans: true})
+	var found bool
+	for _, b := range doc.AllBlocks() {
+		for _, sp := range b.Spans {
+			if sp.Href == "https://example.org/source" && b.Text[sp.Start:sp.End] == "the source" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("the link on the shape's text is not a span: %s", asJSON(t, doc.Parts))
+	}
+	ooxmltest.CheckDocument(t, doc)
+}
