@@ -669,7 +669,11 @@ func (p *parser) block(pp *paraProps) (gofastcore.Block, bool) {
 	// Every paragraph is counted here, wherever it stands: in the body,
 	// a table cell, a note, a header, a text box. A paragraph the
 	// document has no room for ends the reading; what was read is kept.
-	if !p.r.text.Take(to - from) {
+	cost := to - from
+	if p.cell == nil {
+		cost += gofastcore.BlockCost // a block; a cell's paragraphs are charged with its table
+	}
+	if !p.r.text.Take(cost) {
 		p.s.Abort(warn.ErrText)
 		return gofastcore.Block{}, false
 	}
@@ -1244,7 +1248,7 @@ func (p *parser) drawing() {
 	// What a picture says counts as text does: its alternative text and,
 	// if the picture is not in the file, its address, which like a
 	// link's may be given any number of times.
-	said := len(alt)
+	said := gofastcore.BlockCost + len(alt)
 	if external {
 		said += len(target)
 	}
@@ -1442,6 +1446,18 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 			}
 		}
 		return
+	}
+	// The table is a block, and each of its cells takes room, filled or
+	// not; their text was taken paragraph by paragraph. A table the
+	// document has no room for in full keeps the rows that fit, and the
+	// reading ends there.
+	if fit := warn.FitRows(p.r.text, len(rows), cols); fit < len(rows) {
+		p.s.Abort(warn.ErrText)
+		if fit == 0 {
+			return
+		}
+		rows, before = rows[:fit], before[:fit]
+		headerRows = min(headerRows, fit)
 	}
 	t := &gofastcore.Table{HeaderRows: min(headerRows, len(rows)), Rows: make([][]string, len(rows))}
 	var hidden gofastcore.Hidden

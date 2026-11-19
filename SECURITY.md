@@ -80,7 +80,10 @@ strangers they allow more than most services want to spend:
   bounds it: the text of blocks and table cells, counted as often as it
   occurs, in a document and the files embedded in it together. The
   targets of links and the alternative text of pictures count in the same
-  way: one address, stored once, may be linked to millions of times. Every
+  way: one address, stored once, may be linked to millions of times. So do
+  blocks and cells themselves, 128 bytes a block and 16 a cell, empty or
+  not: a picture placed ten thousand times, or a grid of empty cells, is
+  small in the file and large in the result. Every
   other string that comes from the file (a name, a list label, an author)
   is held to a fixed length, 512 bytes or less. The
   default of 256 MiB is some ten times the text of a workbook of two

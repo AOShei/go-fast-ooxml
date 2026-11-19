@@ -3,7 +3,6 @@ package sml
 import (
 	"bytes"
 	"context"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,6 +71,7 @@ type sheet struct {
 	noValue  int            // formulas stored without a result
 	removed  int            // control characters taken out
 	unmapped int            // codes of symbol fonts with no character
+	pending  int64          // text of the cells read and not yet in tables
 	symbols  []byte         // for translating text in a symbol font
 	split    int            // regions too sparse to be a grid
 	unread   map[string]int // content of kinds that are not read
@@ -334,7 +334,10 @@ func (sh *sheet) readData() {
 				sh.cut = "the limit on the number of cells was reached"
 				return
 			}
-			if !sh.room.Take(int(min(bytesBefore, math.MaxInt32))) {
+			// The text is taken from the budget when the tables are
+			// made, with what their blocks and cells take; reading stops
+			// here once there could be no room for it.
+			if sh.pending += bytesBefore; sh.pending > sh.room.Left() {
 				sh.cells = sh.cells[:first]
 				sh.cut = "the limit on the amount of text was reached"
 				return

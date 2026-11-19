@@ -97,7 +97,11 @@ with warnings that say what could not.
   default, counted as often as it occurs and together with the files
   embedded in it. A small file can say a long text many times (one string
   that every cell refers to); the part that reaches the limit is cut off
-  there with `limit.exceeded`. The targets of links count as text does,
+  there with `limit.exceeded`. Every block counts 128 bytes besides its
+  text, and every cell of a table 16, empty or not (core's `BlockCost` and
+  `CellCost`): a file decides how many there are as freely as how long a
+  string is. A table with no room for all its rows keeps those that fit.
+  The targets of links count as text does,
   each time a link is written: one address may be linked to any number of
   times. An address is kept whole up to 8 KiB. The other limits are in
   [`SECURITY.md`](SECURITY.md).
@@ -394,9 +398,11 @@ flagged. What this means for a reviewer:
 - **Table styles that are not known.** Office has table styles built in,
   and a file may name one without defining it (Excel always does; files
   written by python-pptx do too). Excel's 60 are taken from the standard.
-  Of PowerPoint's 74, the 55 whose definitions PowerPoint wrote into the
-  files of the test corpus are known; of Word's, the 74 that Word wrote
-  there. Where a table's style is neither in the file nor known, text in
+  All 74 of PowerPoint's are known: 55 from what PowerPoint wrote into the
+  files of the test corpus, and the other 19 from Dewiride PPTX Studio's
+  capture of PowerPoint's own definitions (Apache-2.0; see `NOTICE`), with
+  which the 55 agree. Of Word's, the 74 that Word wrote into the corpus are
+  known. Where a table's style is neither in the file nor known, text in
   it is judged only against a fill the cell itself states.
 - **What a slide looks like during the show.** Animations are not played.
   Text that an animation reveals, hides or moves is judged where the slide

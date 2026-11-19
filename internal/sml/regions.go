@@ -1,6 +1,7 @@
 package sml
 
 import (
+	"math"
 	"sort"
 
 	"github.com/AOShei/go-fast-core"
@@ -75,6 +76,7 @@ type builder struct {
 	rects []rect  // the rectangle of each table
 	occ   []bool  // scratch: which columns of a piece are occupied
 	ids   []int32 // scratch: the column group of each column
+	full  bool    // the text budget ran out: no more tables are written
 }
 
 // regions returns the sheet's cells as table blocks.
@@ -227,16 +229,15 @@ func (b *builder) cut(g group, out []group) (pieces []group, changed bool) {
 	return out, changed
 }
 
-// attrName is the key of a table's name in Block.Attrs (proposed for core
-// as gofastcore.AttrName).
-const attrName = "name"
-
 // table writes a group of cells as a table block, or as several if it is
 // very large. at is the rectangle of a declared table; nil takes the
 // rectangle the cells span, and marks the table as inferred. It reports
 // false, having written nothing, if the rectangle is so much larger than
 // the cells in it that filling it would cost memory out of proportion.
 func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
+	if b.full {
+		return true // the cells stay out: the sheet is cut off
+	}
 	cells := b.sh.cells
 	n := g.len()
 	var r rect
@@ -260,6 +261,36 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 	next := 0 // the next cell of g to place
 	for top := int64(0); top < rows; top += perBlock {
 		height := min(perBlock, rows-top)
+		// What the block takes from the text budget: BlockCost, then row
+		// by row CellCost for each of its cells, filled or not, and the
+		// text of its cells. Where there is no room for all of its rows,
+		// the rows that fit are kept and the sheet is cut off there.
+		fit := int64(0)
+		if b.sh.room.Take(gofastcore.BlockCost) {
+			first := r.r0 + int32(top)
+			for j := next; fit < height; fit++ {
+				row := first + int32(fit)
+				cost := gofastcore.CellCost * cols
+				for ; j < n && cells[g.index(j)].row <= row; j++ {
+					if c := &cells[g.index(j)]; c.row == row && c.col >= r.c0 && c.col <= r.c1 {
+						cost += int64(len(c.text))
+					}
+				}
+				if !b.sh.room.Take(int(min(cost, math.MaxInt32))) {
+					break
+				}
+			}
+		}
+		if fit < height {
+			b.full = true
+			if b.sh.cut == "" {
+				b.sh.cut = "the limit on the amount of text was reached"
+			}
+			if fit == 0 {
+				return true
+			}
+			height, rows = fit, top+fit
+		}
 		part := rect{r0: r.r0 + int32(top), r1: r.r0 + int32(top+height) - 1, c0: r.c0, c1: r.c1}
 		flat := make([]string, height*cols)
 		t := &gofastcore.Table{Rows: make([][]string, height)}
@@ -293,7 +324,7 @@ func (b *builder) table(g group, at *rect, headerRows int, name string) bool {
 		block.Loc.Range = rangeName(part)
 		if name != "" {
 			// On every piece, so that each says what it is a piece of.
-			block.Attrs = map[string]string{attrName: name}
+			block.Attrs = map[string]string{gofastcore.AttrName: name}
 		}
 		if at == nil {
 			block.Origin = gofastcore.OriginInferred

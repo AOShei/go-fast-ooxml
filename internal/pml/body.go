@@ -80,6 +80,7 @@ func (pg *page) body(sh *props) (title bool) {
 	}
 	t.Behind, t.Lit, t.Later = sh.behind, sh.lit, false
 	t.Styles, t.Link, t.SlideNumber = pg.p.opts.Spans, pg.link, pg.number
+	t.Cost = gofastcore.BlockCost
 	t.Read(s)
 	pg.programs += t.Programs
 	t.Programs = 0
@@ -245,7 +246,7 @@ func (pg *page) pic(g *group) {
 		switch {
 		case pg.p.opts.Images == gofastcore.ImagesNone:
 			pg.sawImage = true
-		case !pg.said(len(sh.alt)):
+		case !pg.said(gofastcore.BlockCost + len(sh.alt)):
 			return
 		case rel.External:
 			// A picture that is not in the file: named, not fetched. Its

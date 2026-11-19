@@ -290,6 +290,11 @@ type Text struct {
 	// Taken counts what was taken from Budget, for a caller that reads
 	// a part again and gives it back first.
 	Taken int64
+	// Cost is what a paragraph takes from Budget beyond its text:
+	// gofastcore.BlockCost where each paragraph becomes a block, zero
+	// where the text goes into a table cell, which is charged with the
+	// table.
+	Cost int
 	// Palette resolves colours.
 	Palette *Palette
 	// Chain is the list styles the body's text inherits from, nearest
@@ -510,12 +515,12 @@ func (t *Text) para(s *xmlscan.Scanner) {
 	}
 	// A paragraph the document has no room for ends the reading of the
 	// part it is in; what was read before it is kept.
-	if !t.Budget.Take(to - from) {
+	if !t.Budget.Take(t.Cost + to - from) {
 		t.Buf, t.spans = t.Buf[:start], t.spans[:spanStart]
 		s.Abort(warn.ErrText)
 		return
 	}
-	t.Taken += int64(to - from)
+	t.Taken += int64(t.Cost + to - from)
 	p := Para{Start: start + from, End: start + to, Level: level, Size: size}
 	p.Spans, p.Hidden = hidden.Settle(t.spans[spanStart:], from, to, raw)
 	t.spans = t.spans[:spanStart]
