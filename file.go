@@ -642,7 +642,8 @@ func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
 // It is for sheets too long to hold: what is held at a time is one band,
 // whatever the length of the sheet, and the limits on cells and text do
 // not apply. In exchange the sheet's part is read twice; a table that
-// runs past the end of a band is cut there; the tables a sheet declares
+// runs past the end of a band is cut there, and goes on in the next band
+// as a table marked Continued; the tables a sheet declares
 // are not looked up, so every table is origin inferred; and comments,
 // shapes and pictures are not read (Part reads them). A sheet with no
 // cells yields one part with no blocks.

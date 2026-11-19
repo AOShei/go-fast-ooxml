@@ -727,7 +727,7 @@ func TestExcelDamagedSheet(t *testing.T) {
 }
 
 // A region too large for one table is written as several, each a run of
-// its rows.
+// its rows; the later ones say that they continue the one before.
 func TestExcelVeryLargeRegionIsSplit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a sheet of 1.2 million cells")
@@ -746,5 +746,46 @@ func TestExcelVeryLargeRegionIsSplit(t *testing.T) {
 	}
 	if got := blocks[1].Table.Rows[len(blocks[1].Table.Rows)-1][0]; got != strconv.Itoa(n) {
 		t.Errorf("last cell = %q", got)
+	}
+	if blocks[0].Continued || !blocks[1].Continued {
+		t.Errorf("continued: %v, %v; want only the second piece", blocks[0].Continued, blocks[1].Continued)
+	}
+}
+
+// A band of rows ends where it ends, table or no table. A table that goes
+// on in the next band is marked there as continuing: it begins right
+// under where the last one ended, over the same columns. A table that
+// begins after a gap, or beside, is a table of its own.
+func TestRowsMarkATableCarriedOverABand(t *testing.T) {
+	var rows strings.Builder
+	for r := 1; r <= 10; r++ { // one table of ten rows
+		n := strconv.Itoa(r)
+		rows.WriteString(xlRow(r, xlNum("A"+n, n), xlStr("B"+n, "row "+n)))
+	}
+	rows.WriteString(xlRow(13, xlStr("A13", "after a gap"), xlStr("B13", "x"))) // row 12 is empty
+	rows.WriteString(xlRow(14, xlStr("A14", "second table"), xlStr("B14", "y")))
+	rows.WriteString(xlRow(15, xlStr("D15", "beside"), xlStr("E15", "z")))
+	f, err := gofastooxml.OpenBytes(ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: rows.String()}).Bytes(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for band, err := range f.Rows(context.Background(), 1, 4) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range band.Blocks {
+			s := b.Loc.Range
+			if b.Continued {
+				s += " continued"
+			}
+			got = append(got, s)
+		}
+		got = append(got, "|")
+	}
+	// Bands of four rows: 1-4, 5-8, then 9, 10, 13, 14, then 15.
+	want := "A1:B4 | A5:B8 continued | A9:B10 continued A13:B14 | D15:E15 |"
+	if strings.Join(got, " ") != want {
+		t.Errorf("bands: %s; want: %s", strings.Join(got, " "), want)
 	}
 }

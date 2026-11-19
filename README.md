@@ -108,7 +108,8 @@ Each band is a part like any other, with the sheet's number and name and
 the hidden flags of its cells. Two million cells are read in 20 to 25 MB,
 where the sheet read whole takes over 100 (`bench/README.md`). The price:
 the sheet's part is read twice, a table that runs past the end of a band is
-cut there, declared tables are not looked up, and comments, shapes and
+cut there and goes on in the next as a table marked `Continued`, declared
+tables are not looked up, and comments, shapes and
 pictures are left to `Part`. Bands follow the order of the rows in the
 file; a damaged file that gives its rows out of order has them sorted
 within a band, not across bands.

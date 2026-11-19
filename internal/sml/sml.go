@@ -455,6 +455,12 @@ func (sh *sheet) arrange(blocks []placed) []gofastcore.Block {
 	out := make([]gofastcore.Block, len(blocks))
 	for i := range blocks {
 		out[i] = blocks[i].block
+		// A later piece of a table split by rows continues the piece
+		// before it, and says so if that is still the block before it:
+		// another block may lie beside the table and come between.
+		if blocks[i].piece && i > 0 && blocks[i-1].seq == blocks[i].seq-1 {
+			out[i].Continued = true
+		}
 	}
 	return out
 }
