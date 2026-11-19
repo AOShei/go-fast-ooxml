@@ -268,7 +268,7 @@ func TestExcelDeclaredTablesAndMerges(t *testing.T) {
 	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "T", Data: data,
 		Extra: `<mergeCells><mergeCell ref="A8:B8"/><mergeCell ref="A9:A10"/><mergeCell ref="E20:F21"/><mergeCell ref="C9:C30"/></mergeCells><tableParts><tablePart r:id="rId1"/><tablePart r:id="rId2"/></tableParts>`})
 	pkg.Rel(firstSheet, relBase+"table", "../tables/table1.xml")
-	pkg.Add("xl/tables/table1.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" id="1" name="Sales" displayName="Sales" ref="A2:C4"><tableColumns count="3"/></table>`)
+	pkg.Add("xl/tables/table1.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" id="1" name="Table1" displayName="Sales" ref="A2:C4"><tableColumns count="3"/></table>`)
 	// A second table that declares no header row.
 	pkg.Rel(firstSheet, relBase+"table", "../tables/table2.xml")
 	pkg.Add("xl/tables/table2.xml", ctTable, `<table xmlns="`+ooxmltest.NSSheet+`" id="2" name="Lower" displayName="Lower" ref="A8:C10" headerRowCount="0"/>`)
@@ -276,10 +276,11 @@ func TestExcelDeclaredTablesAndMerges(t *testing.T) {
 		`sheet 1 "T"`,
 		`  table A1:A1 inferred [["Title over the table"]]`,
 		// Declared: its own rectangle, an empty cell included, and its header row.
-		`  table A2:C4 header=1 [["Region" "Q1" "Q2"] ["North" "10" "12"] ["South" "7" ""]]`,
+		// The name the workbook shows, not the one it was made with.
+		`  table A2:C4 name=Sales header=1 [["Region" "Q1" "Q2"] ["North" "10" "12"] ["South" "7" ""]]`,
 		`  table A5:A5 inferred [["next to the table's last row"]]`,
 		// Merges are cut to the table; one whose first cell is empty is left out.
-		`  table A8:C10 [["Merged across" "" "c"] ["tall" "x" "y"] ["" "z" ""]] merges=[{0 0 1 2} {1 0 2 1} {1 2 2 1}]`,
+		`  table A8:C10 name=Lower [["Merged across" "" "c"] ["tall" "x" "y"] ["" "z" ""]] merges=[{0 0 1 2} {1 0 2 1} {1 2 2 1}]`,
 	)
 }
 
@@ -788,4 +789,99 @@ func TestRowsMarkATableCarriedOverABand(t *testing.T) {
 	if strings.Join(got, " ") != want {
 		t.Errorf("bands: %s; want: %s", strings.Join(got, " "), want)
 	}
+}
+
+// A link on the text of a shape on a sheet is a span, as it is on a slide.
+func TestExcelLinksInShapes(t *testing.T) {
+	drawing := drawingHeader +
+		`<xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>` +
+		`<xdr:to><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>` +
+		`<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="2" name="Shape"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr/><xdr:txBody><a:bodyPr/><a:lstStyle/>` +
+		`<a:p><a:r><a:rPr lang="en-GB"/><a:t>See </a:t></a:r><a:r><a:rPr lang="en-GB"><a:hlinkClick r:id="rId1"/></a:rPr><a:t>the source</a:t></a:r></a:p>` +
+		`</xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>`
+	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: xlRow(1, xlStr("A1", "cell")), Extra: `<drawing r:id="rId1"/>`})
+	pkg.Rel(firstSheet, relBase+"drawing", "../drawings/drawing1.xml")
+	pkg.Add("xl/drawings/drawing1.xml", ctDrawing, drawing)
+	pkg.ExternalRel("xl/drawings/drawing1.xml", ooxmltest.RelHyperlink, "https://example.org/source")
+	doc := excel(t, pkg, &gofastcore.Options{Spans: true})
+	var found bool
+	for _, b := range doc.AllBlocks() {
+		for _, sp := range b.Spans {
+			if sp.Href == "https://example.org/source" && b.Text[sp.Start:sp.End] == "the source" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("the link on the shape's text is not a span: %s", asJSON(t, doc.Parts))
+	}
+	ooxmltest.CheckDocument(t, doc)
+}
+
+// Text in a declared table is judged against the fill its table style
+// gives the cell, built in (from the standard) or the workbook's own: white
+// text on a table's dark header is seen; white text where the style leaves
+// the cell white is not.
+func TestExcelTableStyles(t *testing.T) {
+	const themeXML = `<a:theme xmlns:a="` + ooxmltest.NSDraw + `" name="x"><a:themeElements><a:clrScheme name="x">` +
+		`<a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2>` +
+		`<a:accent1><a:srgbClr val="1F3864"/></a:accent1></a:clrScheme></a:themeElements></a:theme>`
+	white := `<sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/>`
+	black := `<sz val="11"/><color rgb="FF000000"/><name val="Calibri"/>`
+	rows := func(r0 int) string {
+		var sb strings.Builder
+		// A header row, then three rows; column B is in white.
+		sb.WriteString(xlRow(r0, xlStr(fmt.Sprintf("A%d", r0), "Region"), xlStyledStr(fmt.Sprintf("B%d", r0), 1, "Sales")))
+		for i, name := range []string{"North", "South", "East"} {
+			r := r0 + 1 + i
+			sb.WriteString(xlRow(r, xlStr(fmt.Sprintf("A%d", r), name), xlStyledStr(fmt.Sprintf("B%d", r), 1, "hidden?")))
+		}
+		return sb.String()
+	}
+	table := func(n int, ref, style string) string {
+		return fmt.Sprintf(`<table xmlns="%s" id="%d" name="T%d" displayName="T%d" ref="%s"><tableColumns count="2"/>`+
+			`<tableStyleInfo name="%s" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>`, ooxmltest.NSSheet, n, n, n, ref, style)
+	}
+	styles := xlStyles(nil, []string{white, black}, nil, `numFmtId="0"`, `numFmtId="0" fontId="1"`, `numFmtId="0" fontId="2"`) +
+		// The workbook's own style: a black header, white rows.
+		`<dxfs count="2"><dxf><fill><patternFill><bgColor rgb="FF000000"/></patternFill></fill></dxf><dxf><fill><patternFill><bgColor rgb="FFFFFFFF"/></patternFill></fill></dxf></dxfs>` +
+		`<tableStyles count="1"><tableStyle name="Ours" pivot="0" count="2"><tableStyleElement type="headerRow" dxfId="0"/><tableStyleElement type="wholeTable" dxfId="1"/></tableStyle></tableStyles>`
+	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: rows(1) + rows(11),
+		Extra: `<tableParts count="2"><tablePart r:id="rId1"/><tablePart r:id="rId2"/></tableParts>`}).WithSheetStyles(styles)
+	pkg.Rel(firstSheet, relBase+"table", "../tables/table1.xml")
+	pkg.Add("xl/tables/table1.xml", ctTable, table(1, "A1:B4", "TableStyleMedium2"))
+	pkg.Rel(firstSheet, relBase+"table", "../tables/table2.xml")
+	pkg.Add("xl/tables/table2.xml", ctTable, table(2, "A11:B14", "Ours"))
+	pkg.Rel("xl/workbook.xml", relBase+"theme", "theme/theme1.xml")
+	pkg.Add("xl/theme/theme1.xml", ooxmltest.CTTheme, themeXML)
+	doc := excel(t, pkg, nil)
+	var got []string
+	for _, b := range doc.AllBlocks() {
+		if b.Table == nil {
+			continue
+		}
+		cells := map[[2]int]gofastcore.Hidden{}
+		for _, h := range b.Table.Hidden {
+			for r := h.Row; r < h.Row+h.RowSpan; r++ {
+				for c := h.Col; c < h.Col+h.ColSpan; c++ {
+					cells[[2]int{r, c}] |= h.Hidden
+				}
+			}
+		}
+		for r, row := range b.Table.Rows {
+			got = append(got, fmt.Sprintf("%s %s %v", b.Loc.Range, row[1], cells[[2]int{r, 1}]&gofastcore.HiddenLowContrast != 0))
+		}
+	}
+	want := []string{
+		// TableStyleMedium2: the header is filled with accent 1, dark;
+		// the first stripe with accent 1 lightened 80%, a pale blue that
+		// white text can still be told from; the second not at all.
+		"A1:B4 Sales false", "A1:B4 hidden? false", "A1:B4 hidden? true", "A1:B4 hidden? false",
+		// The workbook's own: a black header, white rows.
+		"A11:B14 Sales false", "A11:B14 hidden? true", "A11:B14 hidden? true", "A11:B14 hidden? true",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("got\n  %q\nwant\n  %q", got, want)
+	}
+	ooxmltest.CheckDocument(t, doc)
 }

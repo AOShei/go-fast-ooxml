@@ -13,6 +13,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -30,6 +31,7 @@ type parser struct {
 	text    []byte             // text of the paragraphs being built, innermost last
 	spans   []gofastcore.Span  // their spans, offsets counted from each paragraph's start
 	scratch []byte             // for cleaning a piece of text
+	symbols []byte             // for translating text in a symbol font
 	para    paraState          // the paragraph being read
 	after   []gofastcore.Block // blocks that follow the paragraph or table in progress
 
@@ -283,6 +285,8 @@ func (p *parser) container(emit func(gofastcore.Block)) {
 func (p *parser) section() {
 	s := &p.s
 	titlePage := false
+	var notes [2]notePr
+	defer func() { p.r.endSection(notes) }()
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
@@ -290,6 +294,14 @@ func (p *parser) section() {
 		}
 		if s.Depth() == depth+1 && s.Is(ns.Word, "titlePg") {
 			titlePage = onOff(s)
+			continue
+		}
+		if s.Depth() == depth+1 && s.Is(ns.Word, "footnotePr") {
+			notes[0] = readNotePr(s)
+			continue
+		}
+		if s.Depth() == depth+1 && s.Is(ns.Word, "endnotePr") {
+			notes[1] = readNotePr(s)
 			continue
 		}
 		header := s.Is(ns.Word, "headerReference")
@@ -754,10 +766,10 @@ func (p *parser) run(deleted bool) {
 				s.Skip()
 				continue
 			}
-			p.runText()
+			p.runText(p.runFont(&direct))
 		case "delText":
 			if deleted {
-				p.runText()
+				p.runText(p.runFont(&direct))
 			} else {
 				s.Skip()
 			}
@@ -774,9 +786,9 @@ func (p *parser) run(deleted bool) {
 		case "ruby":
 			p.ruby()
 		case "footnoteReference":
-			p.noteRef(p.r.footnotes, &p.r.footnoteN, "decimal")
+			p.noteRef(p.r.footnotes, 0)
 		case "endnoteReference":
-			p.noteRef(p.r.endnotes, &p.r.endnoteN, "lowerRoman")
+			p.noteRef(p.r.endnotes, 1)
 		case "commentReference":
 			p.commentRef()
 		case "drawing", "pict", "object":
@@ -881,19 +893,40 @@ func fieldLink(code []byte) string {
 	return ""
 }
 
-// runText appends the content of w:t.
+// runFont returns the symbol font a run's text is in, from its own
+// properties, its character style, its paragraph's style or the
+// document's defaults, nearest first; symbol.None for an ordinary font.
+func (p *parser) runFont(direct *runProps) symbol.Font {
+	if direct.fontSet {
+		return direct.font
+	}
+	if c := p.r.styles.char(direct.style); c != nil && c.fontSet {
+		return c.font
+	}
+	return p.para.base.font
+}
+
+// runText appends the content of w:t, in font.
 //
 // White space at the ends of a text element is dropped unless the element
 // asks for it to be kept with xml:space="preserve", which is what Word and
 // LibreOffice do. Word writes that attribute whenever a run begins or ends
 // with a space, so in its own files nothing is lost by the rule; in a file
 // made by another program it reproduces what a reader sees in Word.
-func (p *parser) runText() {
+func (p *parser) runText(font symbol.Font) {
 	s := &p.s
 	space, _ := s.Attr(xmlscan.SpaceXML, "space")
 	preserve := string(space) == "preserve"
 	start := len(p.text)
 	p.text = s.AppendText(p.text)
+	if font != symbol.None {
+		// Text typed in a symbol font: each character is a code of the
+		// font ("J" in Wingdings is a smiling face).
+		var missing int
+		p.symbols, missing = font.Translate(p.symbols[:0], p.text[start:])
+		p.text = append(p.text[:start], p.symbols...)
+		p.r.unmapped += missing
+	}
 	// A paragraph is counted when it is complete; one that has by itself
 	// outgrown what is left is not read to its end first.
 	if n := len(p.text) - p.para.start; n > 1<<16 && int64(n) > p.r.text.Left() {
@@ -1003,18 +1036,17 @@ func (p *parser) symbol() {
 
 // noteRef handles a reference to a footnote or endnote: the note becomes a
 // block after the paragraph, labelled with the number a reader sees.
-func (p *parser) noteRef(notes map[int]note, counter *int, format string) {
+func (p *parser) noteRef(notes map[int]note, kind int) {
 	s := &p.s
 	id, ok := intAttr(s, "id")
 	custom, has := s.Attr(ns.Word, "customMarkFollows")
 	marker := ""
 	if !has || !isOn(custom) {
-		*counter++
-		marker = formatNumber(*counter, format)
+		marker = p.r.noteMark(kind)
 	}
 	// A note is given once, at its first reference. A file that refers to
 	// one note many times does not get it copied each time.
-	key := format + strconv.Itoa(id)
+	key := [2]string{"foot", "end"}[kind] + strconv.Itoa(id)
 	if n, found := notes[id]; ok && found && n.text != "" && !p.r.usedNotes[key] {
 		p.r.usedNotes[key] = true
 		p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: n.text, Spans: n.spans, Hidden: n.hidden})

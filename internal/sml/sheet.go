@@ -13,6 +13,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -28,6 +29,7 @@ type cell struct {
 	text   string
 	row    int32 // from 0
 	col    int32
+	style  int32             // its style, for a table's style to be judged against
 	hidden gofastcore.Hidden // why its text cannot be seen, where the cell itself is the reason
 }
 
@@ -67,12 +69,14 @@ type sheet struct {
 	room     *gofastcore.TextBudget
 	raw, out []byte
 
-	noValue int            // formulas stored without a result
-	removed int            // control characters taken out
-	split   int            // regions too sparse to be a grid
-	unread  map[string]int // content of kinds that are not read
-	damaged []string       // parts that could not be read to their end
-	cut     string         // why reading stopped early, if it did
+	noValue  int            // formulas stored without a result
+	removed  int            // control characters taken out
+	unmapped int            // codes of symbol fonts with no character
+	symbols  []byte         // for translating text in a symbol font
+	split    int            // regions too sparse to be a grid
+	unread   map[string]int // content of kinds that are not read
+	damaged  []string       // parts that could not be read to their end
+	cut      string         // why reading stopped early, if it did
 
 	// Reading a band of rows at a time (see Rows).
 	pass   int                // which of the two passes over the part this is
@@ -380,10 +384,13 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 				typ = 'd'
 			}
 		}
-		style := &plainStyle
+		style, styleIndex := &plainStyle, int32(-1)
 		if v, ok := s.Attr(xmlscan.NoSpace, "s"); ok {
 			if i, ok := atoi(v); ok {
 				style = sh.wb.styles.style(i)
+				if style != &plainStyle {
+					styleIndex = int32(i)
+				}
 			}
 		}
 		// The value: v, or an inline string; a formula is not read.
@@ -432,7 +439,7 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 			ordered = false
 		}
 		textBytes += int64(len(text))
-		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, hidden: hidden | style.hidden})
+		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, style: styleIndex, hidden: hidden | style.hidden})
 	}
 	if !ordered {
 		sh.unsorted = true
@@ -445,6 +452,15 @@ var (
 	textFalse = "FALSE"
 )
 
+// symbolText returns text in a cell whose font is a symbol font: each
+// character is a code of the font ("ü" in Wingdings is a check mark).
+func (sh *sheet) symbolText(f symbol.Font, text []byte) string {
+	var missing int
+	sh.symbols, missing = f.Translate(sh.symbols[:0], text)
+	sh.unmapped += missing
+	return string(sh.symbols)
+}
+
 // value returns what a cell shows, given what it holds.
 func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastcore.Hidden) {
 	switch typ {
@@ -454,6 +470,9 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 			return "", 0
 		}
 		text, _ := sh.wb.strings.at(i)
+		if style.symbol != symbol.None && text != "" {
+			text = sh.symbolText(style.symbol, []byte(text))
+		}
 		if text == "" || style.format.PlainText() {
 			return text, 0
 		}
@@ -463,6 +482,9 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 	case 'i', 't', 'e', 'd':
 		out, removed := cellText(sh.out[:0], raw)
 		sh.removed += removed
+		if style.symbol != symbol.None && (typ == 'i' || typ == 't') && len(out) > 0 {
+			out = append(out[:0], sh.symbolText(style.symbol, out)...)
+		}
 		var hidden gofastcore.Hidden
 		if (typ == 'i' || typ == 't') && len(out) > 0 && !style.format.PlainText() {
 			var result numfmt.Result

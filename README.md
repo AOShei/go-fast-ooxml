@@ -10,7 +10,7 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
 | Format | State |
 |---|---|
-| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes, comments, tracked changes, headers and footers, text boxes, pictures, embedded files. Hidden text is flagged (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
+| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files. Hidden text is flagged (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
 | Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, merged cells, comments, text in shapes, pictures and embedded files are read. Hidden text is flagged (see below). Sheets are read in parallel |
 | PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. Hidden text is flagged (see below). Slides are read in parallel |
 
@@ -79,6 +79,13 @@ with warnings that say what could not.
 - **Pictures are blocks.** Every picture is an `image` block with its
   place, its size and its alternative text, unless `Options.Images` is
   `ImagesNone`; `ImagesData` adds the bytes.
+- **Symbol fonts are translated.** Text in Symbol, Wingdings, Wingdings 2,
+  Wingdings 3 or Webdings is codes of the font, not letters: "ü" in
+  Wingdings is a check mark. It is written as the characters Unicode gives
+  those symbols, in all three formats, whether the font is set on the run,
+  its style or the cell, and for bullets. A code Unicode has no character
+  for (the Windows logo) is U+FFFD, and the part says how many with
+  `text.unmapped_glyphs`.
 - **A file cut short** has lost the directory at the end of its archive.
   Its members are then found by their own headers, as far as they go: a
   file that lost only its directory gives the whole document, one cut
@@ -209,6 +216,11 @@ unencrypted, with an `ooxml.decrypted` warning that names the scheme.
 certificate, ciphers other than AES, and the legacy binary formats
 (`.doc`, `.xls`, `.ppt`), which share the container of encrypted files:
 each is refused with `ErrUnsupported` and a message that says which it is.
+A file protected by rights management cannot be read here at all: its key
+is in a licence that a rights-management server issues to the people the
+document names, and this library contacts no server. The message says so,
+and an embedded one is listed with `child.unsupported` and the same
+message.
 
 ## Excel workbooks
 
@@ -281,6 +293,8 @@ placeholder it takes after, on the layout or the master.
 | Date, footer and slide-number placeholders | `footer`. A slide-number field shows the slide's number |
 | Text the layout or the master has of its own | `header` if it is in the upper half of the slide, `footer` if in the lower; on every slide that shows it, once where layout and master repeat each other |
 | Speaker's notes | `note` blocks of type `speaker`, one for each paragraph |
+| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master says not to show is flagged `invisible`. The date and the page number are not read |
+| Header and footer of the handouts | `header` and `footer` blocks from the handout master, once, after the first slide |
 | Comments, in both the older and the threaded form | `note` blocks of type `comment`, with author and date; replies follow the comment |
 
 Whether a paragraph has a bullet, how large its text is and what colour it
@@ -295,7 +309,7 @@ order they are read in. The blocks of a slide are given title first, then
 from the top down, and from left to right among shapes that start beside
 each other. A group is read as one thing, at the place of the group. Shapes
 that lie wholly outside the slide come after those on it, then the layout's
-and master's text, the notes and the comments. The order is a reading of
+and master's text and pictures, the notes and the comments. The order is a reading of
 the layout; what each block is and where it ends are declared, so blocks
 stay `origin: native`.
 
@@ -307,8 +321,7 @@ slide past that says so with `limit.exceeded`. What a limit leaves out is
 the same for any number of workers.
 
 **Not read:** charts, diagrams (SmartArt) and sound and video clips, each
-counted in `ooxml.unread_content`; pictures on layouts and masters; the
-notes master and handout master; animations, other than to know which
+counted in `ooxml.unread_content`; animations, other than to know which
 shapes they move (see hidden text). An action that starts a program or
 runs a macro is reported as `input.active_content` and never run.
 
@@ -378,10 +391,13 @@ flagged. What this means for a reviewer:
   includes text over a picture, over a shape that is not a rectangle, or
   over the edge of one: only a rectangle of one colour that lies under all
   of the text's shape is taken as what the text is seen against.
-- **Tables in PowerPoint whose style is not in the file.** Office has
-  table styles built in, and a file may name one without defining it (files
-  written by python-pptx do). What such a style gives a cell is not known,
-  so text there is judged only against a fill the cell itself states.
+- **Table styles that are not known.** Office has table styles built in,
+  and a file may name one without defining it (Excel always does; files
+  written by python-pptx do too). Excel's 60 are taken from the standard;
+  of PowerPoint's 74, the 52 whose definitions PowerPoint wrote into the
+  files of the test corpus are known. Where a table's style is neither in
+  the file nor known, text in it is judged only against a fill the cell
+  itself states.
 - **What a slide looks like during the show.** Animations are not played.
   Text that an animation reveals, hides or moves is judged where the slide
   stores it.

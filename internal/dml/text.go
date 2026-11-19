@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/label"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
@@ -26,6 +27,10 @@ type RunProps struct {
 	Ink     Fill             // what the letters are filled with
 	Outline Paint            // PaintOther: the letters have a drawn outline
 	Behind  Color            // a highlight behind the run
+	// Font is the symbol font of the run's letters (a:latin), Sym that of
+	// its symbols (a:sym), each meant only if its Said flag is set.
+	Font, Sym         symbol.Font
+	FontSaid, SymSaid bool
 }
 
 // inherit fills in what r does not say from the layer below it.
@@ -43,6 +48,12 @@ func (r *RunProps) inherit(from *RunProps) {
 	}
 	if !r.Behind.IsSet() {
 		r.Behind = from.Behind
+	}
+	if !r.FontSaid {
+		r.Font, r.FontSaid = from.Font, from.FontSaid
+	}
+	if !r.SymSaid {
+		r.Sym, r.SymSaid = from.Sym, from.SymSaid
 	}
 }
 
@@ -224,6 +235,13 @@ func readRunProps(s *xmlscan.Scanner, rp *RunProps, to *link) {
 		case s.Is(ns.Draw, "highlight"):
 			rp.Behind = ReadColor(s)
 			continue
+		case s.Is(ns.Draw, "latin"):
+			// A theme font ("+mn-lt") is never a symbol font.
+			v, _ := s.Attr(xmlscan.NoSpace, "typeface")
+			rp.Font, rp.FontSaid = symbol.ByName(string(v)), true
+		case s.Is(ns.Draw, "sym"):
+			v, _ := s.Attr(xmlscan.NoSpace, "typeface")
+			rp.Sym, rp.SymSaid = symbol.ByName(string(v)), true
 		case to != nil && (s.Is(ns.Draw, "hlinkClick") || s.Is(ns.Draw, "hlinkMouseOver")):
 			if action, ok := s.Attr(xmlscan.NoSpace, "action"); ok && StartsProgram(action) {
 				to.program = true
@@ -303,10 +321,12 @@ type Text struct {
 	Inset float64 // top and bottom margins inside the shape, in points
 
 	Removed  int // control characters removed, over all bodies
+	Unmapped int // codes of symbol fonts with no character, over all bodies
 	Programs int // links that start a program or run a macro, over all bodies
 
 	spans  []gofastcore.Span
 	raw    []byte
+	sym    []byte // for translating text in a symbol font
 	own    *ListStyle
 	levels [maxLevels]RunProps
 	have   [maxLevels]bool
@@ -384,6 +404,19 @@ func (t *Text) bodyProps(s *xmlscan.Scanner) {
 }
 
 // level returns what a run at the given level inherits.
+// symbolFonts returns the symbol fonts that apply to a run's letters and
+// to its symbols, from its own properties or the level of the list it is
+// in. A symbol with no font of its own is in the letters' font.
+func (t *Text) symbolFonts(rp *RunProps, level int) (font, sym symbol.Font) {
+	r := *rp
+	r.inherit(t.level(level))
+	font, sym = r.Font, r.Sym
+	if !r.SymSaid {
+		sym = font
+	}
+	return font, sym
+}
+
 func (t *Text) level(l int) *RunProps {
 	if !t.have[l] {
 		var rp RunProps
@@ -594,6 +627,14 @@ func (t *Text) run(s *xmlscan.Scanner, paraStart, level int, slideNumber bool) f
 			if slideNumber && t.SlideNumber != "" {
 				t.Buf = append(t.Buf, t.SlideNumber...)
 				continue
+			}
+			if font, sym := t.symbolFonts(&rp, level); font != symbol.None || sym != symbol.None {
+				// Text in a symbol font: each character is a code of
+				// the font ("J" in Wingdings is a smiling face).
+				var missing int
+				t.sym, missing = symbol.Translate(t.sym[:0], t.raw, font, sym)
+				t.raw, t.sym = t.sym, t.raw
+				t.Unmapped += missing
 			}
 			var removed int
 			t.Buf, removed = clean.Append(t.Buf, t.raw, clean.Ligatures)

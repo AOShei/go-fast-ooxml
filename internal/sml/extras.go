@@ -19,6 +19,11 @@ import (
 type declaredTable struct {
 	at         rect
 	headerRows int
+	totalRows  int
+	name       string // the name Excel shows for it
+	// Its style, and which of the style's elements it shows.
+	style                                              string
+	firstColumn, lastColumn, rowStripes, columnStripes bool
 }
 
 // declared reads the sheet's table parts.
@@ -43,8 +48,30 @@ func (sh *sheet) declared() []declaredTable {
 					return
 				}
 				t := declaredTable{at: at, headerRows: 1}
+				// The name the workbook shows; name is the one formulas
+				// use, and is the same unless it was changed by hand.
+				if v, ok := s.Attr(xmlscan.NoSpace, "displayName"); ok && len(v) > 0 {
+					t.name = clean.Name(string(v))
+				} else if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+					t.name = clean.Name(string(v))
+				}
 				if n, ok := intAttr(s, "headerRowCount"); ok {
 					t.headerRows = min(n, 1)
+				}
+				if n, ok := intAttr(s, "totalsRowCount"); ok && n > 0 {
+					t.totalRows = min(n, 1)
+				}
+				// Its style is in a child element.
+				depth := s.Depth()
+				for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+					if s.Kind() != xmlscan.Start || s.Depth() != depth+1 || !s.Is(ns.Sheet, "tableStyleInfo") {
+						continue
+					}
+					v, _ := s.Attr(xmlscan.NoSpace, "name")
+					t.style = string(v)
+					on := func(name string) bool { v, ok := s.Attr(xmlscan.NoSpace, name); return ok && isTrue(v) }
+					t.firstColumn, t.lastColumn = on("showFirstColumn"), on("showLastColumn")
+					t.rowStripes, t.columnStripes = on("showRowStripes"), on("showColumnStripes")
 				}
 				out = append(out, t)
 				return
@@ -190,6 +217,14 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 	}
 	sawImage := false
 	pal := dml.Palette{Theme: sh.wb.theme, Map: dml.DefaultMap}
+	// Where a link on the text of a shape leads: an address outside the
+	// file, cleaned when the relationships were read.
+	link := func(id []byte) string {
+		if rel, ok := byID[string(id)]; ok && rel.External {
+			return rel.Target
+		}
+		return ""
+	}
 	sh.load(target, func(s *xmlscan.Scanner) {
 		var row, col int32 // the cell the current anchor starts at
 		var alt string
@@ -262,7 +297,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 				if fill.Paint == dml.PaintUnset {
 					fill = styled
 				}
-				out = sh.textBody(s, out, &pal, row, col, fill, ink, unseen)
+				out = sh.textBody(s, out, &pal, row, col, fill, ink, unseen, link)
 			case s.Is(ns.Draw, "blip"):
 				id, ok := s.Attr(ns.Rel, "embed")
 				if !ok {
@@ -316,7 +351,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 // current): one block for each of its paragraphs that has text. Text too
 // small to read, or in the colour of what is behind it, is marked; so is
 // all of it if the shape is hidden.
-func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, row, col int32, fill dml.Fill, ink dml.Color, unseen bool) []placed {
+func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, row, col int32, fill dml.Fill, ink dml.Color, unseen bool, link func([]byte) string) []placed {
 	t := &sh.shapes
 	t.Palette, t.Chain, t.Base = pal, nil, dml.RunProps{}
 	if ink.IsSet() {
@@ -332,10 +367,11 @@ func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, ro
 	default:
 		t.Behind, t.Lit = theme.White, true
 	}
-	t.Later, t.Styles, t.Link, t.SlideNumber = false, sh.wb.opts.Spans, nil, ""
+	t.Later, t.Styles, t.Link, t.SlideNumber = false, sh.wb.opts.Spans, link, ""
 	t.Read(s)
 	sh.removed += t.Removed
-	t.Removed = 0
+	sh.unmapped += t.Unmapped
+	t.Removed, t.Unmapped = 0, 0
 	for i := range t.Paras {
 		p := &t.Paras[i]
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(t.Buf[p.Start:p.End]), Spans: p.Spans, Hidden: p.Hidden}

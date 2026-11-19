@@ -83,19 +83,26 @@ type reader struct {
 	endnotes  map[int]note
 	comments  map[int]note
 
-	footnoteN, endnoteN int
-	usedNotes           map[string]bool // notes already emitted: each appears once
-	furniture           []furnitureRef  // headers and footers named by sections, in order
-	firstPage           [2]int          // the latest first-page footer and header named: index in furniture, plus one
-	evenAndOdd          bool            // the document has different odd and even pages
-	showBackground      bool            // the page colour is displayed
-	theme               map[string]color
-	drawn               dml.Palette // resolves the colours of drawings
-	page                color       // the page background
-	seenFurniture       map[string]bool
-	images              map[string]*gofastcore.Image // by part name, to share one read
-	delivered           map[string]bool              // image data already given once
-	children            map[string]bool              // embedded parts already handed on
+	// How footnotes [0] and endnotes [1] are numbered: as the settings
+	// say, then as each section says, in order. A note's number is known
+	// only when its section has ended, because a section's properties
+	// come after its text; noteMarks holds what is needed until then.
+	noteProps      [2]notePr
+	sections       [][2]notePr
+	inSection      [2]int // notes of each kind referred to so far in the current section
+	noteMarks      []noteMark
+	usedNotes      map[string]bool // notes already emitted: each appears once
+	furniture      []furnitureRef  // headers and footers named by sections, in order
+	firstPage      [2]int          // the latest first-page footer and header named: index in furniture, plus one
+	evenAndOdd     bool            // the document has different odd and even pages
+	showBackground bool            // the page colour is displayed
+	theme          map[string]color
+	drawn          dml.Palette // resolves the colours of drawings
+	page           color       // the page background
+	seenFurniture  map[string]bool
+	images         map[string]*gofastcore.Image // by part name, to share one read
+	delivered      map[string]bool              // image data already given once
+	children       map[string]bool              // embedded parts already handed on
 
 	inserted, deleted int  // tracked changes seen
 	removed           int  // control characters removed
@@ -173,6 +180,12 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 							r.evenAndOdd = onOff(s)
 						case s.Is(ns.Word, "displayBackgroundShape"):
 							r.showBackground = onOff(s)
+						case s.Is(ns.Word, "footnotePr"):
+							r.noteProps[0] = readNotePr(s)
+							continue
+						case s.Is(ns.Word, "endnotePr"):
+							r.noteProps[1] = readNotePr(s)
+							continue
 						}
 						s.Skip()
 					}
@@ -563,6 +576,7 @@ func (r *reader) embedded(rels []opc.Rel) {
 // finish adds the warnings that describe the document as a whole.
 func (r *reader) finish() {
 	part := r.part
+	r.numberNotes(part.Blocks)
 	hasText, hasImage := false, false
 	for i := range part.Blocks {
 		switch b := &part.Blocks[i]; {
@@ -597,7 +611,7 @@ func (r *reader) finish() {
 	}
 	if r.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs,
-			strconv.Itoa(r.unmapped)+" characters of a symbol font this version cannot translate appear as U+FFFD")
+			warn.Unmapped(r.unmapped))
 	}
 	if r.clamped > 0 {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, strconv.Itoa(r.clamped)+" headings deeper than level 6")

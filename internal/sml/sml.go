@@ -392,6 +392,9 @@ func (sh *sheet) finish(sawImage bool) {
 	if sh.removed > 0 {
 		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(sh.removed))
 	}
+	if sh.unmapped > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))
+	}
 	part.MarkHidden()
 }
 
@@ -409,7 +412,9 @@ func (sh *sheet) content() (sawImage bool) {
 	sh.failed(sh.s.Err())
 	sh.s = xmlscan.Scanner{} // its window is no longer needed
 
-	blocks := sh.tablesOf(sh.declared())
+	declared := sh.declared()
+	sh.applyTableStyles(declared)
+	blocks := sh.tablesOf(declared)
 	blocks = append(blocks, sh.comments()...)
 	for _, target := range sh.drawings {
 		var saw bool
