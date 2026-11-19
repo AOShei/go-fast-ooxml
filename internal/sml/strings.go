@@ -52,7 +52,7 @@ func readStrings(s *xmlscan.Scanner) (t *stringTable, removed int, full bool) {
 		var n int
 		cleaned, n = cellText(cleaned[:0], raw)
 		removed += n
-		if all.Len()+len(cleaned) > maxStringBytes {
+		if int64(all.Len())+int64(len(cleaned)) > maxStringBytes {
 			t.text = all.String()
 			return t, removed, true
 		}

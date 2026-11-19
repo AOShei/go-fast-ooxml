@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -135,6 +136,10 @@ func referenceStream(data []byte) ([]byte, error) {
 	}
 }
 
+// spacedEncoding matches an encoding declaration with white space around
+// its equals sign.
+var spacedEncoding = regexp.MustCompile(`encoding(\s+=\s*|=\s+)["']`)
+
 // compare returns "" if the two readings of data agree, else a description.
 func compare(data []byte) string {
 	// encoding/xml returns a byte order mark as text; this package skips it.
@@ -171,6 +176,14 @@ func compare(data []byte) string {
 		got, err := ourStream(s)
 		if errors.Is(err, ErrDepth) {
 			continue // refused on purpose; encoding/xml reads on
+		}
+		if spacedEncoding.Match(data) {
+			// XML allows spaces around the equals sign of the encoding
+			// declaration. encoding/xml does not see a declaration
+			// written so and reads the bytes as UTF-8; this package
+			// sees it, and transcodes or refuses as it says. (Found by
+			// the fuzz campaign of the release hardening.)
+			continue
 		}
 		if err != nil {
 			return way + ": encoding/xml reads it, this package fails: " + err.Error()
@@ -288,4 +301,67 @@ func FuzzXML(f *testing.F) {
 			t.Fatalf("%s\ninput: %q", problem, data)
 		}
 	})
+}
+
+// A character may be written by its number with any number of zeros in
+// front. The reader took a reference to be at most twelve bytes and left
+// a longer one as written; the fuzz campaign of the release hardening
+// found it. Such references are read as encoding/xml reads them, in text
+// and in attribute values, wherever the window happens to end.
+func TestCharacterReferencesWithLeadingZeros(t *testing.T) {
+	zeros := strings.Repeat("0", 5000)
+	for _, ref := range []string{
+		"&#0000100000;", "&#x000000000000000041;", "&#X0000000000000041;", "&#" + zeros + "65;", "&#x" + zeros + "1F600;",
+		"&#0000000000001114112;", "&#x00000000000000D800;", "&#00000000000000;", // not characters
+		"&#000000000", "&#00000000000000 65;", "&#0000000000000g;", "&#;", "&#x;", // not references
+	} {
+		for pad := 0; pad < 40; pad++ {
+			before := strings.Repeat("x", pad)
+			for _, doc := range []string{
+				"<a>" + before + ref + "</a>",
+				"<a>" + before + ref + ref + " and after</a>",
+				`<a b="` + before + ref + `"/>`,
+			} {
+				if problem := compare([]byte(doc)); problem != "" {
+					t.Fatalf("%s\ninput: %.80q", problem, doc)
+				}
+			}
+		}
+	}
+	s := NewBytes([]byte("<a>&#0000100000;&#"+zeros+"65;</a>"), nil)
+	var text []byte
+	for s.Next() != EOF {
+		if s.Kind() == Text {
+			text = append(text, s.Text()...)
+		}
+	}
+	if string(text) != "\U000186A0A" || s.Repairs != 0 || s.Err() != nil {
+		t.Errorf("text %q, %d repairs, %v", text, s.Repairs, s.Err())
+	}
+}
+
+// An encoding declaration may have spaces around its equals sign, and is
+// then a declaration all the same: an encoding this package does not
+// read is refused, not read as if nothing had been declared.
+func TestEncodingDeclarationWithSpaces(t *testing.T) {
+	for _, decl := range []string{`encoding="0"`, `encoding= "0"`, `encoding ="0"`, `encoding = 'EBCDIC'`} {
+		s := NewBytes([]byte(`<?xml version="1.0" `+decl+`?><a>text</a>`), nil)
+		for s.Next() != EOF {
+		}
+		if !errors.Is(s.Err(), ErrEncoding) {
+			t.Errorf("%s: %v", decl, s.Err())
+		}
+	}
+	for _, decl := range []string{`encoding="UTF-8"`, `encoding = "utf-8"`, `encoding= 'UTF-8'`} {
+		s := NewBytes([]byte(`<?xml version="1.0" `+decl+`?><a>text</a>`), nil)
+		var text []byte
+		for s.Next() != EOF {
+			if s.Kind() == Text {
+				text = append(text, s.Text()...)
+			}
+		}
+		if s.Err() != nil || string(text) != "text" {
+			t.Errorf("%s: %q, %v", decl, text, s.Err())
+		}
+	}
 }

@@ -33,6 +33,8 @@ test whose tool is missing skips itself.
 
 | File | Produced by | Content |
 |---|---|---|
+| `comparison.json`, `comparison.md` | `python bench/compare.py` | This library against the tools in use today, on the large files and the corpus, each measured as a process. The table in the top-level README is written by the same run |
+| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 5,586 files: how many were read, what the rest were, which warnings and hidden-text reasons occur |
 | `accuracy.json` | `go test -run TestBaselineAccuracy -update .` | How well each tool recovers the known text of each fixture: precision, recall, F1 and word order, scored by the same code that scores this library |
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
@@ -47,10 +49,134 @@ Timings come from one machine and compare tools on that machine only.
 
 ```sh
 python3 testdata/fetch.py                                          # corpus, about 106 MB
+python3 testdata/soak.py                                           # soak set, about 290 MB on disk
 ../bench-env/.venv-ooxml/bin/python testdata/gen/gen.py --large    # fixtures and large files
 go test -run TestBaselineAccuracy -update .
 ../bench-env/.venv-ooxml/bin/python bench/run_baseline.py          # several minutes
+../bench-env/.venv-ooxml/bin/python bench/compare.py               # several minutes; rewrites the README's table
+go test -run TestSoak -v -soak-record .                            # under a minute
+go test -run Budgets -v -speed .                                   # allocation budgets and speed targets
 ```
+
+`baseline.md` is the record the targets were set from, before the library
+existed. `comparison.md` is the same measurement repeated with the library
+in it.
+
+## Comparison with the tools in use today
+
+`comparison.md` has the tables; this is what they say.
+
+On the large files, as whole processes, the other tools take 36 to 40
+times as long on Word, 32 to 222 times on Excel and 20 to 98 times on
+PowerPoint, and each uses more memory. The exception is docx2txt, which
+gives the text of a Word file and nothing else: it takes one and a half
+times as long.
+
+On the 788 files of the corpus:
+
+| | Word (195) | Excel (477) | PowerPoint (116) |
+|---|---|---|---|
+| This library: read, refused with a reason | 178, 17 | 457, 20 | 105, 11 |
+| Best other tool: read, failed with an exception | 176, 19 (docx2txt) | 444, 33 (openpyxl, read-only) | 100, 16 (python-pptx) |
+| This library: time for all it read | 0.4 s | 4.5 s | 0.4 s |
+| Fastest other tool | 1.2 s | 38.3 s | 0.7 s |
+
+Most of the Excel time is one hostile file, which is cut off at 2 GiB of
+text after about four seconds (see the soak run below). Small files are where the tools are closest: the median Word file takes
+this library 1.6 ms as a process, most of which is starting it.
+
+The measurement favours the other tools in one way: their time does not
+count importing the library, this library's counts the whole process.
+
+## Targets and budgets
+
+The speed targets of the plan, on the large generated files, as measured
+by `go test -run TestLargeFileBudgets -speed` (the best of seven runs, in
+the library, not counting the start of a process):
+
+| File | Target, one worker | Measured | Target, all workers | Measured |
+|---|---|---|---|---|
+| `large.docx` | 0.11 s | 0.062 s | 0.11 s | 0.061 s |
+| `large.xlsx` | 0.80 s | 0.58 s | 0.30 s | 0.17 s |
+| `large.pptx` | 0.10 s | 0.045 s | 0.04 s | 0.009 s |
+
+Time is the machine's as much as the library's, so the test holds it only
+when asked to. What it always holds, and CI with it, is allocation, which
+does not depend on the machine (`TestAllocationBudgets`): what one more
+paragraph, cell or slide costs, measured as the difference between a
+document and one twice as long.
+
+| One more | Allocations | Bytes allocated | Budget |
+|---|---|---|---|
+| Word paragraph | 1.0 | 1,220 | 1.5 and 1,800 |
+| Excel cell | 0.004 | 208 | 0.02 and 320 |
+| PowerPoint slide | 63 | 4,980 | 95 and 7,500 |
+
+A paragraph costs one allocation: its text. Cells of a sheet share a few
+large allocations. A slide is a member of the archive with relationships
+of its own, which is most of its 63.
+
+## Soak run
+
+`TestSoak` reads every file of the corpus and of the soak set: 5,586
+files, 258 MB. The soak set (`testdata/soak.py`) is the Office files in the
+test suites of LibreOffice, Apache Tika, pandoc, PhpSpreadsheet, PHPWord,
+ClosedXML, Excelize, mammoth.js, python-docx and python-pptx, at pinned
+commits: 4,798 files that those projects keep because something once went
+wrong with them, among them LibreOffice's collections of crash cases and
+fuzzer findings.
+
+Each file is read with one worker and with eight, with spans, with
+pictures, under a small cell limit and a small decompression budget, and a
+part at a time. For each: a valid document or a shared error; the same
+document for one worker and eight; the same text with spans; a document
+that survives its JSON form; parts read one at a time equal to the
+document's. Nothing is asserted about what a file says.
+
+The run is also made under the race detector (`go test -race -run
+TestSoak`, three minutes): no data race in any of the readers. The test
+program stops itself if its heap passes a ceiling (4 GiB; it reaches 1.5),
+and does not write out a document of more than 64 MB of text to compare
+it: two files of the set are made to produce that much.
+
+| | Files |
+|---|---|
+| Read | 5,507 (2,814 Word, 1,756 Excel, 937 PowerPoint) |
+| Refused, each with a reason | 79 |
+| Crashes, hangs, invalid documents | 0 |
+
+| Refused because | Files |
+|---|---|
+| Needs a password | 20 (13 of them from the soak set, all opened with the password their project's tests give) |
+| Archive cut off before its directory | 19 |
+| Archive with a damaged directory | 19 |
+| Not an archive at all | 9 |
+| An archive of another format (4 OpenDocument files named `.docx`, a package with only a theme, a plain zip) | 6 |
+| A package whose own structure is damaged | 4 |
+| Legacy binary format; encryption with a cipher other than AES | 2 |
+
+Of the 19 archives cut off before their directory, 15 are fuzzer and crash
+cases, and 4 are test files made by cutting a file short
+(`truncated62886.docx`, `Divino_Revelado.pptx`, `deep-data.xlsx`,
+`testWORD_truncated.docx`). None is among the files published on
+data.gov.uk. This is the count the decision on recovering truncated
+archives was waiting for.
+
+Among the documents read, 16 have a part that failed (a sheet the workbook
+lists and does not contain, XML that breaks off) and 11 have a damaged
+part that is not the main one; each says so in its warnings. 253 documents
+have hidden text.
+
+The run found one defect: asking for spans changed how consecutive
+paragraphs of code in a Word document were grouped. It is fixed, and
+`TestSpansChangeNothingElse` holds every sample document to it.
+
+The slowest file is a hostile one from Apache POI
+(`poc-shared-strings.xlsx`): 110 KB in which thousands of cells refer to
+one shared string of a megabyte. It is cut off at the limit on text
+produced, 2 GiB by default, after about four seconds; `SECURITY.md` says
+what to set for files from strangers.
+
 
 ## Accuracy on the corpus
 
@@ -169,6 +295,43 @@ Every file of the corpus goes through the command
 (`go test ./cmd/gofastooxml`), with the files embedded in it extracted too:
 740 give a valid document and 48 are refused with a reason (legacy binary
 files, files that need a password, files that are not packages).
+
+## Fuzz campaign
+
+Every fuzz target, run for the release (twelve processes, on the machine
+of `baseline.md` while it was busy with other work):
+
+| Target | What it is given | Time | Executions | Result |
+|---|---|---|---|---|
+| `FuzzOpen` | A whole file | 10 min | 33 million | clean |
+| `FuzzDocx` | The parts of a Word document in a sound package | 10 min | 7.8 million | clean |
+| `FuzzXlsx` | The parts of a workbook | 10 min | 2.4 million | clean, after one finding |
+| `FuzzPptx` | The parts of a presentation | 10 min | 2.5 million | clean |
+| `FuzzXML` | XML, compared token for token with `encoding/xml` | 10 min | 81 million | clean, after two findings |
+| `FuzzCFB` | A compound file | 5 min | 68 million | clean |
+| `FuzzEncryptionInfo` | The encryption information of a protected file | 5 min | 63 million | clean |
+| `FuzzNumFmt` | A number format and a value | 5 min | 85 million | clean |
+
+The findings, each now a seed that every test run replays, and a test of
+its own:
+
+- **A character reference with many zeros in front** (`&#0000100000;`) was
+  left as written: the XML reader took a reference to be at most twelve
+  bytes. It reads them at any length now, as `encoding/xml` does
+  (`TestCharacterReferencesWithLeadingZeros`).
+- **A sheet that gives one cell twice, rows out of order.** Read whole, the
+  sheet has the cell once; a band at a time (`Rows`), it is in each band it
+  falls in, since rows are put in order within a band only. That is the
+  behaviour, and is now documented; the check in the fuzz target was
+  wrong to count cells instead of comparing them by place
+  (`TestRowsOfASheetThatGivesACellTwice`).
+- **An encoding declaration with a space after the equals sign**
+  (`<?xml encoding= "0"?>`): `encoding/xml` does not see such a
+  declaration and reads the bytes as UTF-8. This reader sees it, as XML
+  says it should, and refuses an encoding it cannot read. The comparison
+  now knows the difference (`TestEncodingDeclarationWithSpaces`).
+
+None was a crash, a hang or a way past a limit.
 
 ## Encrypted files
 

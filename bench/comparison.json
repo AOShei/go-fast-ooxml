@@ -1,0 +1,361 @@
+{
+ "machine": {
+  "cpu": "AMD Ryzen 9 9900X 12-Core Processor",
+  "cores": 24,
+  "os": "Linux-6.18.60-1-lts-x86_64-with-glibc2.44",
+  "python": "3.13.18",
+  "go": "go1.27.3-X:nodwarf5"
+ },
+ "versions": {
+  "python-docx": "1.2.0",
+  "docx2txt": "0.9",
+  "openpyxl": "3.1.5",
+  "python-pptx": "1.0.2",
+  "markitdown": "0.1.9"
+ },
+ "limits": {
+  "timeout_seconds": 120,
+  "parallel_corpus_runs": 6
+ },
+ "corpus_files": 788,
+ "large": [
+  {
+   "tool": "python-docx",
+   "file": "large.docx",
+   "bytes": 3857509,
+   "import_seconds": 0.026,
+   "import_rss_mb": 29.465,
+   "seconds": 4.15,
+   "words": 1497662,
+   "peak_rss_mb": 210.535
+  },
+  {
+   "tool": "docx2txt",
+   "file": "large.docx",
+   "bytes": 3857509,
+   "import_seconds": 0.012,
+   "import_rss_mb": 23.531,
+   "seconds": 0.158,
+   "words": 1497662,
+   "peak_rss_mb": 153.516
+  },
+  {
+   "tool": "openpyxl",
+   "file": "large.xlsx",
+   "bytes": 19903360,
+   "import_seconds": 0.075,
+   "import_rss_mb": 47.066,
+   "seconds": 12.292,
+   "words": 3400025,
+   "peak_rss_mb": 1137.98
+  },
+  {
+   "tool": "openpyxl-readonly",
+   "file": "large.xlsx",
+   "bytes": 19903360,
+   "import_seconds": 0.069,
+   "import_rss_mb": 47.359,
+   "seconds": 9.31,
+   "words": 3400025,
+   "peak_rss_mb": 309.973
+  },
+  {
+   "tool": "python-pptx",
+   "file": "large.pptx",
+   "bytes": 3490257,
+   "import_seconds": 0.057,
+   "import_rss_mb": 38.305,
+   "seconds": 0.363,
+   "words": 139013,
+   "peak_rss_mb": 115.168
+  },
+  {
+   "tool": "markitdown",
+   "file": "large.docx",
+   "bytes": 3857509,
+   "import_seconds": 0.259,
+   "import_rss_mb": 143.375,
+   "seconds": 3.787,
+   "words": 1503032,
+   "peak_rss_mb": 327.727
+  },
+  {
+   "tool": "markitdown",
+   "file": "large.pptx",
+   "bytes": 3490257,
+   "import_seconds": 0.263,
+   "import_rss_mb": 143.422,
+   "seconds": 1.768,
+   "words": 155363,
+   "peak_rss_mb": 216.848
+  },
+  {
+   "tool": "markitdown",
+   "file": "large.xlsx",
+   "bytes": 19903360,
+   "import_seconds": 0.261,
+   "import_rss_mb": 142.988,
+   "seconds": 65.014,
+   "words": 5400157,
+   "peak_rss_mb": 1394.078
+  },
+  {
+   "tool": "gofastooxml, one worker",
+   "file": "large.docx",
+   "bytes": 3857509,
+   "seconds": 0.108,
+   "words": 1497662,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0,
+   "peak_rss_mb": 35.082
+  },
+  {
+   "tool": "gofastooxml, one worker",
+   "file": "large.pptx",
+   "bytes": 3490257,
+   "seconds": 0.057,
+   "words": 148013,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0,
+   "peak_rss_mb": 34.469
+  },
+  {
+   "tool": "gofastooxml, one worker",
+   "file": "large.xlsx",
+   "bytes": 19903360,
+   "seconds": 0.697,
+   "words": 3200021,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0,
+   "peak_rss_mb": 133.84
+  },
+  {
+   "tool": "gofastooxml",
+   "file": "large.docx",
+   "bytes": 3857509,
+   "seconds": 0.105,
+   "words": 1497662,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0,
+   "peak_rss_mb": 35.059
+  },
+  {
+   "tool": "gofastooxml",
+   "file": "large.pptx",
+   "bytes": 3490257,
+   "seconds": 0.018,
+   "words": 148013,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0,
+   "peak_rss_mb": 34.898
+  },
+  {
+   "tool": "gofastooxml",
+   "file": "large.xlsx",
+   "bytes": 19903360,
+   "seconds": 0.293,
+   "words": 3200021,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0,
+   "peak_rss_mb": 177.066
+  }
+ ],
+ "corpus": {
+  "python-docx / docx": {
+   "files": 195,
+   "ok": 166,
+   "errors": {
+    "ValueError": 8,
+    "KeyError": 2,
+    "PackageNotFoundError": 11,
+    "BadZipFile": 7,
+    "XMLSyntaxError": 1
+   },
+   "megabytes": 10.89,
+   "seconds": 1.182,
+   "mb_per_second": 9.21,
+   "files_per_second": 140.4,
+   "median_ms": 1.34,
+   "p95_ms": 18.22,
+   "max_peak_rss_mb": 239.6,
+   "import_seconds": 0.027,
+   "import_rss_mb": 34.6
+  },
+  "docx2txt / docx": {
+   "files": 195,
+   "ok": 176,
+   "errors": {
+    "ParseError": 1,
+    "BadZipFile": 17,
+    "KeyError": 1
+   },
+   "megabytes": 11.4,
+   "seconds": 1.209,
+   "mb_per_second": 9.44,
+   "files_per_second": 145.6,
+   "median_ms": 0.51,
+   "p95_ms": 21.97,
+   "max_peak_rss_mb": 152.8,
+   "import_seconds": 0.012,
+   "import_rss_mb": 34.6
+  },
+  "openpyxl / xlsx": {
+   "files": 477,
+   "ok": 443,
+   "errors": {
+    "KeyError": 2,
+    "BadZipFile": 22,
+    "XMLSyntaxError": 1,
+    "ValueError": 4,
+    "TypeError": 3,
+    "OSError": 1,
+    "MemoryError": 1
+   },
+   "megabytes": 62.78,
+   "seconds": 82.431,
+   "mb_per_second": 0.76,
+   "files_per_second": 5.4,
+   "median_ms": 3.31,
+   "p95_ms": 340.96,
+   "max_peak_rss_mb": 1501.1,
+   "import_seconds": 0.115,
+   "import_rss_mb": 47.3
+  },
+  "openpyxl-readonly / xlsx": {
+   "files": 477,
+   "ok": 444,
+   "errors": {
+    "KeyError": 2,
+    "BadZipFile": 22,
+    "XMLSyntaxError": 1,
+    "ValueError": 4,
+    "TypeError": 3,
+    "OSError": 1
+   },
+   "megabytes": 62.89,
+   "seconds": 38.339,
+   "mb_per_second": 1.64,
+   "files_per_second": 11.6,
+   "median_ms": 3.27,
+   "p95_ms": 234.37,
+   "max_peak_rss_mb": 416.8,
+   "import_seconds": 0.119,
+   "import_rss_mb": 47.4
+  },
+  "python-pptx / pptx": {
+   "files": 116,
+   "ok": 100,
+   "errors": {
+    "ValueError": 4,
+    "PackageNotFoundError": 6,
+    "BadZipFile": 6
+   },
+   "megabytes": 24.91,
+   "seconds": 0.686,
+   "mb_per_second": 36.28,
+   "files_per_second": 145.7,
+   "median_ms": 2.74,
+   "p95_ms": 20.86,
+   "max_peak_rss_mb": 159.4,
+   "import_seconds": 0.049,
+   "import_rss_mb": 38.3
+  },
+  "markitdown / docx": {
+   "files": 195,
+   "ok": 173,
+   "errors": {
+    "FileConversionException": 21,
+    "UnsupportedFormatException": 1
+   },
+   "megabytes": 11.34,
+   "seconds": 39.44,
+   "mb_per_second": 0.29,
+   "files_per_second": 4.4,
+   "median_ms": 31.97,
+   "p95_ms": 455.89,
+   "max_peak_rss_mb": 794.3,
+   "import_seconds": 0.433,
+   "import_rss_mb": 142.8
+  },
+  "markitdown / pptx": {
+   "files": 116,
+   "ok": 100,
+   "errors": {
+    "FileConversionException": 16
+   },
+   "megabytes": 24.91,
+   "seconds": 4.497,
+   "mb_per_second": 5.54,
+   "files_per_second": 22.2,
+   "median_ms": 27.2,
+   "p95_ms": 133.63,
+   "max_peak_rss_mb": 259.9,
+   "import_seconds": 0.428,
+   "import_rss_mb": 142.7
+  },
+  "markitdown / xlsx": {
+   "files": 477,
+   "ok": 439,
+   "errors": {
+    "FileConversionException": 38
+   },
+   "megabytes": 62.74,
+   "seconds": 325.467,
+   "mb_per_second": 0.19,
+   "files_per_second": 1.3,
+   "median_ms": 26.86,
+   "p95_ms": 1645.34,
+   "max_peak_rss_mb": 5106.7,
+   "import_seconds": 0.354,
+   "import_rss_mb": 142.9
+  },
+  "gofastooxml / docx": {
+   "files": 195,
+   "ok": 178,
+   "errors": {
+    "Refused": 17
+   },
+   "megabytes": 11.44,
+   "seconds": 0.381,
+   "mb_per_second": 30.0,
+   "files_per_second": 467.0,
+   "median_ms": 1.62,
+   "p95_ms": 3.7,
+   "max_peak_rss_mb": 34.6,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0
+  },
+  "gofastooxml / pptx": {
+   "files": 116,
+   "ok": 105,
+   "errors": {
+    "Refused": 11
+   },
+   "megabytes": 26.54,
+   "seconds": 0.376,
+   "mb_per_second": 70.62,
+   "files_per_second": 279.4,
+   "median_ms": 2.31,
+   "p95_ms": 8.93,
+   "max_peak_rss_mb": 34.6,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0
+  },
+  "gofastooxml / xlsx": {
+   "files": 477,
+   "ok": 457,
+   "errors": {
+    "Refused": 20
+   },
+   "megabytes": 65.51,
+   "seconds": 4.51,
+   "mb_per_second": 14.53,
+   "files_per_second": 101.3,
+   "median_ms": 1.47,
+   "p95_ms": 18.89,
+   "max_peak_rss_mb": 334.7,
+   "import_seconds": 0.0,
+   "import_rss_mb": 0.0
+  }
+ }
+}

@@ -65,3 +65,60 @@ func TestLabel(t *testing.T) {
 		t.Errorf("a long label came out %d bytes, valid=%v", len(long), utf8.ValidString(long))
 	}
 }
+
+// The run of printable ASCII is found eight bytes at a time. Every byte
+// value at every place in the eight must stop it where a byte-by-byte
+// reading does, and the cleaned text must be what it was without the
+// fast path.
+func TestPrintableRun(t *testing.T) {
+	slow := func(b []byte) int {
+		n := 0
+		for n < len(b) && b[n] >= 0x20 && b[n] < 0x7F {
+			n++
+		}
+		return n
+	}
+	base := []byte("The quick brown fox jumps over ~ ")
+	for at := 0; at < len(base); at++ {
+		for c := 0; c < 256; c++ {
+			b := append([]byte(nil), base...)
+			b[at] = byte(c)
+			for start := 0; start < 9; start++ {
+				if got, want := printable(b[start:]), slow(b[start:]); got != want {
+					t.Fatalf("byte %#x at %d, from %d: %d, want %d", c, at, start, got, want)
+				}
+			}
+		}
+	}
+	// Two bytes that stop the run, in every pair of places: a borrow from
+	// the first must not hide or invent the second.
+	for _, pair := range [][2]byte{{0x00, 0x7F}, {0x7F, 0x00}, {0x1F, 0x80}, {0xFF, 0x20}, {0x7F, 0x7E}, {0x1F, 0x20}, {0x00, 0x21}} {
+		for i := 0; i < 16; i++ {
+			for j := 0; j < 16; j++ {
+				b := []byte("abcdefghijklmnopqrstuvwx")
+				b[j] = pair[1]
+				b[i] = pair[0]
+				if got, want := printable(b), slow(b); got != want {
+					t.Fatalf("%#x at %d and %#x at %d: %d, want %d", pair[0], i, pair[1], j, got, want)
+				}
+			}
+		}
+	}
+}
+
+func BenchmarkAppend(b *testing.B) {
+	for name, text := range map[string]string{
+		"plain":    strings.Repeat("The quarterly figures for the northern region, as reported. ", 20),
+		"accented": strings.Repeat("Les chiffres trimestriels de la région du nord, tels que déclarés. ", 20),
+		"cjk":      strings.Repeat("北部地域の四半期の数字", 60),
+	} {
+		src := []byte(text)
+		dst := make([]byte, 0, 2*len(src))
+		b.Run(name, func(b *testing.B) {
+			b.SetBytes(int64(len(src)))
+			for b.Loop() {
+				dst, _ = Append(dst[:0], src, Ligatures)
+			}
+		})
+	}
+}

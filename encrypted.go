@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"sync/atomic"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/cfb"
@@ -14,6 +16,49 @@ import (
 )
 
 var compoundSignature = []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
+
+// spinAllowance is how many times MaxSpinCount the password checks of one
+// document may cost in all, counting the files embedded in it. One file
+// is bounded by MaxSpinCount; a document can embed thousands of encrypted
+// files, and each one that does not open costs two checks.
+const spinAllowance = 10
+
+// spinKey is the context key under which a document hands the rounds of
+// hashing it has left to the extraction of the files embedded in it.
+type spinKey struct{}
+
+// allowance returns the rounds of hashing the document may still spend
+// on password checks: what the document this file is embedded in has
+// left, if the context carries that, or a new allowance. It is nil when
+// there is no limit.
+func (f *File) allowance(ctx context.Context) *atomic.Int64 {
+	if left, ok := ctx.Value(spinKey{}).(*atomic.Int64); ok {
+		return left
+	}
+	limit := gofastcore.ResolveLimit(int64(f.e.MaxSpinCount), DefaultMaxSpinCount)
+	if limit > math.MaxInt64/spinAllowance {
+		return nil
+	}
+	left := new(atomic.Int64)
+	left.Store(limit * spinAllowance)
+	return left
+}
+
+// tree returns the context for one reading of this file's parts and of
+// the files embedded in it: ctx, carrying what is left for their password
+// checks. A file that is itself embedded passes on what it was given;
+// otherwise each reading has an allowance of its own, as it counts every
+// limit afresh.
+func (f *File) tree(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(spinKey{}).(*atomic.Int64); ok {
+		return ctx
+	}
+	left := f.allowance(ctx)
+	if left == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, spinKey{}, left)
+}
 
 // unlock looks at whether the file is a compound file and, if it is a
 // password-protected package, decrypts it: f.body becomes the package.
@@ -71,9 +116,14 @@ func (f *File) unlock(ctx context.Context) error {
 		passwords = []string{f.opts.Password, crypt.DefaultPassword}
 	}
 	maxSpin := int(gofastcore.ResolveLimit(int64(f.e.MaxSpinCount), DefaultMaxSpinCount))
+	left := f.allowance(ctx)
 	var key []byte
 	with := ""
 	for _, password := range passwords {
+		if left != nil && int64(info.SpinCount()) <= int64(maxSpin) && left.Add(-int64(info.SpinCount())) < 0 {
+			return fmt.Errorf("gofastooxml: encrypted Office document (%s): the password checks of the document and the files embedded in it have used the rounds of hashing allowed, %d times MaxSpinCount: %w",
+				info, spinAllowance, gofastcore.ErrLimitExceeded)
+		}
 		key, err = info.Key(ctx, password, maxSpin)
 		if err == nil {
 			with = "the password given"

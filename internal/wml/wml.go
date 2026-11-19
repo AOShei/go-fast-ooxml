@@ -222,7 +222,11 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindHeader, shown[f.name])...)
 		}
 	}
-	r.part.Blocks = append(r.part.Blocks, body...)
+	if len(r.part.Blocks) == 0 {
+		r.part.Blocks = body // nothing before it: no copy
+	} else {
+		r.part.Blocks = append(r.part.Blocks, body...)
+	}
 	for _, f := range r.furniture {
 		if !f.header {
 			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindFooter, shown[f.name])...)

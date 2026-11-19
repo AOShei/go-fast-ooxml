@@ -230,6 +230,10 @@ func TestExtractErrors(t *testing.T) {
 		w := zip.NewWriter(&buf)
 		for _, n := range names {
 			f, _ := w.Create(n)
+			if n == "mimetype" {
+				io.WriteString(f, "application/vnd.oasis.opendocument.text")
+				continue
+			}
 			io.WriteString(f, "x")
 		}
 		w.Close()
@@ -250,7 +254,8 @@ func TestExtractErrors(t *testing.T) {
 		{"text file", []byte("just some text, not an archive at all"), gofastcore.ErrMalformed, "not a zip"},
 		{"pdf", []byte("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n1 0 obj\n<<>>\nendobj\n"), gofastcore.ErrMalformed, "not a zip"},
 		{"plain zip", zipOf("readme.txt"), gofastcore.ErrUnsupported, "not an Office Open XML package"},
-		{"opendocument", zipOf("mimetype", "content.xml", "META-INF/manifest.xml"), gofastcore.ErrUnsupported, "not an Office Open XML package"},
+		{"opendocument", zipOf("mimetype", "content.xml", "META-INF/manifest.xml"), gofastcore.ErrUnsupported, "not an Office Open XML package: it is application/vnd.oasis.opendocument.text"},
+		{"cut off before the directory", ooxmltest.Docx(ooxmltest.Para("x")).Bytes()[:400], gofastcore.ErrMalformed, "the file is cut short or damaged"},
 		{"other office package", visio.Bytes(), gofastcore.ErrUnsupported, "no Word, Excel or PowerPoint"},
 		{"legacy binary", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000), "1Table": make([]byte, 100)}), gofastcore.ErrUnsupported, "legacy binary"},
 		{"password protected", ooxmltest.Encrypt(ooxmltest.Docx("").Bytes(), "a password", ooxmltest.Encryption{}), gofastcore.ErrPasswordRequired, "encrypted"},

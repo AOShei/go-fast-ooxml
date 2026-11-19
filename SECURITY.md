@@ -1,0 +1,127 @@
+# Security
+
+This library is written to read files from people who are not trusted: an
+upload, an attachment, a crawl. This page says what it promises about such
+files, what it leaves to the caller, and how to report a problem.
+
+## Reporting a vulnerability
+
+Use GitHub's private reporting for this repository (the **Security** tab,
+**Report a vulnerability**). Please do not open a public issue for something
+that lets a file crash the library, exhaust memory, read outside the input,
+or get text past the hidden-text checks they claim to cover. A file that
+reproduces the problem is the most useful thing to send.
+
+Any of the following is a bug to report, whatever the file:
+
+- a panic, a stack overflow, or a call that does not return;
+- memory or time beyond what the limits below allow;
+- a result that is neither a valid document nor one of the shared errors;
+- output that differs with the number of workers;
+- text flagged as visible that a reader of the document cannot see, where
+  the README says the check covers that case.
+
+## What a file cannot do
+
+| | |
+|---|---|
+| **Run anything** | Macros are never run, formulas never evaluated, fields never updated. Their presence is reported (`input.active_content`) |
+| **Reach anything** | No file other than the input is opened and no network connection is made. Links to other files, remote templates and linked pictures are reported (`input.external_reference`), never followed. The packages that read file content do not import `os`, `net` or `os/exec`, and a test fails if one starts to |
+| **Use XML against the reader** | The library has its own XML reader. Document type declarations are refused, so there are no entities to expand and nothing external to include. Nesting is bounded at 512 elements |
+| **Crash the caller** | No panic on any input: every index, length and count taken from a file is checked, and every list a file can lengthen has a bound |
+| **Write what it likes into the output** | Text is valid UTF-8 with control characters removed. Names taken from the file (parts, sheets, authors, error messages) are cleaned and cut to a length before they appear in a warning or a field |
+| **Hide text from a reviewer unnoticed** | Within what the checks cover; see below |
+
+## Limits
+
+Every cost a file can impose is bounded by a limit with a default. A limit
+that is reached either refuses the file (`ErrLimitExceeded`) or cuts the
+document there with a `limit.exceeded` warning; which, is in the table.
+
+| Limit | Default | Where | When reached |
+|---|---|---|---|
+| Size of the file | 1 GiB | `Options.Limits.MaxInputBytes` | Refused before anything is read |
+| Bytes decompressed, and text produced | 2 GiB | `Options.Limits.MaxDecodedBytes` | The part being read is cut off; a file whose own structure needs more is refused |
+| Members of the archive | 100,000 | `Extractor.MaxArchiveMembers` | Refused |
+| Cells kept from a workbook, or from the tables of a presentation | 20 million | `Extractor.MaxCells` | The sheet or slide is cut off |
+| Rounds of hashing to try a password | 1 million | `Extractor.MaxSpinCount` | Refused |
+| Password checks of a document and the files embedded in it, together | 10 times the above | | Further encrypted files are listed, not opened |
+| Depth of embedded documents | 4 | `Options.Limits.MaxDepth` | Listed, not opened |
+| Nesting of XML elements | 512 | fixed | The part is cut off |
+
+A zero in a limit means its default and a negative number means none.
+
+There is no test of compression ratio: Office files compress a hundred to
+one and more, and a ratio that stops bombs stops real files. The budget of
+decompressed bytes is what stops a bomb, and it is counted as bytes are
+read, so a bomb costs time up to the budget and little memory.
+
+### What the defaults still allow
+
+The defaults are set so that no real file is refused. For files from
+strangers they allow more than most services want to spend:
+
+- **Time.** Decompressing up to the budget takes a few seconds per
+  gigabyte. Pass a context with a deadline: every reader stops when it is
+  cancelled, including a password check in progress.
+- **Output size.** A small file can produce a large document. The worst
+  case in the corpus is 110 KB that becomes 2 GB of cell text: one long
+  shared string that thousands of cells refer to. The text produced is
+  counted against `MaxDecodedBytes`, so lowering that limit bounds the
+  output too. A service that expects documents of a few megabytes of text
+  can set it to a few hundred megabytes and lose nothing.
+- **Memory.** A document is held in memory whole by `Extract`. `File.Parts`
+  and `File.Rows` hold a part or a band of rows at a time.
+- **Encrypted files.** Trying a password costs what the file says it
+  costs, up to `MaxSpinCount`: about a hundredth of a second at what Office
+  writes, about a tenth at the default limit.
+
+## Hidden text
+
+Documents are fed to language models, and text a human reviewer cannot see
+is the usual way to smuggle instructions into one. The library does not
+block or remove such text. It extracts it, flags it with the reason
+(`Block.Hidden`, spans, table cells), raises a `text.hidden` warning on the
+part, and lets the caller leave it out (`RenderOptions.ExcludeHidden`).
+
+`Document.HiddenChecked` lists the reasons that are checked completely for
+the format. The README's *Hidden text* section lists, per format, exactly
+what is flagged and, as important, what is not: text over a picture or a
+gradient, what an animation does, conditional formatting, page layout in
+Word and Excel, fonts with blank glyphs. A flag states a fact; where the
+fact cannot be established nothing is flagged, so **the absence of a flag
+is not a statement that all text is visible**.
+
+Content that is never on a page but is extracted by design (properties,
+comments, speaker's notes, alternative text) has its own place in the model
+and is not flagged as hidden. A consumer that feeds a model decides what to
+do with each.
+
+## What is not promised
+
+- **Fidelity to what Office displays.** The library does no page layout
+  and evaluates no formula. It reports stored values.
+- **Secrecy of a password in memory.** The password and the key derived
+  from it are ordinary Go values and are not wiped.
+- **Authenticity.** Digital signatures are not verified. For encrypted
+  files the integrity value is checked and a mismatch reported
+  (`ooxml.integrity_mismatch`), which shows damage or tampering by someone
+  without the password and nothing more.
+- **Denial of service within the limits.** A file may cost what the limits
+  allow. Set them for the service.
+
+## How this is tested
+
+- Fuzz targets for the XML reader, the archive, each format's main part,
+  number formats, the compound-file container and the encryption
+  information; all run in CI on every pull request.
+- A soak run over 5,586 files: the corpus and the Office files in the test
+  suites of LibreOffice, Apache Tika, pandoc and seven other projects,
+  among them their collections of crash cases and fuzzer findings. Every
+  file gives a valid document or a shared error, the same for any number
+  of workers and a part at a time (`bench/soak.json`).
+- Worst-case tests for each format: bombs, deep nesting, huge counts,
+  quadratic shapes of input, each held to a time and a memory ceiling.
+- `go test -race` on Linux, macOS and Windows.
+- The only dependency is `go-fast-core`; both use the standard library and
+  nothing else, and CI fails if that changes.

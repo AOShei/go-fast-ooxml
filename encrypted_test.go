@@ -573,3 +573,87 @@ func TestEncryptedFileIsNotHeldDecrypted(t *testing.T) {
 		}
 	}
 }
+
+// One encrypted file costs at most MaxSpinCount rounds of hashing for
+// each password tried. A document can embed any number of encrypted
+// files, so the document and everything embedded in it share one
+// allowance, ten times MaxSpinCount: past it, an encrypted file is listed
+// as not read for that reason, and nothing more is spent.
+func TestPasswordChecksOfEmbeddedFilesShareAnAllowance(t *testing.T) {
+	const files = 30
+	inner := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Inner", Data: xlRow(1, xlStr("A1", "inside"))}).Bytes()
+	pkg := ooxmltest.Docx(para(run(text("Thirty attachments."))))
+	for i := range files {
+		// Each is encrypted apart, as attachments are.
+		name := fmt.Sprintf("embeddings/book%d.xlsx", i)
+		pkg.Rel("word/document.xml", ooxmltest.RelPackage, name)
+		pkg.AddBytes("word/"+name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			ooxmltest.Encrypt(inner, "inner", ooxmltest.Encryption{SpinCount: 1000, Seed: int64(i + 1)}))
+	}
+	data := pkg.Bytes()
+	e := &gofastooxml.Extractor{MaxSpinCount: 1000} // an allowance of 10,000 rounds
+	child := func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+		return e.Extract(ctx, r, size, o)
+	}
+	count := func(doc *gofastcore.Document) (read, encrypted, over int) {
+		for _, c := range doc.Children {
+			switch {
+			case strings.Contains(c.Text(), "inside"):
+				read++
+			case len(c.Warnings) == 1 && c.Warnings[0].Code == gofastcore.WarnChildEncrypted:
+				encrypted++
+			case len(c.Warnings) == 1 && c.Warnings[0].Code == gofastcore.WarnChildFailed && strings.Contains(c.Warnings[0].Message, "rounds of hashing allowed"):
+				over++
+			default:
+				t.Errorf("an embedded file with warnings %v", c.Warnings)
+			}
+		}
+		return
+	}
+	for _, c := range []struct {
+		password              string
+		read, encrypted, over int
+	}{
+		{"inner", 10, 0, 20}, // one check each: ten are opened
+		{"wrong", 0, 5, 25},  // two checks each, the password given and Excel's own: five are tried
+		{"", 0, 10, 20},      // one check each, Excel's own
+	} {
+		for _, workers := range []int{1, 8} {
+			doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), &gofastcore.Options{Password: c.password, Child: child, Workers: workers})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ooxmltest.CheckDocument(t, doc)
+			if read, encrypted, over := count(doc); len(doc.Children) != files || read != c.read || encrypted != c.encrypted || over != c.over {
+				t.Errorf("password %q, %d workers: %d read, %d listed as encrypted, %d over the allowance; want %d, %d, %d",
+					c.password, workers, read, encrypted, over, c.read, c.encrypted, c.over)
+			}
+		}
+	}
+	// Without a limit on one check there is none on all of them.
+	e = &gofastooxml.Extractor{MaxSpinCount: -1}
+	doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), &gofastcore.Options{Password: "inner", Child: child})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read, _, _ := count(doc); read != files {
+		t.Errorf("no limit: %d of %d read", read, files)
+	}
+	// The allowance is the document's: a second document starts afresh,
+	// and so does a second reading of the same file handle.
+	e = &gofastooxml.Extractor{MaxSpinCount: 1000}
+	f, err := e.OpenBytes(data, &gofastcore.Options{Password: "inner", Child: child})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for pass := 1; pass <= 2; pass++ {
+		doc, err := f.Document(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if read, _, over := count(doc); read != 10 || over != 20 {
+			t.Errorf("reading %d of one file handle: %d read, %d over the allowance", pass, read, over)
+		}
+	}
+}
