@@ -132,6 +132,10 @@ func TestPowerPointLowContrast(t *testing.T) {
 	)
 }
 
+// textOnly asks for no picture blocks, for tests about text that have
+// pictures in them only as what lies behind or over it.
+var textOnly = &gofastcore.Options{Images: gofastcore.ImagesNone}
+
 // What text is seen against is the last thing drawn under it, on the
 // slide, the layout or the master.
 func TestPowerPointWhatIsBehindText(t *testing.T) {
@@ -156,7 +160,7 @@ func TestPowerPointWhatIsBehindText(t *testing.T) {
 	pkg.AddBytes("ppt/media/image1.png", "image/png", pngBytes(t, 4, 3))
 	for pkg.Rel("ppt/slides/slide1.xml", ooxmltest.RelImage, "../media/image1.png") != "rId5" {
 	}
-	doc := powerpoint(t, pkg, nil)
+	doc := powerpoint(t, pkg, textOnly)
 	expectSlides(t, doc,
 		`slide 1 ""`,
 		`  paragraph "White over the dark band"`,
@@ -248,7 +252,7 @@ func TestPowerPointCoveredText(t *testing.T) {
 	for pkg.Rel("ppt/slides/slide1.xml", ooxmltest.RelImage, "../media/image1.jpeg") != "rId5" {
 	}
 	pkg.Rel("ppt/slides/slide1.xml", ooxmltest.RelImage, "../media/image2.png")
-	doc := powerpoint(t, pkg, nil)
+	doc := powerpoint(t, pkg, textOnly)
 	expectSlides(t, doc,
 		`slide 1 ""`,
 		`  paragraph "On a grey box drawn before it"`,
@@ -270,7 +274,7 @@ func TestPowerPointCoveredText(t *testing.T) {
 	pkg.AddBytes("ppt/media/image1.png", "image/png", opaquePNG(t, 8, 8))
 	for pkg.Rel("ppt/slides/slide1.xml", ooxmltest.RelImage, "../media/image1.png") != "rId5" {
 	}
-	expectSlides(t, powerpoint(t, pkg, nil), `slide 1 ""`, `  paragraph "Under an opaque PNG" hidden=occluded`)
+	expectSlides(t, powerpoint(t, pkg, textOnly), `slide 1 ""`, `  paragraph "Under an opaque PNG" hidden=occluded`)
 }
 
 func TestPowerPointClippedText(t *testing.T) {

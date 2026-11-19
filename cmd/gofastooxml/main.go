@@ -86,7 +86,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		format   = flags.String("format", "json", "what to print: json, markdown or text")
 		output   = flags.String("o", "", "write to this file instead of standard output")
 		parts    = flags.String("parts", "", "parts to read, by number: 3, or 2-5 (the body of a Word document is part 1; sheets and slides count from 1)")
-		images   = flags.String("images", "none", "pictures: none, meta (where and how large) or data (their bytes too)")
+		images   = flags.String("images", "meta", "pictures: meta (a block for each, with its place, size and alternative text), data (their bytes too) or none")
 		spans    = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
 		workers  = flags.Int("workers", 0, "sheets or slides read at a time (0: one for each CPU)")
 		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
@@ -131,6 +131,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	opts.Limits.MaxDecodedBytes = *maxBytes
 	switch *images {
 	case "none":
+		opts.Images = gofastcore.ImagesNone
 	case "meta":
 		opts.Images = gofastcore.ImagesMeta
 	case "data":

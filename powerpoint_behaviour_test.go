@@ -421,9 +421,12 @@ func TestPowerPointPictures(t *testing.T) {
 		}
 	}
 
-	// With no pictures asked for, which is how it is unless they are, the
-	// slide says it has only pictures.
-	doc = powerpoint(t, build(), nil)
+	// Pictures are blocks unless the caller asks for none. Asked for
+	// none, the slide still says it has only pictures.
+	if doc = powerpoint(t, build(), nil); len(doc.Parts[0].Blocks) != 2 || doc.Parts[0].Blocks[0].Image == nil || doc.Parts[0].Blocks[0].Text != "A chart of sales & costs" {
+		t.Errorf("by default: blocks %v", doc.Parts[0].Blocks)
+	}
+	doc = powerpoint(t, build(), &gofastcore.Options{Images: gofastcore.ImagesNone})
 	if len(doc.Parts[0].Blocks) != 0 || !slideWarned(doc, 0, gofastcore.WarnPartImageOnly) {
 		t.Errorf("blocks %v, warnings %v", doc.Parts[0].Blocks, doc.Parts[0].Warnings)
 	}
