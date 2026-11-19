@@ -25,8 +25,8 @@ func cellsOf(t testing.TB, parts ...gofastcore.Part) map[cellAt]string {
 	for p := range parts {
 		for i := range parts[p].Blocks {
 			b := &parts[p].Blocks[i]
-			if b.Table == nil {
-				continue
+			if b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
+				continue // a chart's data is not cells of the sheet
 			}
 			origin := parseA1(t, b.Loc.Range)
 			hidden := map[cellAt]gofastcore.Hidden{}

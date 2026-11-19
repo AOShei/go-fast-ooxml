@@ -311,6 +311,130 @@ def openpyxl_validations(path):
     return json.dumps(out, ensure_ascii=False)
 
 
+def _number(v):
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def python_pptx_charts(path):
+    """The charts of each slide, as python-pptx reads them, as JSON: per
+    slide, per chart in the order of the shapes, the name of each series,
+    the categories (the innermost level), the values as numbers, and the
+    number format of the values. It is the oracle for chart tables in
+    presentations.
+    """
+    import json
+
+    from pptx import Presentation
+
+    def walk(shapes, out):
+        for shape in shapes:
+            if shape.shape_type == 6:  # group
+                walk(shape.shapes, out)
+            elif getattr(shape, "has_chart", False) and shape.has_chart:
+                chart = shape.chart
+                series = []
+                for plot in chart.plots:
+                    try:
+                        cats = [str(c) for c in plot.categories]
+                    except Exception:
+                        cats = []
+                    for ser in plot.series:
+                        code = ""
+                        cache = ser._element.xpath("./c:val/c:numRef/c:numCache/c:formatCode | ./c:yVal/c:numRef/c:numCache/c:formatCode")
+                        if cache:
+                            code = cache[0].text or ""
+                        try:
+                            values = [_number(v) for v in ser.values]
+                        except Exception:
+                            values = []
+                        # A point may have a number format of its own.
+                        formats = [None] * len(values)
+                        for pt in ser._element.xpath("./c:val/c:numRef/c:numCache/c:pt | ./c:yVal/c:numRef/c:numCache/c:pt"):
+                            idx, own = int(pt.get("idx", "-1")), pt.get("formatCode")
+                            if own is not None and 0 <= idx < len(formats):
+                                formats[idx] = own
+                        series.append({"name": ser.name or "", "cats": cats, "vals": values, "format": code, "formats": formats})
+                out.append({"name": shape.name, "series": series})
+
+    slides = []
+    for slide in Presentation(path).slides:
+        charts = []
+        walk(slide.shapes, charts)
+        slides.append(charts)
+    return json.dumps(slides, ensure_ascii=False)
+
+
+def openpyxl_charts(path):
+    """The charts of each worksheet, as openpyxl reads them, as JSON: per
+    sheet, per chart, the name of each series, its categories as the cache
+    holds them (the innermost level), its values as numbers and their
+    number format. It is the oracle for chart tables in workbooks.
+    """
+    import json
+
+    import openpyxl
+
+    def points(ref):
+        """idx -> v of a reference's cache (num or str), innermost level."""
+        if ref is None:
+            return None, "", []
+        for kind in ("numRef", "strRef", "multiLvlStrRef", "numLit", "strLit"):
+            r = getattr(ref, kind, None)
+            if r is None:
+                continue
+            cache = r
+            if kind.endswith("Ref"):
+                cache = getattr(r, "numCache", None) or getattr(r, "strCache", None) or getattr(r, "multiLvlStrCache", None)
+            if cache is None:
+                return [], "", []
+            if kind == "multiLvlStrRef":
+                lvls = getattr(cache, "lvl", None) or []
+                pts = lvls[0].pt if lvls else []
+            else:
+                pts = cache.pt or []
+            n = getattr(cache, "ptCount", None) or 0
+            n = max([n] + [p.idx + 1 for p in pts])
+            out, formats = [None] * n, [None] * n
+            for p in pts:
+                out[p.idx] = p.v
+                formats[p.idx] = getattr(p, "formatCode", None)
+            return out, getattr(cache, "formatCode", None) or "", formats
+        return None, "", []
+
+    wb = openpyxl.load_workbook(path)
+    sheets = []
+    for ws in list(wb.worksheets) + list(getattr(wb, "chartsheets", [])):
+        charts = []
+        for chart in getattr(ws, "_charts", []):
+            series = []
+            plots = [chart] + list(getattr(chart, "_charts", []) or [])
+            seen = set()
+            for plot in plots:
+                for ser in plot.series:
+                    if id(ser) in seen:
+                        continue
+                    seen.add(id(ser))
+                    name = ""
+                    if ser.tx is not None:
+                        if ser.tx.strRef is not None and ser.tx.strRef.strCache is not None and ser.tx.strRef.strCache.pt:
+                            # A name from several cells is shown with spaces between.
+                            name = " ".join((p.v or "").strip() for p in ser.tx.strRef.strCache.pt).strip()
+                        elif ser.tx.v is not None:
+                            name = ser.tx.v
+                    cats, _, _ = points(ser.cat if ser.cat is not None else getattr(ser, "xVal", None))
+                    vals, code, formats = points(ser.val if ser.val is not None else getattr(ser, "yVal", None))
+                    series.append({"name": name, "cats": [("" if c is None else str(c)) for c in (cats or [])],
+                                   "vals": [_number(v) for v in (vals or [])], "format": code, "formats": formats})
+            charts.append({"series": series})
+        sheets.append({"sheet": ws.title, "charts": charts})
+    return json.dumps(sheets, ensure_ascii=False)
+
+
 # Adapters that are test oracles only: they do not extract text, so they are
 # not part of the baseline measurements.
 ORACLES = {
@@ -318,6 +442,8 @@ ORACLES = {
     "openpyxl-formulas": ("openpyxl", openpyxl_formulas, {"xlsx"}),
     "openpyxl-validations": ("openpyxl", openpyxl_validations, {"xlsx"}),
     "python-pptx-slides": ("python-pptx", python_pptx_slides, {"pptx"}),
+    "python-pptx-charts": ("python-pptx", python_pptx_charts, {"pptx"}),
+    "openpyxl-charts": ("openpyxl", openpyxl_charts, {"xlsx"}),
     "msoffcrypto-decrypt": ("msoffcrypto-tool", msoffcrypto_decrypt, {"docx", "xlsx", "pptx"}),
 }
 

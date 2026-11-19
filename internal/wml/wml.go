@@ -114,6 +114,7 @@ type reader struct {
 	external          int
 	budget            bool                   // the decompression budget ran out
 	text              *gofastcore.TextBudget // what the document may still hold of text
+	charts            []opc.Rel              // what the charts read embed: their workbooks
 	textCut           bool                   // and that it ran out
 }
 
@@ -247,7 +248,8 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindFooter, shown[f.name])...)
 		}
 	}
-	r.embedded(rels)
+	// The workbooks the charts embed are files the document embeds.
+	r.embedded(append(rels[:len(rels):len(rels)], r.charts...))
 	r.finish()
 }
 

@@ -213,7 +213,7 @@ func fuzzCells(parts ...gofastcore.Part) map[string]string {
 	for p := range parts {
 		for i := range parts[p].Blocks {
 			b := &parts[p].Blocks[i]
-			if b.Table == nil {
+			if b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
 				continue
 			}
 			for r, row := range b.Table.Rows {

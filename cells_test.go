@@ -39,7 +39,7 @@ func details(doc *gofastcore.Document) map[string]map[string]gofastcore.CellDeta
 		}
 		m := map[string]gofastcore.CellDetail{}
 		for _, b := range p.Blocks {
-			if b.Table == nil {
+			if b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
 				continue
 			}
 			for _, d := range b.Table.Cells {

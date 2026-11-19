@@ -124,6 +124,8 @@ func TestPowerPointCorpus(t *testing.T) {
 					continue // python-pptx does not give alternative text
 				case b.Kind == gofastcore.KindNote && b.Attrs[gofastcore.AttrNoteType] != gofastcore.NoteSpeaker:
 					continue // nor comments
+				case b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart, b.Kind == gofastcore.KindCaption:
+					continue // nor charts, compared by TestPowerPointChartsAsPythonPptx
 				case b.Table != nil:
 					var sb strings.Builder
 					for _, row := range b.Table.Rows {

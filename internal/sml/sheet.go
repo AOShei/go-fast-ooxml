@@ -59,6 +59,8 @@ type sheet struct {
 	varying    []rect   // where conditional formatting may change how cells look
 	varyAll    bool     // or everywhere: a range of it could not be read
 	tables     []string // parts of the tables the sheet declares
+	charts     []opc.Rel // what the charts read embed: their workbooks
+	chartSheet bool      // a sheet that is one chart
 	lists      []choiceList
 	listRanges int // the ranges of all of them
 	drawings   []string

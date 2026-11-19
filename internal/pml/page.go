@@ -255,6 +255,7 @@ type props struct {
 	id      int64 // the number animations refer to it by
 	ph      phRef
 	alt     string
+	name    string // the name the file gives it, which a chart takes
 	hide    bool
 	media   bool // it plays sound or video
 	xfrm    dml.Xfrm
@@ -339,6 +340,7 @@ type page struct {
 	title    string
 	sawImage bool
 	unread   map[string]int
+	charts   []opc.Rel // what the charts read embed: their workbooks
 	damaged  []string
 	external int
 	programs int
@@ -362,7 +364,7 @@ func (pg *page) reset() {
 	pg.loose, pg.unit, pg.skipped = false, 0, 0
 	pg.hf, pg.hfBlock, pg.ownHF = [2]bool{true, true}, [2][]int{}, [2]bool{}
 	pg.animated, pg.allAnimated = pg.animated[:0], false
-	pg.title, pg.sawImage, pg.unread = "", false, nil
+	pg.title, pg.sawImage, pg.unread, pg.charts = "", false, nil, pg.charts[:0]
 	pg.external, pg.programs, pg.cut, pg.failure = 0, 0, "", nil
 	pg.text.Removed, pg.text.Unmapped, pg.text.Programs = 0, 0, 0
 	if pg.cells > 0 {
@@ -662,6 +664,9 @@ func (pg *page) nonVisual(sh *props, alt bool) {
 			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "hidden"); ok {
 				sh.hide = isTrue(v)
+			}
+			if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+				sh.name = clean.Name(string(v))
 			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && alt && len(v) > 0 {
 				var removed int

@@ -431,6 +431,24 @@ func Python(t testing.TB, tool string, data []byte, ext string) PythonResult {
 	return res
 }
 
+var (
+	adaptersOnce sync.Once
+	adaptersSum  string
+)
+
+// adapters is a hash of the Python code that reads files for the oracles.
+func adapters(root string) string {
+	adaptersOnce.Do(func() {
+		h := sha256.New()
+		for _, name := range []string{"oracle.py", "tools.py"} {
+			data, _ := os.ReadFile(filepath.Join(root, "testdata", "gen", name))
+			h.Write(data)
+		}
+		adaptersSum = hex.EncodeToString(h.Sum(nil)[:8])
+	})
+	return adaptersSum
+}
+
 // python runs a tool on a file through testdata/gen/oracle.py, or returns
 // the cached result of an earlier run.
 func python(bin, root, tool string, data []byte, ext string) (PythonResult, error) {
@@ -439,7 +457,9 @@ func python(bin, root, tool string, data []byte, ext string) (PythonResult, erro
 	if err != nil {
 		base = os.TempDir()
 	}
-	sum := sha256.Sum256(append([]byte("python:"+tool+"\x00"), data...))
+	// The key holds the adapters' code, so that changing an adapter
+	// does not leave its old answers in place.
+	sum := sha256.Sum256(append([]byte("python:"+tool+"\x00"+adapters(root)+"\x00"), data...))
 	dir := filepath.Join(base, "gofastooxml-oracle", hex.EncodeToString(sum[:16]))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return res, err

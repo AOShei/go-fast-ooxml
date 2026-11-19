@@ -233,7 +233,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 	}
 	sh.load(target, func(s *xmlscan.Scanner) {
 		var row, col int32 // the cell the current anchor starts at
-		var alt string
+		var alt, name string
 		var unseen bool          // the current shape is marked hidden
 		var own, styled dml.Fill // the current shape's fill, and the one its style gives it
 		var ink dml.Color        // the colour its style gives its text
@@ -276,13 +276,16 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					}
 				}
 			case s.Is(ns.SheetDraw, "sp"), s.Is(ns.SheetDraw, "pic"), s.Is(ns.SheetDraw, "graphicFrame"):
-				alt, unseen, own, styled, ink, props = "", false, dml.Fill{}, dml.Fill{}, dml.Color{}, 0
+				alt, name, unseen, own, styled, ink, props = "", "", false, dml.Fill{}, dml.Fill{}, dml.Color{}, 0
 			case s.Is(ns.SheetDraw, "cNvPr"):
 				if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && len(v) > 0 {
 					alt, _ = clean.String(v, clean.Prose)
 				}
 				if v, ok := s.Attr(xmlscan.NoSpace, "hidden"); ok {
 					unseen = isTrue(v)
+				}
+				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+					name = clean.Name(string(v))
 				}
 			case s.Is(ns.SheetDraw, "spPr"):
 				props = s.Depth()
@@ -343,8 +346,18 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 				}
 				b.Loc.Range = cellName(row, col)
 				out = append(out, placed{row: row, col: col, block: b})
-			case s.Is(ns.Chart, "chart"):
-				sh.unread["chart"]++
+			case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
+				id, _ := s.Attr(ns.Rel, "id")
+				rel, found := byID[string(id)]
+				if !found || rel.External || !ns.IsRel(rel.Type, ns.RelChart, ns.RelChartEx) || !sh.wb.pkg.Has(rel.Target) {
+					sh.damaged = append(sh.damaged, "the chart "+clean.Label(string(id))+" of "+target)
+					continue
+				}
+				var cut bool
+				out, cut = sh.chart(rel.Target, out, row, col, name, unseen)
+				if cut {
+					s.Abort(warn.ErrText)
+				}
 			case s.Is(ns.Diagram, "relIds"):
 				sh.unread["diagram"]++
 			}

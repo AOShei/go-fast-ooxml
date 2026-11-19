@@ -1118,7 +1118,7 @@ func (p *parser) deletion() {
 // the paragraph they are anchored in.
 func (p *parser) drawing() {
 	s := &p.s
-	var alt, target string
+	var alt, target, name string
 	var external bool
 	// A text box of a fixed size shows no more than fits in it. One
 	// smaller than a line of text in either direction shows nothing.
@@ -1172,6 +1172,9 @@ func (p *parser) drawing() {
 		case s.Is(ns.VML, "fill"):
 			fill = vmlFillElement(s, fill)
 		case s.Is(ns.WordDraw, "docPr"):
+			if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+				name = clean.Name(string(v))
+			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && len(v) > 0 {
 				alt = p.clean(v, clean.Prose)
 			} else if v, ok := s.Attr(xmlscan.NoSpace, "title"); ok && alt == "" {
@@ -1225,8 +1228,8 @@ func (p *parser) drawing() {
 			p.container(func(b gofastcore.Block) { p.after = append(p.after, b) })
 			p.box, p.cell, p.tbl = outerBox, outerCell, outerTable
 			fill = color{}
-		case s.Is(ns.Chart, "chart"):
-			p.r.unread["chart"]++
+		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
+			p.chart(name)
 		case s.Is(ns.Diagram, "relIds"):
 			p.r.unread["diagram"]++
 		}

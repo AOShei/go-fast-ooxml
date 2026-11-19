@@ -494,8 +494,7 @@ func TestWordImages(t *testing.T) {
 
 func TestWordEmbeddedFilesAndReferences(t *testing.T) {
 	build := func() *ooxmltest.Package {
-		pkg := ooxmltest.Docx(para(run(text("See the attached sheet."))+run(`<w:object><o:OLEObject Type="Embed" ProgID="Excel.Sheet.12" r:id="rId1"/></w:object>`)) +
-			para(run(`<w:drawing><wp:inline><a:graphic><a:graphicData><c:chart r:id="rId3"/></a:graphicData></a:graphic></wp:inline></w:drawing>`)))
+		pkg := ooxmltest.Docx(para(run(text("See the attached sheet.")) + run(`<w:object><o:OLEObject Type="Embed" ProgID="Excel.Sheet.12" r:id="rId1"/></w:object>`)))
 		inner := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S"}).Bytes()
 		pkg.AddBytes("word/embeddings/Sheet1.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", inner)
 		pkg.Rel("word/document.xml", ooxmltest.RelPackage, "embeddings/Sheet1.xlsx") // rId1
@@ -512,9 +511,6 @@ func TestWordEmbeddedFilesAndReferences(t *testing.T) {
 	}
 	if !warned(doc, gofastcore.WarnInputExternalReference) {
 		t.Error("an attached remote template was not reported")
-	}
-	if !warned(doc, gofastooxml.WarnUnreadContent) {
-		t.Error("a chart was not reported as unread content")
 	}
 
 	// With one, it is handed over as bytes.

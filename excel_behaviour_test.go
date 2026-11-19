@@ -530,6 +530,7 @@ func TestExcelShapesAndPictures(t *testing.T) {
 	pkg.Add("xl/drawings/drawing1.xml", ctDrawing, drawing)
 	pkg.Rel("xl/drawings/drawing1.xml", relBase+"image", "../media/image1.png")
 	pkg.Rel("xl/drawings/drawing1.xml", relBase+"chart", "../charts/chart1.xml")
+	pkg.Add("xl/charts/chart1.xml", ctChart, quarterly)
 	pkg.AddBytes("xl/media/image1.png", "image/png", pngBytes(t, 3, 2))
 	pkg.Rel("xl/workbook.xml", relBase+"theme", "theme/theme1.xml")
 	pkg.Add("xl/theme/theme1.xml", ooxmltest.CTTheme, `<a:theme xmlns:a="`+ooxmltest.NSDraw+`"><a:themeElements><a:clrScheme name="x"><a:accent1><a:srgbClr val="156082"/></a:accent1></a:clrScheme></a:themeElements></a:theme>`)
@@ -544,10 +545,14 @@ func TestExcelShapesAndPictures(t *testing.T) {
 		`  paragraph F9 "One point." hidden=tiny`,
 		`  paragraph F15 "In a hidden shape." hidden=invisible`,
 		`  image A21 "A chart of sales" image(xl/media/image1.png image/png 3x2)`,
+		// A chart is a caption and a table of its data at the cell its
+		// frame is anchored to: not cells of the sheet.
+		`  caption A31 "Sales"`,
+		`  table A31 chart=bar name=Chart 1 role=chart x_axis=Quarter header=1 [["" "North" "South"] ["Q1" "10" "7"] ["Q2" "12.5" "9"]]`,
 		`  paragraph A41 "The modern form."`,
 	)
-	if !warned(doc, gofastooxml.WarnUnreadContent) {
-		t.Errorf("the chart is not reported: %+v", doc.Warnings)
+	if warned(doc, gofastooxml.WarnUnreadContent) {
+		t.Errorf("the chart is reported as not read: %+v", doc.Warnings)
 	}
 	// Pictures not asked for are still known of.
 	plain := excel(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Extra: `<drawing r:id="rId1"/>`}).
@@ -691,7 +696,12 @@ func TestExcelOtherKindsOfSheet(t *testing.T) {
 			xlRow(1, xlStr("A1", "Auto_Open"), `<c r="B1"><f>EXEC("calc.exe")</f><v>0</v></c>`)+`</sheetData></xm:macrosheet>`)
 	// A chart sheet, a sheet whose part is missing, and a link to another workbook.
 	chart := pkg.Rel("xl/workbook.xml", relBase+"chartsheet", "chartsheets/sheet1.xml")
-	pkg.Add("xl/chartsheets/sheet1.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml", `<chartsheet xmlns="`+ooxmltest.NSSheet+`"/>`)
+	pkg.Add("xl/chartsheets/sheet1.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml", `<chartsheet xmlns="`+ooxmltest.NSSheet+`" xmlns:r="`+ooxmltest.NSRel+`"><drawing r:id="rId1"/></chartsheet>`)
+	pkg.Rel("xl/chartsheets/sheet1.xml", relBase+"drawing", "../drawings/drawing1.xml")
+	pkg.Add("xl/drawings/drawing1.xml", ctDrawing, drawingHeader+`<xdr:absoluteAnchor><xdr:pos x="0" y="0"/><xdr:ext cx="8000000" cy="5000000"/>`+
+		`<xdr:graphicFrame><xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="Chart 1"/></xdr:nvGraphicFramePr><a:graphic><a:graphicData><c:chart r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:absoluteAnchor></xdr:wsDr>`)
+	pkg.Rel("xl/drawings/drawing1.xml", relBase+"chart", "../charts/chart1.xml")
+	pkg.Add("xl/charts/chart1.xml", ctChart, quarterly)
 	missing := pkg.Rel("xl/workbook.xml", ooxmltest.RelWorksheet, "worksheets/gone.xml")
 	pkg.Rel("xl/workbook.xml", relBase+"externalLink", "externalLinks/externalLink1.xml")
 	pkg.Add("xl/workbook.xml", ooxmltest.CTWorkbook, `<workbook xmlns="`+ooxmltest.NSSheet+`" xmlns:r="`+ooxmltest.NSRel+`"><sheets>`+
@@ -702,6 +712,8 @@ func TestExcelOtherKindsOfSheet(t *testing.T) {
 		`sheet 1 "Data"`, `  table A1:A1 inferred [["1"]]`,
 		`sheet 2 "Empty"`,
 		`sheet 3 "Chart"`,
+		`  caption  "Sales"`,
+		`  table  chart=bar name=Chart 1 role=chart x_axis=Quarter header=1 [["" "North" "South"] ["Q1" "10" "7"] ["Q2" "12.5" "9"]]`,
 		`sheet 4 "Gone"`,
 		`sheet 5 "No part named"`,
 		`sheet 6 "Macros"`, `  table A1:B1 inferred [["Auto_Open" "0"]]`,
@@ -715,7 +727,7 @@ func TestExcelOtherKindsOfSheet(t *testing.T) {
 	if !doc.Parts[1].Has(gofastcore.WarnPartNoText) || !doc.Parts[3].Has(gofastcore.WarnPartFailed) || !doc.Parts[4].Has(gofastcore.WarnPartFailed) {
 		t.Errorf("part warnings: %+v %+v %+v", doc.Parts[1].Warnings, doc.Parts[3].Warnings, doc.Parts[4].Warnings)
 	}
-	if !warned(doc, gofastooxml.WarnUnreadContent) || !warned(doc, gofastcore.WarnInputExternalReference) {
+	if warned(doc, gofastooxml.WarnUnreadContent) || !warned(doc, gofastcore.WarnInputExternalReference) {
 		t.Errorf("document warnings: %+v", doc.Warnings)
 	}
 }

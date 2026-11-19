@@ -303,11 +303,8 @@ func (pg *page) frame(g *group) {
 			if len(pg.blocks) > at {
 				pg.add(&sh, g, at, false, false, "")
 			}
-		case s.Is(ns.Chart, "chart"):
-			if pg.role == roleSlide {
-				pg.count("chart")
-			}
-			s.Skip()
+		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
+			pg.chart(&sh, g)
 		case s.Is(ns.Diagram, "relIds"):
 			if pg.role == roleSlide {
 				pg.count("diagram")

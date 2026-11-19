@@ -103,6 +103,9 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		}
 		part.Name = pg.title
 		res.Unread, res.Programs = pg.unread, pg.programs
+		// The workbooks the slide's charts embed are files the slide
+		// embeds.
+		res.Rels = append(rels[:len(rels):len(rels)], pg.charts...)
 		removed, skipped, sawImage, cut = pg.text.Removed, pg.skipped, pg.sawImage, pg.cut
 		pg.text.Removed, pg.cells = 0, 0 // counted; the cells stay taken
 		unmapped, pg.text.Unmapped = pg.text.Unmapped, 0
