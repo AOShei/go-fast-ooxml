@@ -21,8 +21,8 @@ when the work planned before the release is done.
 - **Excel** (`.xlsx`, `.xlsm`, `.xltx`, `.xltm`): every sheet as a part,
   its cells as tables with what each cell displays (number formats, dates
   in ISO 8601, stored results of formulas), declared tables with their
-  names, merged cells, comments, text in shapes with its links, pictures,
-  embedded files. Sheets are read in parallel.
+  names, merged cells, comments, drop-down lists, text in shapes with its
+  links, pictures, embedded files. Sheets are read in parallel.
 - **PowerPoint** (`.pptx`, `.pptm`, `.ppsx`, `.ppsm`, `.potx`, `.potm`):
   every slide as a part, with titles, body text with bullets and numbers,
   tables, pictures, speaker's notes, comments, the text and pictures of
@@ -45,6 +45,8 @@ when the work planned before the release is done.
 - A last part of kind `stored` for what a workbook stores and shows on no
   sheet: defined names and the code of Excel 4 macro sheets, flagged as
   hidden.
+- Excel's drop-down lists as `note` blocks of type `choices` at their
+  cells: the values, one per line, or the reference they are taken from.
 - `Open`, `OpenBytes`, `OpenReaderAt` and `File`: a part at a time
   (`Parts`, `Part`), a sheet in bands of rows (`Rows`), embedded files
   (`Children`), without holding the document.

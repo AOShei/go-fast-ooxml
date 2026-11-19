@@ -443,6 +443,7 @@ func (sh *sheet) content() (sawImage bool) {
 	sh.applyTableStyles(declared)
 	blocks := sh.tablesOf(declared)
 	blocks = append(blocks, sh.comments()...)
+	blocks = append(blocks, sh.choices()...)
 	for _, target := range sh.drawings {
 		var saw bool
 		blocks, saw = sh.drawing(target, blocks)

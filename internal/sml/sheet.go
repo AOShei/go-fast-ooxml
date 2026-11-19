@@ -59,6 +59,8 @@ type sheet struct {
 	varying    []rect   // where conditional formatting may change how cells look
 	varyAll    bool     // or everywhere: a range of it could not be read
 	tables     []string // parts of the tables the sheet declares
+	lists      []choiceList
+	listRanges int // the ranges of all of them
 	drawings   []string
 
 	text   arena
@@ -188,11 +190,36 @@ func (sh *sheet) read() {
 		case "extLst":
 			// Newer kinds of conditional formatting are kept here, with
 			// their ranges as text.
+			// Newer data validations are kept here too: their lists are
+			// read, and their ranges are not conditional formatting.
 			depth := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-				if s.Kind() == xmlscan.Start && string(s.Local()) == "sqref" {
+				if s.Kind() != xmlscan.Start {
+					continue
+				}
+				switch string(s.Local()) {
+				case "dataValidation":
+					if sh.pass == passWhole {
+						sh.readValidation(s)
+					} else {
+						s.Skip()
+					}
+				case "sqref":
 					sh.raw = s.AppendText(sh.raw[:0])
 					sh.vary(sh.raw)
+				}
+			}
+		case "dataValidations":
+			// Drop-down lists; reading by bands leaves them out, as it
+			// does comments.
+			if sh.pass != passWhole {
+				s.Skip()
+				continue
+			}
+			depth := s.Depth()
+			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
+				if s.Kind() == xmlscan.Start && s.Is(ns.Sheet, "dataValidation") {
+					sh.readValidation(s)
 				}
 			}
 		case "hyperlinks":

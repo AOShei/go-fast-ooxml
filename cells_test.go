@@ -257,3 +257,120 @@ func TestExcelStoredPart(t *testing.T) {
 		break
 	}
 }
+
+// Drop-down lists agree with openpyxl's, over the workbooks of the
+// corpus: the cells each is for, and its values or the reference they are
+// taken from. openpyxl reads only the lists in the sheet's own element;
+// the newer ones in its extension list are checked by
+// TestExcelDropDownLists.
+func TestExcelDropDownListsAsOpenpyxl(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the corpus")
+	}
+	if _, ok := ooxmltest.PythonBin(t); !ok {
+		t.Skip("the Python comparison environment is not set up")
+	}
+	var contents [][]byte
+	var names []string
+	for _, f := range ooxmltest.LoadManifest(t, "corpus.json") {
+		if f.Format != "xlsx" || f.Note != "" {
+			continue
+		}
+		if data, err := os.ReadFile(f.AbsPath(t)); err == nil {
+			contents, names = append(contents, data), append(names, f.Name)
+		}
+	}
+	if len(contents) == 0 {
+		t.Skip("no corpus files downloaded")
+	}
+	ooxmltest.WarmPython(t, "openpyxl-validations", "xlsx", contents)
+	agree, total := 0, 0
+	var differ []string
+	for i, data := range contents {
+		doc, err := extract(t, data, nil)
+		if err != nil {
+			continue
+		}
+		res := ooxmltest.Python(t, "openpyxl-validations", data, "xlsx")
+		if res.Error != "" {
+			continue
+		}
+		var oracle []struct {
+			Sheet string `json:"sheet"`
+			Lists []struct {
+				Cells   []string `json:"cells"`
+				Formula string   `json:"formula"`
+				Hidden  bool     `json:"hidden_arrow"`
+			} `json:"lists"`
+		}
+		if json.Unmarshal([]byte(res.Text), &oracle) != nil {
+			continue
+		}
+		ours := map[string]map[string]gofastcore.Block{} // sheet, cells in order
+		for _, p := range doc.Parts {
+			for _, b := range p.Blocks {
+				if b.Attrs[gofastcore.AttrNoteType] != gofastcore.NoteChoices {
+					continue
+				}
+				if ours[p.Name] == nil {
+					ours[p.Name] = map[string]gofastcore.Block{}
+				}
+				cells := strings.Fields(b.Loc.Range)
+				sort.Strings(cells)
+				ours[p.Name][strings.Join(cells, " ")] = b
+			}
+		}
+		for _, sheet := range oracle {
+			for _, l := range sheet.Lists {
+				want := choicesOf(l.Formula)
+				if want == "" {
+					continue // offers nothing; not a block
+				}
+				total++
+				key := strings.Join(l.Cells, " ")
+				b, ok := ours[sheet.Sheet][key]
+				switch {
+				case !ok:
+					differ = append(differ, fmt.Sprintf("%s %s!%s: no note, openpyxl %q", names[i], sheet.Sheet, key, l.Formula))
+				case b.Text != want:
+					differ = append(differ, fmt.Sprintf("%s %s!%s: %q, openpyxl %q", names[i], sheet.Sheet, key, b.Text, l.Formula))
+				case (b.Hidden&gofastcore.HiddenInvisible != 0) != l.Hidden && l.Hidden:
+					differ = append(differ, fmt.Sprintf("%s %s!%s: arrow hidden, not flagged", names[i], sheet.Sheet, key))
+				default:
+					agree++
+				}
+			}
+		}
+	}
+	sort.Strings(differ)
+	t.Logf("drop-down lists: %d of %d agree", agree, total)
+	for i, d := range differ {
+		if i == 40 {
+			t.Logf("... and %d more", len(differ)-i)
+			break
+		}
+		t.Log(d)
+	}
+	if len(differ) > 0 {
+		t.Errorf("%d lists differ from openpyxl's", len(differ))
+	}
+}
+
+// choicesOf is the text a list's formula gives, written independently of
+// the reader: a quoted list split at its commas, anything else with "=".
+func choicesOf(formula string) string {
+	f := strings.TrimSpace(formula)
+	if len(f) >= 2 && f[0] == '"' && f[len(f)-1] == '"' && !strings.Contains(strings.ReplaceAll(f[1:len(f)-1], `""`, ""), `"`) {
+		var values []string
+		for _, v := range strings.Split(strings.ReplaceAll(f[1:len(f)-1], `""`, `"`), ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				values = append(values, v)
+			}
+		}
+		return strings.Join(values, "\n")
+	}
+	if f == "" {
+		return ""
+	}
+	return "=" + f
+}

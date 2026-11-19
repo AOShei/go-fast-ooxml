@@ -251,8 +251,6 @@ TOOLS = {
 }
 
 
-# Adapters that are test oracles only: they do not extract text, so they are
-
 def openpyxl_formulas(path):
     """The formula text and the hyperlink of each cell, as openpyxl reads
     them, as JSON: per sheet, by cell reference, the formula without its
@@ -288,10 +286,37 @@ def openpyxl_formulas(path):
         out.append({"sheet": ws.title, "formulas": formulas, "links": links})
     return json.dumps(out)
 
+
+def openpyxl_validations(path):
+    """The drop-down lists of a workbook, as openpyxl reads them, as JSON:
+    per sheet, the cells each list is for, its first formula, and whether
+    its arrow is hidden. openpyxl reads the lists in the sheet's own
+    element only, not the newer ones kept in its extension list. It is
+    the oracle for notes of type choices.
+    """
+    import json
+
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path)
+    out = []
+    for ws in wb.worksheets:
+        lists = []
+        for dv in ws.data_validations.dataValidation:
+            if dv.type != "list" or dv.formula1 is None:
+                continue
+            lists.append({"cells": sorted(str(r) for r in dv.sqref.ranges), "formula": dv.formula1,
+                          "hidden_arrow": bool(dv.showDropDown)})
+        out.append({"sheet": ws.title, "lists": lists})
+    return json.dumps(out, ensure_ascii=False)
+
+
+# Adapters that are test oracles only: they do not extract text, so they are
 # not part of the baseline measurements.
 ORACLES = {
     "openpyxl-cells": ("openpyxl", openpyxl_cells, {"xlsx"}),
     "openpyxl-formulas": ("openpyxl", openpyxl_formulas, {"xlsx"}),
+    "openpyxl-validations": ("openpyxl", openpyxl_validations, {"xlsx"}),
     "python-pptx-slides": ("python-pptx", python_pptx_slides, {"pptx"}),
     "msoffcrypto-decrypt": ("msoffcrypto-tool", msoffcrypto_decrypt, {"docx", "xlsx", "pptx"}),
 }

@@ -140,7 +140,7 @@ the hidden flags of its cells. Two million cells are read in 20 to 25 MB,
 where the sheet read whole takes over 100 (`bench/README.md`). The price:
 the sheet's part is read twice, a table that runs past the end of a band is
 cut there and goes on in the next as a table marked `Continued`, declared
-tables are not looked up, and comments, shapes and
+tables are not looked up, and comments, drop-down lists, shapes and
 pictures are left to `Part`. Bands follow the order of the rows in the
 file; a damaged file that gives its rows out of order has them sorted
 within a band, not across bands.
@@ -282,6 +282,18 @@ can stand for a text that appears nowhere else), and the code of its
 Excel 4 macro sheets, one formula to a line. It is read as data, never
 evaluated, and comes with the whole document, not with a range of parts.
 
+**Drop-down lists** (data validations of type list) are `note` blocks of
+type `choices` at the cells they are for, with those cells in `loc.range`:
+the values of a list written out in the file, one per line, or the
+reference a list is taken from (`=$D$1:$D$3`, `=Lists!$A$1:$A$12`), since
+those values are in the text of their cells. A list whose arrow the file
+hides, or whose cells are all in hidden rows or columns, is flagged
+`invisible`. Both the older kind and the newer kind kept in the sheet's
+extension list are read. The 56 lists of the corpus's workbooks agree with
+openpyxl's (`TestExcelDropDownListsAsOpenpyxl`); openpyxl does not read
+the newer kind. Other kinds of validation offer nothing to choose from and
+are not read.
+
 **Tables.** A table the workbook declares is one table block, with its
 header row. The other cells are grouped into blocks separated by empty rows
 and columns; those boundaries are a reading of the layout, so such tables
@@ -299,7 +311,7 @@ large in the result. A sheet that reaches a limit is cut off there, with
 `limit.exceeded`.
 
 **Not read:** charts, pivot table definitions (what a pivot table shows is
-in the cells and is read), data validation lists, and VBA projects. Macro
+in the cells and is read), and VBA projects. Macro
 sheets and VBA projects are reported as `input.active_content`.
 
 ## PowerPoint presentations
@@ -445,6 +457,7 @@ flagged. What this means for a reviewer:
   characters on each other, is not detected.
 - **Content never shown on a page but extracted by design**: document
   properties, alternative text of pictures, comments, speaker's notes,
+  the values of drop-down lists,
   and, flagged as hidden in the stored part, a workbook's defined names
   and the code of its macro sheets. Each has its own place in the model
   (metadata, `image` blocks, `note` blocks, the `stored` part), so a
@@ -452,7 +465,7 @@ flagged. What this means for a reviewer:
   `Table.Cells`, apart from what cells show.
 - **Content not extracted at all**, which therefore cannot reach a model
   through this library: field codes, custom XML data, document variables;
-  in Excel, data validation lists and pivot caches.
+  in Excel, pivot caches.
 
 The contrast test is the shared model's (`gofastcore.LowContrast`): text
 is taken to be indiscernible when its contrast with what is behind it is
