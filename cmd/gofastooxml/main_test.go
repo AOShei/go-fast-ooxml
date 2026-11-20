@@ -181,8 +181,16 @@ func TestSharedRenderFlags(t *testing.T) {
 	if !strings.Contains(plain, "[child 1: book.xlsx]") || !strings.Contains(plain, "inner cell") {
 		t.Errorf("the embedded workbook is not rendered by default: %q", plain)
 	}
-	if stored, _, _ := command(t, "-quiet", "-format", "text", "-stored", path); !strings.Contains(stored, "PAGE") {
-		t.Errorf("with -stored: %q", stored)
+	// -stored alone or with the kind brings the code in; with another
+	// kind, or with no value, it does not.
+	for args, want := range map[string]bool{"-stored": true, "-stored=all": true, "-stored=field_code": true, "-stored=macro+field_code": true,
+		"-stored=macro": false, "-stored=": false, "-stored=false": false} {
+		if got, _, _ := command(t, "-quiet", "-format", "text", args, path); strings.Contains(got, "PAGE") != want {
+			t.Errorf("with %s: %q", args, got)
+		}
+	}
+	if _, stderr, status := command(t, "-stored=field_codes", path); status != 2 || !strings.Contains(stderr, "the kinds are pivot_cache, ") || !strings.Contains(stderr, "field_code") {
+		t.Errorf("-stored=field_codes: status %d, %q", status, stderr)
 	}
 	if alone, _, _ := command(t, "-quiet", "-format", "markdown", "-children=false", path); strings.Contains(alone, "inner cell") || strings.Contains(alone, "child 1") {
 		t.Errorf("with -children=false: %q", alone)

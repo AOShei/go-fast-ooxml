@@ -164,7 +164,8 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 | `-images meta\|data\|none` | Pictures: a block for each, with its place, size and alternative text (the default); their bytes too; or not at all |
 | `-spans` | Bold, italic and the like, and links, as spans |
 | `-exclude-display`, `-exclude-display=hidden` | In Markdown and text, leave out text the file declares not shown or drawn with no ink: all of it (also `=true`, `=all`), or what has the reasons named (`hidden`, `no_ink`, joined by `,` or `+`); `=false` or `=` leaves nothing out. JSON always has everything |
-| `-furniture`, `-stored`, `-part-markers` | In Markdown and text: include running headers and footers; include what the file stores and shows nowhere (macro code, field codes and the rest); put a line before each part saying which it is |
+| `-furniture`, `-part-markers` | In Markdown and text: include running headers and footers; put a line before each part saying which it is |
+| `-stored`, `-stored=field_code,macro` | In Markdown and text, include what the file stores and shows nowhere: all of it (also `=true`, `=all`), or only the kinds named (joined by `,` or `+`; see [What a file stores](#what-a-file-stores-and-shows-nowhere)); `=false` or `=` leaves it out |
 | `-children` | In Markdown and text, the documents a file embeds, each after a line naming it (`[child 1: book.xlsx]`); on by default, `-children=false` leaves them out |
 | `-workers n` | Sheets or slides read at a time |
 | `-max-cells n`, `-max-decoded-bytes n`, `-max-text-bytes n` | The limits; `-1` for none |
@@ -452,8 +453,9 @@ the whole document, not with a range of parts; each block says what it
 is in `stored`. Word's field codes stay where their fields are, in the
 body or a header or footer, marked `stored` all the same. The renderers
 leave out the stored part, and every block marked `stored` wherever it is,
-unless `RenderOptions.Stored` is set; a consumer can keep stored data from
-a model, or review it, by its kind.
+unless `RenderOptions.Stored` is set, or `RenderOptions.StoredKinds` names
+its kind; a consumer can keep stored data from a model, or review it, by
+its kind.
 
 Being stored says where the text comes from. It sets no display reason:
 the file declares nothing about the display of such data, and its length
