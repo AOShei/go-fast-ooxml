@@ -369,8 +369,9 @@ func (b *builder) sparse(g group) {
 	}
 }
 
-// hiddenMarks collects the cells of a table that hide their own text
-// (white on white, a tiny font, a format that shows nothing) as regions.
+// hiddenMarks collects the cells of a table whose text the file declares
+// not shown (a format that shows nothing, a hidden row or column) as
+// regions.
 // Cells side by side with the same reasons make one region as the table
 // is filled; settleMarks then joins identical regions in rows one under
 // another, so that a hidden column of a million cells is one region.
@@ -378,42 +379,42 @@ type hiddenMarks struct {
 	last    int // the region the last marked cell went into, or 0 if none
 	row     int
 	col     int
-	reasons gofastcore.Hidden
+	reasons gofastcore.Display
 }
 
-func (m *hiddenMarks) add(t *gofastcore.Table, row, col int, reasons gofastcore.Hidden) {
+func (m *hiddenMarks) add(t *gofastcore.Table, row, col int, reasons gofastcore.Display) {
 	if m.last > 0 && m.row == row && m.col+1 == col && m.reasons == reasons {
-		t.Hidden[m.last-1].ColSpan++
+		t.Display[m.last-1].ColSpan++
 		m.col = col
 		return
 	}
-	t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: row, Col: col, RowSpan: 1, ColSpan: 1, Hidden: reasons})
-	m.last, m.row, m.col, m.reasons = len(t.Hidden), row, col, reasons
+	t.Display = append(t.Display, gofastcore.DisplayCells{Row: row, Col: col, RowSpan: 1, ColSpan: 1, Display: reasons})
+	m.last, m.row, m.col, m.reasons = len(t.Display), row, col, reasons
 }
 
 // settleMarks joins each region to an identical one that ends on the row
 // above. The regions arrive in row order and, within a row, in column
 // order.
 func settleMarks(t *gofastcore.Table) {
-	if len(t.Hidden) < 2 {
+	if len(t.Display) < 2 {
 		return
 	}
-	out := t.Hidden[:0]
+	out := t.Display[:0]
 	var open, next []int // regions of out that end on the row above, and on this row; by column
-	for i := 0; i < len(t.Hidden); {
-		row := t.Hidden[i].Row
+	for i := 0; i < len(t.Display); {
+		row := t.Display[i].Row
 		j := i
-		for j < len(t.Hidden) && t.Hidden[j].Row == row {
+		for j < len(t.Display) && t.Display[j].Row == row {
 			j++
 		}
 		k := 0
 		next = next[:0]
-		for _, h := range t.Hidden[i:j] {
+		for _, h := range t.Display[i:j] {
 			for k < len(open) && out[open[k]].Col < h.Col {
 				k++
 			}
 			if k < len(open) {
-				if o := &out[open[k]]; o.Col == h.Col && o.ColSpan == h.ColSpan && o.Hidden == h.Hidden && o.Row+o.RowSpan == row {
+				if o := &out[open[k]]; o.Col == h.Col && o.ColSpan == h.ColSpan && o.Display == h.Display && o.Row+o.RowSpan == row {
 					o.RowSpan++
 					next = append(next, open[k])
 					continue
@@ -425,7 +426,7 @@ func settleMarks(t *gofastcore.Table) {
 		open, next = next, open
 		i = j
 	}
-	t.Hidden = out
+	t.Display = out
 }
 
 // hide marks the parts of a table that the sheet hides: hidden rows and
@@ -441,16 +442,16 @@ func (b *builder) hide(block *gofastcore.Block, at rect) {
 		for j+1 < len(hr) && hr[j+1] == hr[j]+1 && hr[j+1] <= at.r1 {
 			j++
 		}
-		t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: int(hr[i] - at.r0), Col: 0, RowSpan: j - i + 1, ColSpan: cols, Hidden: gofastcore.HiddenInvisible})
+		t.Display = append(t.Display, gofastcore.DisplayCells{Row: int(hr[i] - at.r0), Col: 0, RowSpan: j - i + 1, ColSpan: cols, Display: gofastcore.DisplayHidden})
 		i = j + 1
 	}
 	hc := b.sh.hiddenCols
 	for k := sort.Search(len(hc), func(k int) bool { return hc[k].hi >= at.c0 }); k < len(hc) && hc[k].lo <= at.c1; k++ {
 		lo, hi := max(hc[k].lo, at.c0), min(hc[k].hi, at.c1)
-		t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: 0, Col: int(lo - at.c0), RowSpan: rows, ColSpan: int(hi - lo + 1), Hidden: gofastcore.HiddenInvisible})
+		t.Display = append(t.Display, gofastcore.DisplayCells{Row: 0, Col: int(lo - at.c0), RowSpan: rows, ColSpan: int(hi - lo + 1), Display: gofastcore.DisplayHidden})
 	}
-	for _, h := range t.Hidden {
-		block.Hidden |= h.Hidden
+	for _, h := range t.Display {
+		block.Display |= h.Display
 	}
 }
 

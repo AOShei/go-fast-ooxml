@@ -9,7 +9,9 @@
 // model into shapes when the diagram is shown; Office keeps the result in
 // a drawing part beside the model, and other programs may not. A layout
 // can leave a node out: such a node's text is in the file and on no
-// slide, and with a drawing to say so it is flagged invisible.
+// slide. Nothing is said of it: the file declares nothing about its
+// display. A shape of the drawing marked hidden, and text drawn with no
+// ink, are declared, and kept.
 package diagram
 
 import (
@@ -22,7 +24,6 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -37,9 +38,8 @@ const (
 type Item struct {
 	Text  string
 	Level int // the node's depth in the model, from 1, plus the paragraph's own level
-	// Hidden is why the text cannot be seen: not drawn at all, or drawn
-	// so that it cannot be read.
-	Hidden gofastcore.Hidden
+	// Display is what the file declares about the display of the text.
+	Display gofastcore.Display
 	// Box is the drawn shape that shows the node, in the diagram's own
 	// space (points, from the corner of the frame that holds it), if the
 	// drawing has one.
@@ -49,8 +49,8 @@ type Item struct {
 // Diagram is what a diagram's parts say.
 type Diagram struct {
 	Items []Item
-	// Drawn says the file has the drawing of the diagram, by which what
-	// is seen was judged.
+	// Drawn says the file has the drawing of the diagram, which places
+	// the nodes and says what is declared about their display.
 	Drawn   bool
 	Removed int // control characters taken out
 }
@@ -77,8 +77,8 @@ var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 
 // Read reads the diagram whose data model is the part data. rels are the
 // relationships of the part that shows the diagram, by id: the drawing is
-// named there. pal resolves the drawing's colours; nil leaves them
-// unjudged.
+// named there. pal resolves the drawing's colours, for text drawn with no
+// ink; nil leaves them unresolved.
 func Read(pkg *opc.Package, data string, rels map[string]opc.Rel, pal *dml.Palette) (*Diagram, error) {
 	d := &Diagram{}
 	var s xmlscan.Scanner
@@ -104,10 +104,9 @@ func Read(pkg *opc.Package, data string, rels map[string]opc.Rel, pal *dml.Palet
 		if err != nil && readErr == nil {
 			readErr = err
 		}
-		// A drawing is judged by only if it is of this model: one that is
+		// A drawing is used only if it is of this model: one that is
 		// empty, or draws none of the model's presentation points, is a
-		// drawing that was not kept up to date, and says nothing of what
-		// is seen.
+		// drawing that was not kept up to date, and says nothing.
 		matched := false
 		for _, x := range cxns {
 			if x.typ == "presOf" {
@@ -231,11 +230,11 @@ func (d *Diagram) model(s *xmlscan.Scanner) (points []point, cxns []cxn, drawing
 	return points, cxns, drawingID
 }
 
-// drawn is a shape of the drawing: where it is, and why the text it
-// shows cannot be seen, paragraph by paragraph.
+// drawn is a shape of the drawing: where it is, and what the file
+// declares about the display of the text it shows, paragraph by paragraph.
 type drawn struct {
 	box    dml.Xfrm
-	hidden []gofastcore.Hidden
+	hidden []gofastcore.Display
 	text   bool // it shows text
 }
 
@@ -258,7 +257,6 @@ func (d *Diagram) drawing(pkg *opc.Package, name string, pal *dml.Palette) (map[
 		v, _ := s.Attr(xmlscan.NoSpace, "modelId")
 		id := string(v)
 		var sh drawn
-		var own, styled dml.Fill
 		var ink dml.Color
 		unseen := false
 		props := 0
@@ -279,15 +277,6 @@ func (d *Diagram) drawing(pkg *opc.Package, name string, pal *dml.Palette) (map[
 				props = s.Depth()
 			case props > 0 && s.Is(ns.Draw, "xfrm") && s.Depth() == props+1:
 				sh.box = dml.ReadXfrm(&s)
-			case props > 0 && s.Depth() == props+1 && s.Space() == ns.Draw:
-				if f, ok := dml.ReadFill(&s); ok {
-					own = f
-				} else {
-					s.Skip()
-				}
-			case s.Is(ns.Draw, "fillRef") && pal != nil:
-				idx, _ := strconv.Atoi(string(attr(&s, "idx")))
-				styled = pal.StyleFill(idx, dml.ReadColor(&s))
 			case s.Is(ns.Draw, "fontRef"):
 				ink = dml.ReadColor(&s)
 			case s.Space() == ns.DiagramDraw && string(s.Local()) == "txBody":
@@ -296,37 +285,24 @@ func (d *Diagram) drawing(pkg *opc.Package, name string, pal *dml.Palette) (map[
 					s.Skip()
 					continue
 				}
-				fill := own
-				if fill.Paint == dml.PaintUnset {
-					fill = styled
-				}
 				t.Palette, t.Chain, t.Base = pal, nil, dml.RunProps{}
 				if ink.IsSet() {
 					t.Base.Ink = dml.Fill{Paint: dml.PaintSolid, Color: ink}
 				}
-				// What the text is seen against: the shape's fill if it
-				// is one plain colour; with none, what is behind the
-				// diagram, which is not known here.
-				switch fill.Paint {
-				case dml.PaintSolid:
-					t.Behind, t.Lit = pal.Opaque(fill, nil)
-				default:
-					t.Behind, t.Lit = theme.Color{}, false
-				}
-				t.Later, t.Styles, t.Link, t.SlideNumber = false, false, nil, ""
+				t.Styles, t.Link, t.SlideNumber = false, nil, ""
 				t.Read(&s)
 				t.Removed, t.Unmapped = 0, 0
 				for _, p := range t.Paras {
-					sh.hidden = append(sh.hidden, p.Hidden)
+					sh.hidden = append(sh.hidden, p.Display)
 				}
 			}
 		}
 		if unseen {
 			for i := range sh.hidden {
-				sh.hidden[i] |= gofastcore.HiddenInvisible
+				sh.hidden[i] |= gofastcore.DisplayHidden
 			}
 			if len(sh.hidden) == 0 {
-				sh.hidden = []gofastcore.Hidden{gofastcore.HiddenInvisible}
+				sh.hidden = []gofastcore.Display{gofastcore.DisplayHidden}
 			}
 		}
 		if id != "" && len(out) < maxPoints {
@@ -411,7 +387,7 @@ func (d *Diagram) arrange(points []point, cxns []cxn, shapes map[string]drawn) {
 	}
 }
 
-// node gives a node's paragraphs as items, judged by the shapes that
+// node gives a node's paragraphs as items, placed by the shapes that
 // draw it.
 func (d *Diagram) node(p *point, level int, shapes map[string]drawn, pres []string) {
 	if len(p.paras) == 0 {
@@ -429,16 +405,14 @@ func (d *Diagram) node(p *point, level int, shapes map[string]drawn, pres []stri
 	for i, pa := range p.paras {
 		it := Item{Text: pa.text, Level: level + pa.level}
 		switch {
-		case shapes == nil:
-			// No drawing: nothing to judge by.
-		case shown == nil:
-			// The layout draws the node nowhere.
-			it.Hidden = gofastcore.HiddenInvisible
+		case shapes == nil, shown == nil:
+			// No drawing, or none of its shapes shows the node: nothing
+			// is declared about it.
 		default:
 			it.Box = shown.box
 			switch {
 			case len(shown.hidden) == len(p.paras):
-				it.Hidden = shown.hidden[i]
+				it.Display = shown.hidden[i]
 			case len(shown.hidden) > 0:
 				// The drawing breaks the text otherwise: what holds of
 				// all of it.
@@ -446,7 +420,7 @@ func (d *Diagram) node(p *point, level int, shapes map[string]drawn, pres []stri
 				for _, h := range shown.hidden[1:] {
 					all &= h
 				}
-				it.Hidden = all
+				it.Display = all
 			}
 		}
 		d.Items = append(d.Items, it)
@@ -462,7 +436,7 @@ func (d *Diagram) Blocks(budget *gofastcore.TextBudget) (blocks []gofastcore.Blo
 			return blocks, taken, true
 		}
 		taken += int64(n)
-		blocks = append(blocks, gofastcore.Block{Kind: gofastcore.KindListItem, Level: uint8(it.Level), Text: it.Text, Hidden: it.Hidden})
+		blocks = append(blocks, gofastcore.Block{Kind: gofastcore.KindListItem, Level: uint8(it.Level), Text: it.Text, Display: it.Display})
 	}
 	return blocks, taken, false
 }

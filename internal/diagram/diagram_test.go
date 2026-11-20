@@ -72,8 +72,8 @@ func render(d *Diagram) string {
 	var b strings.Builder
 	for _, it := range d.Items {
 		fmt.Fprintf(&b, "%d %q", it.Level, it.Text)
-		if it.Hidden != 0 {
-			fmt.Fprintf(&b, " hidden=%s", it.Hidden)
+		if it.Display != 0 {
+			fmt.Fprintf(&b, " display=%s", it.Display)
 		}
 		if it.Box.Set {
 			fmt.Fprintf(&b, " at %g,%g", it.Box.X, it.Box.Y)
@@ -102,26 +102,31 @@ func TestModelOrder(t *testing.T) {
 	}
 }
 
-// With the drawing: each node has the box of the shape that shows it; a
-// node the layout draws nowhere is flagged invisible; text in the colour
-// of its shape is flagged.
+// With the drawing: each node has the box of the shape that shows it.
+// What the drawing declares about display is kept: a shape marked hidden,
+// text with no ink. Nothing is judged from colours, and a node the layout
+// draws nowhere has no reason.
 func TestDrawing(t *testing.T) {
 	model := `<dgm:dataModel` + dgmNS + `><dgm:ptLst>` +
-		pt("d", "doc") + pt("a", "", "Shown") + pt("b", "", "Not drawn") + pt("c", "", "White on white") +
-		pt("pa", "pres") + pt("pb", "pres") + pt("pc", "pres") +
+		pt("d", "doc") + pt("a", "", "Shown") + pt("b", "", "Not drawn") + pt("c", "", "White on white") + pt("e", "", "In a hidden shape") + pt("f", "", "No ink") +
+		pt("pa", "pres") + pt("pb", "pres") + pt("pc", "pres") + pt("pe", "pres") + pt("pf", "pres") +
 		`</dgm:ptLst><dgm:cxnLst>` +
-		cx("", "d", "a", 0) + cx("", "d", "b", 1) + cx("", "d", "c", 2) +
-		cx("presOf", "a", "pa", 0) + cx("presOf", "b", "pb", 0) + cx("presOf", "c", "pc", 0) +
+		cx("", "d", "a", 0) + cx("", "d", "b", 1) + cx("", "d", "c", 2) + cx("", "d", "e", 3) + cx("", "d", "f", 4) +
+		cx("presOf", "a", "pa", 0) + cx("presOf", "b", "pb", 0) + cx("presOf", "c", "pc", 0) + cx("presOf", "e", "pe", 0) + cx("presOf", "f", "pf", 0) +
 		`</dgm:cxnLst><dgm:extLst><a:ext uri="http://schemas.microsoft.com/office/drawing/2008/diagram"><dsp:dataModelExt relId="rId9" minVer="http://schemas.openxmlformats.org/drawingml/2006/diagram"/></a:ext></dgm:extLst></dgm:dataModel>`
 	drawing := `<dsp:drawing` + dgmNS + `><dsp:spTree><dsp:nvGrpSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvGrpSpPr/></dsp:nvGrpSpPr><dsp:grpSpPr/>` +
 		shape("pa", 12700, 25400, 127000, 63500, "4472C4", "FFFFFF", "Shown") +
 		shape("pb", 0, 0, 10, 10, "4472C4", "FFFFFF", "") + // a shape with no text
 		shape("pc", 254000, 0, 127000, 63500, "FFFFFF", "FFFFFF", "White on white") +
+		strings.Replace(shape("pe", 0, 127000, 127000, 63500, "4472C4", "FFFFFF", "In a hidden shape"), `name=""/>`, `name="" hidden="1"/>`, 1) +
+		strings.Replace(shape("pf", 0, 254000, 127000, 63500, "4472C4", "FFFFFF", "No ink"), `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr>`, `<a:noFill/></a:rPr>`, 1) +
 		`</dsp:spTree></dsp:drawing>`
 	d := read(t, model, drawing)
 	want := `1 "Shown" at 1,2
-1 "Not drawn" hidden=invisible
-1 "White on white" hidden=low_contrast at 20,0
+1 "Not drawn"
+1 "White on white" at 20,0
+1 "In a hidden shape" display=hidden at 0,10
+1 "No ink" display=no_ink at 0,20
 `
 	if got := render(d); got != want || !d.Drawn {
 		t.Errorf("drawn %v; got:\n%s\nwant:\n%s", d.Drawn, got, want)
@@ -162,7 +167,7 @@ func TestConnectorTextAndLongShapes(t *testing.T) {
 	drawing := `<dsp:drawing` + dgmNS + `><dsp:spTree>` + shape("pa", 0, 0, 127000, 63500, "4472C4", "FFFFFF", long) +
 		shape("pb", 254000, 0, 127000, 63500, "4472C4", "FFFFFF", "B") + `</dsp:spTree></dsp:drawing>`
 	d := read(t, model, drawing)
-	if len(d.Items) != 3 || d.Items[0].Hidden != 0 || !d.Items[0].Box.Set || d.Items[1].Text != "then" || d.Items[2].Text != "B" || d.Items[2].Hidden != 0 {
+	if len(d.Items) != 3 || d.Items[0].Display != 0 || !d.Items[0].Box.Set || d.Items[1].Text != "then" || d.Items[2].Text != "B" || d.Items[2].Display != 0 {
 		t.Errorf("items: %s", render(d))
 	}
 }

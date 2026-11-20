@@ -4,17 +4,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"html"
 	"io"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
 
@@ -35,7 +32,7 @@ func TestPowerPointFixtures(t *testing.T) {
 			ooxmltest.CheckDocument(t, doc)
 			// LibreOffice does not write which row of a table is its
 			// header, so the file it saved does not say.
-			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Hidden: true, NoHeaderRows: f.Variant != ""})
+			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Display: true, NoHeaderRows: f.Variant != ""})
 		})
 	}
 }
@@ -110,7 +107,7 @@ func TestPowerPointCorpus(t *testing.T) {
 		for k, sl := range theirs {
 			part := &doc.Parts[k]
 			slides++
-			if sl.Hidden == (part.Hidden != 0) {
+			if sl.Hidden == (part.Display != 0) {
 				hiddenSame++
 			}
 			if sl.Title != nil && len(ooxmltest.Words(*sl.Title)) > 0 {
@@ -173,83 +170,6 @@ func TestPowerPointCorpus(t *testing.T) {
 	if hiddenSame != slides {
 		t.Errorf("hidden slides differ from python-pptx on %d of %d slides", slides-hiddenSame, slides)
 	}
-}
-
-// TestPowerPointHiddenSurvey reports what the hidden-text checks flag in
-// the corpus, which is made of ordinary presentations: every flag there
-// was looked at by hand when the checks were written (bench/README.md),
-// and a change that makes them flag much more is a change to look at.
-// HIDDEN_SURVEY=1 lists the flagged blocks.
-func TestPowerPointHiddenSurvey(t *testing.T) {
-	if testing.Short() {
-		t.Skip("reads the whole corpus")
-	}
-	detail := os.Getenv("HIDDEN_SURVEY") != ""
-	files, flagged, unchecked := 0, 0, 0
-	blocks := map[string]int{}
-	inFiles := map[string]int{}
-	for _, f := range ooxmltest.LoadManifest(t, "corpus.json") {
-		if f.Format != "pptx" || f.Note != "" {
-			continue
-		}
-		data, err := os.ReadFile(f.AbsPath(t))
-		if err != nil {
-			continue
-		}
-		doc, err := extract(t, data, nil)
-		if err != nil {
-			continue
-		}
-		files++
-		seen := map[string]bool{}
-		for p := range doc.Parts {
-			part := &doc.Parts[p]
-			if part.Has(gofastooxml.WarnHiddenUnchecked) {
-				unchecked++
-			}
-			if part.Hidden != 0 {
-				blocks["hidden slide"] += len(part.Blocks)
-				seen["hidden slide"] = true
-				continue
-			}
-			for _, b := range part.Blocks {
-				if b.Hidden == 0 {
-					continue
-				}
-				what := b.Hidden.String()
-				blocks[what]++
-				seen[what] = true
-				if detail {
-					text := b.Text
-					if b.Table != nil {
-						text = fmt.Sprint(b.Table.Hidden)
-					}
-					if len(text) > 60 {
-						text = text[:60]
-					}
-					t.Logf("%-44s slide %-3d %-9s %-22s %v %q", f.Name, part.Number, b.Kind, what, b.Loc.BBox, text)
-				}
-			}
-		}
-		if len(seen) > 0 {
-			flagged++
-		}
-		for what := range seen {
-			inFiles[what]++
-		}
-	}
-	if files == 0 {
-		t.Skip("no corpus files downloaded")
-	}
-	var kinds []string
-	for what := range blocks {
-		kinds = append(kinds, what)
-	}
-	sort.Strings(kinds)
-	for _, what := range kinds {
-		t.Logf("%-40s %5d blocks in %3d files", what, blocks[what], inFiles[what])
-	}
-	t.Logf("%d of %d presentations have hidden text; %d slides were not checked to the end", flagged, files, unchecked)
 }
 
 // diagramTexts returns the paragraphs of the SmartArt data models of a

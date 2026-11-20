@@ -43,8 +43,8 @@ func render(blocks []gofastcore.Block) string {
 				fmt.Fprintf(&b, " %s=%s", k, v)
 			}
 		}
-		if bl.Hidden != 0 {
-			fmt.Fprintf(&b, " hidden=%s", bl.Hidden)
+		if bl.Display != 0 {
+			fmt.Fprintf(&b, " display=%s", bl.Display)
 		}
 		if bl.Table != nil {
 			fmt.Fprintf(&b, " %q", bl.Table.Rows)
@@ -102,7 +102,7 @@ func TestClassicChart(t *testing.T) {
 	got := render(blocks)
 	want := `caption "Sales by region"
 table name=Chart 1 role=chart chart=bar line x_axis=Region y_axis=Units [["" "2025" "Target"] ["North" "1,234.5" "50%"] ["South" "" "75%"] ["East" "0.3" "100%"]]
-table name=Chart 1 role=chart chart=bar line x_axis=Region y_axis=Units hidden=invisible [["" "Secret"] ["North" "7"] ["South" "8"] ["East" "9"]]
+table name=Chart 1 role=chart chart=bar line x_axis=Region y_axis=Units display=hidden [["" "Secret"] ["North" "7"] ["South" "8"] ["East" "9"]]
 `
 	if got != want || cut {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)

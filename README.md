@@ -10,9 +10,9 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
 | Format | State |
 |---|---|
-| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. Hidden text is flagged (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
-| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. Hidden text is flagged (see below). Sheets are read in parallel |
-| PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. Hidden text is flagged (see below). Slides are read in parallel |
+| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. What the file declares about the display of text is kept (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
+| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. What the file declares about the display of text is kept (see below). Sheets are read in parallel |
+| PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. What the file declares about the display of text is kept (see below). Slides are read in parallel |
 
 ## How fast
 
@@ -119,11 +119,11 @@ for part, err := range f.Parts(ctx) {          // gofastcore.Part, in order
 }
 part, err := f.Part(ctx, 12)                   // one part, by number
 doc, err := f.Document(ctx)                    // everything: what Extract returns
-f.Warnings(); f.Children(ctx); f.HiddenChecked()
+f.Warnings(); f.Children(ctx)
 ```
 
 The parts are the ones `Extract` returns, each complete, with its warnings
-and its hidden text flagged. With more than one worker a few parts are
+and what the file declares about the display of its text. With more than one worker a few parts are
 read ahead; what is held does not grow with the number of parts. A `File`
 is safe for concurrent use, and each pass over it counts the limits afresh.
 
@@ -136,7 +136,7 @@ for band, err := range f.Rows(ctx, sheetNumber, 1000) {
 ```
 
 Each band is a part like any other, with the sheet's number and name and
-the hidden flags of its cells. Two million cells are read in 20 to 25 MB,
+what the file declares about the display of its cells. Two million cells are read in 20 to 25 MB,
 where the sheet read whole takes over 100 (`bench/README.md`). The price:
 the sheet's part is read twice, a table that runs past the end of a band is
 cut there and goes on in the next as a table marked `Continued`, declared
@@ -152,7 +152,7 @@ go install github.com/AOShei/go-fast-ooxml/cmd/gofastooxml@latest
 
 gofastooxml report.docx                      # the document as JSON
 gofastooxml -format markdown deck.pptx       # or markdown, or text
-gofastooxml -format text -exclude-hidden contract.docx
+gofastooxml -format text -exclude-display contract.docx
 gofastooxml ./archive > documents.jsonl      # every Office file under a directory
 ```
 
@@ -163,7 +163,7 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 | `-parts 3`, `-parts 2-5` | Only those parts: sheets or slides by number |
 | `-images meta\|data\|none` | Pictures: a block for each, with its place, size and alternative text (the default); their bytes too; or not at all |
 | `-spans` | Bold, italic and the like, and links, as spans |
-| `-exclude-hidden`, `-exclude-hidden=tiny,low_contrast` | In Markdown and text, leave out hidden text: all of it, or what is hidden for the reasons named. JSON always has everything, flagged |
+| `-exclude-display`, `-exclude-display=hidden` | In Markdown and text, leave out text the file declares not shown or drawn with no ink: all of it, or what has the reasons named (`hidden`, `no_ink`). JSON always has everything |
 | `-furniture`, `-part-markers` | In Markdown and text: include running headers and footers; mark where each part begins |
 | `-workers n` | Sheets or slides read at a time |
 | `-max-cells n`, `-max-decoded-bytes n`, `-max-text-bytes n` | The limits; `-1` for none |
@@ -174,7 +174,7 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 Only documents go to standard output. A file that cannot be read is
 reported on standard error and makes the exit status 1; the other inputs
 are still read. Unless `-quiet` is given, a line on standard error names
-the files that have hidden text or a warning of severity error. Office
+the files that have a warning of severity error. Office
 files embedded in a document are extracted too, into its `children`.
 
 ## Password-protected files
@@ -250,8 +250,9 @@ Four things are not as displayed, on purpose:
 - **Padding is one space.** Formats can ask for blank space as wide as some
   character, or for a character repeated to fill the cell. Neither is
   reproduced.
-- **A value its format displays as nothing is written out**, and flagged
-  as hidden, except zero: formats blank zeros as a matter of course.
+- **A value its format displays as nothing is written out**, with the
+  reason `hidden`, except zero: formats blank zeros as a matter of
+  course.
 
 A formula gives its stored result. Formulas are not evaluated, and one
 stored without a result is an empty cell, reported as
@@ -291,8 +292,8 @@ type `choices` at the cells they are for, with those cells in `loc.range`:
 the values of a list written out in the file, one per line, or the
 reference a list is taken from (`=$D$1:$D$3`, `=Lists!$A$1:$A$12`), since
 those values are in the text of their cells. A list whose arrow the file
-hides, or whose cells are all in hidden rows or columns, is flagged
-`invisible`. Both the older kind and the newer kind kept in the sheet's
+hides, or whose cells are all in hidden rows or columns, has the reason
+`hidden`. Both the older kind and the newer kind kept in the sheet's
 extension list are read. The 56 lists of the corpus's workbooks agree with
 openpyxl's (`TestExcelDropDownListsAsOpenpyxl`); openpyxl does not read
 the newer kind. Other kinds of validation offer nothing to choose from and
@@ -323,8 +324,7 @@ no cells; its chart's blocks have no `loc.range`.
 last laid out: they are read as one table, like a declared table, with the
 pivot table's name and `role` `pivot`, its header rows those above its
 first row of values. A pivot table that is laid out only when the file is
-opened has no cells yet, and gives no table. Its style is not applied in
-judging contrast. A pivot table is drawn from a cache, the records of its
+opened has no cells yet, and gives no table. A pivot table is drawn from a cache, the records of its
 source kept in the workbook. Where the source is a range or table of the
 workbook, the records repeat cells that are read and are not read again.
 Where it is another workbook, a connection to a database, scenarios, or a
@@ -362,7 +362,7 @@ placeholder it takes after, on the layout or the master.
 | Date, footer and slide-number placeholders | `footer`. A slide-number field shows the slide's number |
 | Text the layout or the master has of its own | `header` if it is in the upper half of the slide, `footer` if in the lower; on every slide that shows it, once where layout and master repeat each other |
 | Speaker's notes | `note` blocks of type `speaker`, one for each paragraph |
-| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master says not to show is not flagged for that, as in Word (see "Hidden text"). The date and the page number are not read |
+| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master switches off (`p:hf`) has the reason `hidden`. The date and the page number are not read |
 | Header and footer of the handouts | `header` and `footer` blocks from the handout master, once, after the first slide |
 | Comments, in both the older and the threaded form | `note` blocks of type `comment`, with author and date; replies follow the comment |
 
@@ -390,8 +390,7 @@ slide past that says so with `limit.exceeded`. What a limit leaves out is
 the same for any number of workers.
 
 **Not read:** sound and video clips, counted in `ooxml.unread_content`;
-animations, other than to know which
-shapes they move (see hidden text). An action that starts a program or
+animations. An action that starts a program or
 runs a macro is reported as `input.active_content` and never run.
 
 ## Charts and SmartArt
@@ -418,8 +417,8 @@ one series, as Office shows it.
   `Options.Child` as an embedded file: it may hold more than the chart
   shows. Excel keeps the data of its newer charts on the sheet and none in
   the chart: such a chart's table has the names of its series only.
-- **Series a chart's filter leaves out** are in the file and not drawn:
-  they are read, in a table of their own flagged `invisible`.
+- **Series a chart's filter leaves out** are in the file, declared not
+  drawn: they are read, in a table of their own with the reason `hidden`.
 - A chart holds at most about two million points; a larger one is cut off
   with `limit.exceeded`.
 - Across 1,413 series in the corpus and the soak set, the names,
@@ -430,18 +429,17 @@ one series, as Office shows it.
 nesting the model declares: a `list_item` for each paragraph of a node,
 its level the node's depth. Office also keeps the drawing it made of the
 diagram; where the file has it, each item has the place of the shape it
-is drawn in (on a slide), its text is judged as other text is (colour
-against the shape's fill, size), and a node the layout draws nowhere is
-flagged `invisible`: it is in the file and on no slide. A drawing that is
-empty, or draws none of the model, is out of date and is not judged by.
+is drawn in (on a slide), and what the drawing declares is kept: a shape
+marked hidden, text drawn with no ink. A node the layout draws nowhere is
+in the file and on no slide; nothing is said of it. A drawing that is
+empty, or draws none of the model, is out of date and is not used.
 Text on the connectors between nodes (an arrow's label) is an item
 between the nodes it joins. Against LibreOffice, which imports the
 drawing, over the 111 presentations with SmartArt in the corpus and the
-soak set: nothing flagged as drawn nowhere is shown, and all 961
-diagram paragraphs it shows are in this library's text
+soak set, all 961 diagram paragraphs it shows are in this library's text
 (`TestSmartArtAsLibreOffice`, `GOFAST_SMARTART_SOAK=1` for the soak set).
 Where a diagram has no drawing, LibreOffice lays the model out itself and
-may leave text out; that text is given here, unflagged.
+may leave text out; that text is given here.
 
 ## What a file stores and shows nowhere
 
@@ -453,20 +451,9 @@ is in `stored`. The renderers leave the stored part out unless
 `RenderOptions.Stored` is set, and a consumer can keep it from a model, or
 review it, by its kind.
 
-**It is not flagged hidden for being stored.** The hidden flag is a signal
-of suspicious hiding (text in the colour of its background, a tiny box
-holding a page of text), and nearly every Office file keeps some such
-data: a flag on all of it would be set on clean and poisoned files alike.
-What is flagged is text **out of proportion for its kind**: a document
-variable, a defined name's text, a value of custom XML or the text of a
-field's code of **more than 30 words**, where a few are usual. Over the
-corpus and the soak set, half of these are of one word and 99 in 100 of
-under 35. Such text is flagged `invisible` (a value of custom XML by a
-span over it), and `ooxml.unshown_text_long` says what was found and how
-long it is. The rule is not applied to macro code, which is long by
-nature, nor to the records of pivot caches, which are data like cells,
-nor to a citation tool's field codes; and a value of custom XML that a
-content control shows is on the page.
+Being stored says where the text comes from. It sets no display reason:
+the file declares nothing about the display of such data, and its length
+is not judged.
 
 | `stored` | What |
 |---|---|
@@ -475,6 +462,7 @@ content control shows is on the page.
 | `document_variable` | Word's document variables, `name: value` |
 | `defined_name` | Excel's defined names |
 | `pivot_cache` | The records of an Excel pivot cache whose source is gone, as a table, and the formulas of calculated fields (`Margin: =Sales*0.1`) |
+| `after_end` | Data appended after the end of the zip archive, where Office stops reading: its text, if it is text (UTF-8), up to 1 MiB. The stored part also carries `input.trailing_data`, which says how many bytes follow the end, whatever they are |
 
 **Field codes** in Word are the instructions of fields, whose results are
 the text. Most are structure: a page number, a cross-reference, a table of
@@ -484,10 +472,9 @@ codes are not kept. A code that holds text of its own, shown nowhere, is a
 `note` block of type `field` after the paragraph its field ends in: an
 index entry (`XE "…"`), the branches of `IF`, the
 text of `SET`, `ASK` or `FILLIN`, a citation tool's data (`ADDIN`), a
-field this library does not know. Such a note is flagged `invisible` only
-where it is out of proportion, as above, and so is a structural field
-whose code holds more than it needs (over 30 words of quoted text). A
-field in another's code is written into that code in braces, as Word
+field this library does not know, and a structural field whose code holds
+more than such a field needs (over 30 words of quoted text). These notes
+have no display reason. A field in another's code is written into that code in braces, as Word
 shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its result, which
 nothing shows, is not text. An equation field (`EQ`) and a macro button
 (`MACROBUTTON`) show their codes' text.
@@ -502,159 +489,57 @@ order. A Word paragraph that is a display equation and nothing else is a
 `formula` block with `notation` `unicodemath`; an equation in a sentence
 stays in the sentence.
 
-## Hidden text
+## What the file declares
 
-Text that a person reading the document cannot see is extracted like any other
-text and flagged, never dropped. A block's `Hidden` field says why. Where only
-part of a paragraph is hidden the reason is on a span over that part, and in a
-table on the cells concerned. Every part that has flagged text carries a
-`text.hidden` warning, and `RenderOptions.ExcludeHidden` leaves the flagged
-text out of rendered output.
+Everything a file holds is extracted. Where the file itself declares that
+text is not shown, or that it is drawn with no ink, the block says so in
+`Display` (JSON `display`), as go-fast-core defines it (its README, "What
+the file declares"). This library reports declarations and nothing else:
+it does not judge whether a reader could see the text, or whether it is
+harmful, and a block with no reason says nothing about either. Threat
+detection is outside this library.
 
-**The flag is a signal of suspicious hiding**, as go-fast-core defines it
-(its README, "What earns a flag"): a means of hiding applied to text that
-would otherwise be seen. Data that files routinely keep and never show
-(properties, comments, field codes, document variables, custom XML,
-defined names, macro code) is not flagged for that alone, only where it is
-out of proportion for its kind (see
-[What a file stores and shows nowhere](#what-a-file-stores-and-shows-nowhere)).
-
-A header or footer that no page shows is routine too: a Word template's
-first-page or even-page header in a document that has neither, a part no
-section names, a notes-page footer PowerPoint's master switches off. It is
-extracted like any header and flagged `invisible` only if it holds **more
-than 200 words**, far more than a header does (over the corpus and the
-soak set, half of Word's headers and footers with text have 3 words,
-99 in 100 under 70, and the longest 185), with `ooxml.unshown_text_long`.
-
-`Document.HiddenChecked` lists the reasons that are checked completely for
-the format. For Word and Excel they are `invisible`, `tiny`, `low_contrast`
-and `invisible_chars`. For PowerPoint, where every shape has a place, they
-are those and `off_page`, `occluded` and `transparent`.
-
-What is flagged in a Word document:
-
-| Reason | What is flagged |
+| Reason | Meaning |
 |---|---|
-| `invisible` | Text formatted as hidden, on the run or through its character style, its paragraph's style or the document defaults. A footnote, text box or picture anchored in hidden text |
-| `tiny` | A font size under 2 points, resolved through the same layers. Characters narrowed, or text fitted into a width, so that it is under 2 points |
-| `low_contrast` | A text colour set explicitly (on the run, through a style, or as a Word 2010 text fill) that cannot be told from what is behind it: the run's shading or highlight, the paragraph's shading, the table cell's shading whether set on the cell or given by the table's style, the fill of the shape or text box the text is in, the page colour where Word displays it. Theme colours are resolved. Text in the "automatic" colour is never flagged: Word draws it to contrast with its background. With `DeepHidden`, also a text box's gradient or picture fill, and a page background that is a gradient or a picture |
-| `off_page` | A text box anchored at a place on the page whose every possible place is off the page: measured from the page or a margin its place is known; from a column, a paragraph or a line it is somewhere between the margins, and is flagged only if it is off the page wherever that is |
-| `occluded` | A floating text box wholly under an opaque picture or filled shape in front of it, anchored in the same paragraph (two drawings anchored in one paragraph are on one page) |
-| `transparent` | A Word 2010 text fill that is fully transparent, or no fill |
-| `clipped` | Text in a text box of fixed size under 2 points in either direction, or in a table row of an exact height under 2 points |
-| `invisible_chars` | Characters with no visible form, found by the shared model itself |
+| `hidden` | The file switches the content off |
+| `no_ink` | The file declares the text drawn with no paint |
 
-In Word, `transparent`, `clipped`, `off_page` and `occluded` are flagged
-where found but only the forms above are looked for.
+A declaration is one switch or one value, found by following the file's
+own inheritance (a style, a placeholder, a master). Nothing that needs two
+values compared or a threshold is reported: not colour against what is
+behind it, not text size, not a place off the page or slide, not a box too
+small for its text, not a shape over the text, not conditional formatting.
 
-What is flagged in an Excel workbook:
+What is reported, by format:
 
-| Reason | What is flagged |
-|---|---|
-| `invisible` | A hidden or very hidden sheet: the part and all its blocks. Hidden rows and columns, including those of no height or width. A value its number format displays as nothing (`;;;`), other than zero. Text in a shape marked hidden |
-| `tiny` | A cell or a run of shape text in a font under 2 points |
-| `low_contrast` | A cell whose font colour, named in its style, cannot be told from its fill, or from white where it has none, with the colours conditional formatting gives where its rules match. Shape text in the colour of its shape. Theme colours, tints and the old colour palette are resolved. With `DeepHidden`, also a cell with a gradient fill, against its stops |
-| `invisible_chars` | Characters with no visible form, found by the shared model itself |
+| Format | `hidden` | `no_ink` |
+|---|---|---|
+| Word | Hidden text (`w:vanish`, `w:specVanish`), on the run or through its character style, its paragraph's style or the document defaults; hidden text and a hidden paragraph style cancel, as in Word. A footnote, text box or picture anchored in hidden text. A drawing whose `wp:docPr` is `hidden`, a legacy shape whose style says `visibility:hidden`. A header or footer that no page shows by the document's own settings: one no section names, a first-page one where no section has a different first page, an even-page one where the document does not have different odd and even pages | A Word 2010 text fill (`w14:textFill`) of nothing, or fully transparent |
+| Excel | A hidden or very hidden sheet: the part and all its blocks. Hidden rows and columns, filtered rows among them. A value its number format displays as nothing (`;;;`), other than zero. A shape or picture marked hidden; the hidden stand-in Excel writes for a form control kept in the legacy drawing is not one. A drop-down list whose arrow is hidden or whose cells are all hidden. The series a chart's filter leaves out | Shape text with no fill, or a fill of zero opacity |
+| PowerPoint | A hidden slide (`show="0"`): the part and all its blocks, its notes included. A shape or group marked hidden. Text in a table cell that a merged cell covers. A notes or handout header or footer the master switches off (`p:hf`). The series a chart's filter leaves out | Text with no fill and no outline, or a fill of zero opacity, through the run, its level, the placeholders it takes after, the master's styles and the presentation's defaults |
 
-In a table the flags are on regions of cells (`table.hidden`); cells side by
-side or one under another with the same reasons are one region, so a hidden
-column is one entry however long it is.
+Where only part of a paragraph has a reason, a span over that part carries
+it; in a table, regions of cells do (`table.display`), cells side by side
+or one under another with the same reasons making one region, so a hidden
+column is one entry however long it is. A part's reason (a hidden sheet or
+slide) is on all of its blocks. `RenderOptions.ExcludeDisplay` leaves the
+text with the reasons named out of rendered output; by default it is in.
 
-What is flagged in a PowerPoint presentation:
+Characters that display as nothing (Unicode tag characters, bidirectional
+controls, zero-width characters, variation selectors) are kept in the text
+as the file has them, with no reason.
 
-| Reason | What is flagged |
-|---|---|
-| `invisible` | A hidden slide: the part and all its blocks, its notes included. A shape or a group marked hidden. Text with no fill and no outline. Text in a table cell that a merged cell covers |
-| `tiny` | Text under 2 points, with the size taken from the run, the paragraph's level in the shape, the placeholders it takes after, the master's styles or the presentation's defaults, and after any shrinking to fit the shape |
-| `low_contrast` | Text whose colour cannot be told from what it is seen against. The colour is the run's, or inherited as the size is, or the one the shape's style or the table's style gives it. What it is seen against is the run's highlight, the fill of its shape or table cell, or, for a shape with no fill, the last thing drawn under it: a filled rectangle on the slide, the layout or the master, or the slide's background. Theme colours go through the colour map in force, including one a slide or layout replaces, and lightened, darkened and partly transparent colours are worked out. With `DeepHidden`, also gradients and pictures: a shape's own gradient or picture fill, a picture or a gradient-filled shape under the text, and a slide background that is one |
-| `transparent` | Text filled with a colour of zero opacity |
-| `off_page` | A shape that lies wholly outside the slide |
-| `occluded` | Text whose shape lies wholly under a later shape that hides it: a rectangle filled with one opaque colour, or a JPEG or a PNG that has no transparency. A shape that an animation acts on is not counted as hiding anything |
-| `clipped` | Text in a shape that cuts off what does not fit and is too low for one line. Flagged where found; it is not in `HiddenChecked` |
-| `invisible_chars` | Characters with no visible form, found by the shared model itself |
+Content shown on no page but extracted by design has its own place in the
+model, and no reason for that: document properties, alternative text of
+pictures, comments, speaker's notes, the values of drop-down lists, field
+codes, and what the file stores (see above). Formulas, with
+`Options.Cells`, are in `Table.Cells`, apart from what cells show.
 
-A slide with more overlapping shapes than the checks compare (some hundreds
-of thousands of pairs) carries `ooxml.hidden_unchecked`: its text was not all
-compared with what lies under and over it. So does a sheet with cells whose
-colours conditional formatting gives by rules that are formulas.
-
-**Conditional formatting in Excel.** Where a rule gives a colour of text
-or a fill, the rules are decided from the values the file stores, in
-order of priority and with stop-if-true: comparisons with constants, text
-tests, blanks and errors, duplicates, top and bottom N, above and below
-average, and colour scales. A rule that gives no colour (bold, a data bar,
-an icon set) changes nothing. A rule that is a formula, or a date relative
-to today, is tried matching and not matching: where that makes a
-difference the cell is not judged, and `ooxml.hidden_unchecked` counts it.
-Over the corpus and the soak set this flags 236 cells the rules hide
-(zeros made white, a cell made red on red) and leaves 1,128 unjudged.
-
-**`Options.DeepHidden`** asks for the checks that cost decoding pictures:
-text is judged against a gradient's stops, or against the colours of the
-part of a picture under it (PNG, JPEG and GIF, decoded with the standard
-library and reduced to a grid of 64 by 64 colours), and is
-`low_contrast` if it cannot be told from at least 95% of them. A picture
-that is tiled (on a slide), rotated, partly transparent, larger than 40
-million pixels, or in another format is not judged. The command's
-`-deep-hidden` sets it.
-
-A flag states a fact, so where the facts cannot be established nothing is
-flagged. What this means for a reviewer:
-
-- **Backgrounds that are not one known colour.** Without `DeepHidden`,
-  text colour is not judged against a gradient or a picture; with it,
-  only as described above. Against a striped pattern it is not judged. On
-  a slide, only a rectangle that lies under all of the text's shape is
-  taken as what the text is seen against: text over a shape that is not a
-  rectangle, or over the edge of one, is not judged.
-- **Table styles that are not known.** Office has table styles built in,
-  and a file may name one without defining it (Excel always does; files
-  written by python-pptx do too). Excel's 60 are taken from the standard.
-  All 74 of PowerPoint's are known: 55 from what PowerPoint wrote into the
-  files of the test corpus, and the other 19 from Dewiride PPTX Studio's
-  capture of PowerPoint's own definitions (Apache-2.0; see `NOTICE`), with
-  which the 55 agree. Of Word's, the 74 that Word wrote into the corpus are
-  known. Where a table's style is neither in the file nor known, text in
-  it is judged only against a fill the cell itself states.
-- **What a slide looks like during the show.** Animations are not played.
-  Text that an animation reveals, hides or moves is judged where the slide
-  stores it.
-- **Conditional formatting in Excel** by rules that are formulas: see
-  above.
-- **Table styles in Word.** The shading a table's style gives cells is used; the text
-  colour it gives them is not. Whether a cell is in the last row or column is
-  used only where the file states it.
-- **Position in Word and Excel.** This library does no page layout. In
-  Word, only floating text boxes are judged for where they are, as above;
-  text in the flow of the body that a floating shape covers is not
-  detected, nor is anything in Excel covered by a shape. On a slide, where
-  shapes say where they are, it is; but text that runs out of its shape is
-  taken to be where the shape is.
-- **Fonts and spacing.** A font whose glyphs are blank, or spacing that piles
-  characters on each other, is not detected.
-- **Content never shown on a page but extracted by design**: document
-  properties, alternative text of pictures, comments, speaker's notes,
-  the values of drop-down lists,
-  the series a chart's filter leaves out and the SmartArt nodes a layout
-  does not draw (both flagged `invisible`),
-  field codes and what a file stores and shows nowhere (see above), each
-  flagged only where out of proportion for its kind. Each has its own
-  place in the model (metadata, `image` blocks, `note` blocks, the
-  `stored` part), so a consumer can treat it apart. Formulas, with
-  `Options.Cells`, are in `Table.Cells`, apart from what cells show.
-- **Content not extracted at all**, which therefore cannot reach a model
-  through this library: in Excel, the records of a pivot cache whose
-  source is in the workbook (they repeat its cells), and the formulas of
-  a pivot table's calculated items; in Word, the building blocks of its
-  glossary document; in PowerPoint, the tags that add-ins store on slides
-  and shapes; attribute values of custom XML data.
-
-The contrast test is the shared model's (`gofastcore.LowContrast`): text
-is taken to be indiscernible when its contrast with what is behind it is
-under 1.2 and its red and green are close to the background's. Yellow and
-cream on white are flagged; green on red, which is as bright and plain to
-see, is not.
+**Not extracted at all:** in Excel, the records of a pivot cache whose
+source is in the workbook (they repeat its cells), and the formulas of a
+pivot table's calculated items; in Word, the building blocks of its
+glossary document; in PowerPoint, the tags that add-ins store on slides
+and shapes; attribute values of custom XML data.
 
 ## Layout
 
@@ -672,7 +557,7 @@ see, is not.
 | `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables and table styles, reading order, what covers what, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
 | `internal/chart`, `internal/diagram` | Charts, of both kinds, as tables of their data; SmartArt diagrams, from their data model and the drawing Office made of them. Shared by the three readers |
-| `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours and fill styles, pictures and embedded files, settling which text is hidden, bullets and numerals, warning codes, what reading one part gives |
+| `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours, pictures and embedded files, placing display reasons on blocks and spans, bullets and numerals, warning codes, what reading one part gives |
 | `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |
 | `testdata/fixtures`, `testdata/expect`, `testdata/fixtures.json` | Small generated files with exactly known content, the expected result of each in the shared model's JSON form, and their manifest |

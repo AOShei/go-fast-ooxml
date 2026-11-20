@@ -231,12 +231,11 @@ func rejects(check func(testing.TB)) (failed bool) {
 
 func goodDocument() *gofastcore.Document {
 	d := gofastcore.New("docx")
-	d.HiddenChecked = HiddenChecked["docx"]
 	p := gofastcore.Part{Kind: gofastcore.PartBody, Number: 1, Blocks: []gofastcore.Block{
 		{Kind: gofastcore.KindHeading, Level: 1, Text: "Title"},
 		{Kind: gofastcore.KindParagraph, Text: "Body text."},
 	}}
-	p.MarkHidden()
+	p.Finish()
 	d.Parts = append(d.Parts, p)
 	return d
 }
@@ -252,7 +251,6 @@ func TestCheckDocument(t *testing.T) {
 	bad := map[string]func(*gofastcore.Document){
 		"invalid document":           func(d *gofastcore.Document) { d.Parts[0].Blocks[0].Level = 0 },
 		"wrong format":               func(d *gofastcore.Document) { d.Source.Format = "pdf" },
-		"wrong hidden_checked":       func(d *gofastcore.Document) { d.HiddenChecked = gofastcore.HiddenChars },
 		"textless part, no warning":  func(d *gofastcore.Document) { d.Parts[0].Blocks = []gofastcore.Block{} },
 		"text and a no-text warning": func(d *gofastcore.Document) { d.Parts[0].Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "") },
 		"two textless warnings": func(d *gofastcore.Document) {

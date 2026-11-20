@@ -45,33 +45,33 @@ var extensions = map[string]bool{
 	".pptx": true, ".pptm": true, ".ppsx": true, ".ppsm": true, ".potx": true, ".potm": true,
 }
 
-// hiddenFlag is --exclude-hidden: given alone it stands for every
+// displayFlag is --exclude-display: given alone it stands for every
 // reason, and with a value for the reasons named.
-type hiddenFlag struct{ reasons gofastcore.Hidden }
+type displayFlag struct{ reasons gofastcore.Display }
 
-func (h *hiddenFlag) IsBoolFlag() bool { return true }
-func (h *hiddenFlag) String() string {
+func (h *displayFlag) IsBoolFlag() bool { return true }
+func (h *displayFlag) String() string {
 	if h.reasons == 0 {
 		return ""
 	}
 	return h.reasons.String()
 }
 
-func (h *hiddenFlag) Set(v string) error {
+func (h *displayFlag) Set(v string) error {
 	switch v {
 	case "true", "all":
-		h.reasons = gofastcore.HiddenAny
+		h.reasons = gofastcore.DisplayAny
 		return nil
 	case "false", "":
 		h.reasons = 0
 		return nil
 	}
-	var reasons gofastcore.Hidden
+	var reasons gofastcore.Display
 	if err := reasons.UnmarshalText([]byte(strings.ReplaceAll(v, ",", "+"))); err != nil {
 		return err
 	}
 	if !reasons.Valid() || reasons == 0 {
-		return fmt.Errorf("unknown reason in %q; the reasons are %s", v, strings.ReplaceAll((gofastcore.HiddenAny&^gofastcore.HiddenUnknown).String(), "+", ", "))
+		return fmt.Errorf("unknown reason in %q; the reasons are %s", v, strings.ReplaceAll((gofastcore.DisplayAny&^gofastcore.DisplayUnknown).String(), "+", ", "))
 	}
 	h.reasons = reasons
 	return nil
@@ -88,7 +88,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		parts    = flags.String("parts", "", "parts to read, by number: 3, or 2-5 (the body of a Word document is part 1; sheets and slides count from 1)")
 		images   = flags.String("images", "meta", "pictures: meta (a block for each, with its place, size and alternative text), data (their bytes too) or none")
 		spans    = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
-		deep     = flags.Bool("deep-hidden", false, "also judge text against the gradients and pictures under it, which takes decoding the pictures")
 		workers  = flags.Int("workers", 0, "sheets or slides read at a time (0: one for each CPU)")
 		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
 		maxSpin  = flags.Int("max-spin-count", 0, "rounds of hashing an encrypted file may ask for to try a password (0: the default, 1 million; -1: no limit)")
@@ -101,8 +100,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		furniture = flags.Bool("furniture", false, "in Markdown and text, include running headers and footers")
 		markers   = flags.Bool("part-markers", false, "in Markdown and text, mark where each part begins")
 	)
-	var exclude hiddenFlag
-	flags.Var(&exclude, "exclude-hidden", "in Markdown and text, leave out hidden text: all of it, or with =reasons only what is hidden for those reasons, such as tiny,low_contrast (JSON always has everything, flagged)")
+	var exclude displayFlag
+	flags.Var(&exclude, "exclude-display", "in Markdown and text, leave out text the file declares not shown or drawn with no ink: all of it, or with =reasons only that, hidden or no_ink (JSON always has everything)")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "usage: gofastooxml [flags] file-or-directory...")
 		fmt.Fprintln(stderr, "Extracts Word, Excel and PowerPoint files. A directory stands for the Office files in it and below it.")
@@ -129,7 +128,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if *format != "json" && *format != "markdown" && *format != "text" {
 		return fail("unknown format %q: json, markdown or text", *format)
 	}
-	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password, DeepHidden: *deep}
+	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password}
 	opts.Limits.MaxDecodedBytes, opts.Limits.MaxTextBytes = *maxBytes, *maxText
 	switch *images {
 	case "none":
@@ -207,7 +206,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	w := bufio.NewWriter(out)
 	defer w.Flush()
-	render := &gofastcore.RenderOptions{Furniture: *furniture, PartMarkers: *markers, ExcludeHidden: exclude.reasons}
+	render := &gofastcore.RenderOptions{Furniture: *furniture, PartMarkers: *markers, ExcludeDisplay: exclude.reasons}
 
 	written := 0
 	for _, path := range inputs {
@@ -270,12 +269,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 }
 
 // remarks sums up what a document's warnings say that a person running
-// the command would want to know without reading the JSON: text that is
-// hidden, and anything of severity error.
+// the command would want to know without reading the JSON: anything of
+// severity error.
 func remarks(doc *gofastcore.Document) string {
 	counts := map[string]int{}
 	for _, w := range doc.AllWarnings() {
-		if w.Severity == gofastcore.SeverityError || w.Code == gofastcore.WarnTextHidden {
+		if w.Severity == gofastcore.SeverityError {
 			counts[w.Code]++
 		}
 	}

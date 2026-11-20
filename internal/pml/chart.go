@@ -42,7 +42,7 @@ func (pg *page) chart(sh *props, g *group) {
 	blocks, taken, cut := c.Blocks(pg.text.Budget, sh.name)
 	pg.text.Taken += taken
 	for i := range blocks {
-		blocks[i].Hidden |= sh.reasons
+		blocks[i].Display |= sh.reasons
 		blocks[i].Loc.BBox = bbox(sh)
 	}
 	pg.blocks = append(pg.blocks, blocks...)
@@ -53,7 +53,7 @@ func (pg *page) chart(sh *props, g *group) {
 		s.Abort(warn.ErrText)
 	}
 	if len(pg.blocks) > at {
-		pg.add(sh, g, at, false, false, "")
+		pg.add(sh, g, at, false)
 	}
 }
 
@@ -90,7 +90,7 @@ func (pg *page) diagram(sh *props, g *group) {
 	blocks, taken, cut := d.Blocks(pg.text.Budget)
 	pg.text.Taken += taken
 	for i := range blocks {
-		blocks[i].Hidden |= sh.reasons
+		blocks[i].Display |= sh.reasons
 		blocks[i].Loc.BBox = bbox(sh)
 		if box := d.Items[i].Box; box.Set && sh.xfrm.Set {
 			if r, _, ok := box.Local().Then(frame).Bounds(box.W, box.H); ok {
@@ -103,6 +103,6 @@ func (pg *page) diagram(sh *props, g *group) {
 		s.Abort(warn.ErrText)
 	}
 	if len(pg.blocks) > at {
-		pg.add(sh, g, at, false, false, "")
+		pg.add(sh, g, at, false)
 	}
 }

@@ -25,7 +25,7 @@ func (sh *sheet) chart(name string, out []placed, row, col int32, frame string, 
 	blocks, _, cut := c.Blocks(sh.room, frame)
 	for _, b := range blocks {
 		if unseen {
-			b.Hidden |= gofastcore.HiddenInvisible
+			b.Display |= gofastcore.DisplayHidden
 		}
 		if row >= 0 {
 			b.Loc.Range = cellName(row, col)
@@ -48,7 +48,7 @@ func (sh *sheet) diagram(name string, rels map[string]opc.Rel, pal *dml.Palette,
 	blocks, _, cut := d.Blocks(sh.room)
 	for _, b := range blocks {
 		if unseen {
-			b.Hidden |= gofastcore.HiddenInvisible
+			b.Display |= gofastcore.DisplayHidden
 		}
 		b.Loc.Range = cellName(row, col)
 		out = append(out, placed{row: row, col: col, block: b})

@@ -28,8 +28,7 @@ type cell struct {
 	text   string
 	row    int32 // from 0
 	col    int32
-	style  int32             // its style, for a table's style to be judged against
-	hidden gofastcore.Hidden // why its text cannot be seen, where the cell itself is the reason
+	hidden gofastcore.Display // what the file declares about its display, where the cell itself is the reason
 }
 
 // rect is a rectangle of cells, both corners included.
@@ -56,10 +55,9 @@ type sheet struct {
 	hiddenRows []int32
 	hiddenCols []span
 	merges     []rect
-	cond       conditional // conditional formatting (conditional.go)
-	tables     []string    // parts of the tables the sheet declares
-	charts     []opc.Rel   // what the charts read embed: their workbooks
-	chartSheet bool        // a sheet that is one chart
+	tables     []string  // parts of the tables the sheet declares
+	charts     []opc.Rel // what the charts read embed: their workbooks
+	chartSheet bool      // a sheet that is one chart
 	lists      []choiceList
 	listRanges int // the ranges of all of them
 	drawings   []string
@@ -181,13 +179,8 @@ func (sh *sheet) read() {
 					}
 				}
 			}
-		case "conditionalFormatting":
-			// Formatting that depends on values: a cell's colours there
-			// may not be what its style says.
-			sh.readConditional(s)
 		case "extLst":
-			// Newer kinds of conditional formatting are kept here, and
-			// newer data validations, whose lists are read.
+			// Newer data validations are kept here, whose lists are read.
 			depth := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 				if s.Kind() != xmlscan.Start {
@@ -200,8 +193,6 @@ func (sh *sheet) read() {
 					} else {
 						s.Skip()
 					}
-				case "conditionalFormatting":
-					sh.readExtConditional(s)
 				}
 			}
 		case "dataValidations":
@@ -384,13 +375,10 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 				typ = 'd'
 			}
 		}
-		style, styleIndex := &plainStyle, int32(-1)
+		style := &plainStyle
 		if v, ok := s.Attr(xmlscan.NoSpace, "s"); ok {
 			if i, ok := atoi(v); ok {
 				style = sh.wb.styles.style(i)
-				if style != &plainStyle {
-					styleIndex = int32(i)
-				}
 			}
 		}
 		// The value: v, or an inline string; the formula with
@@ -446,7 +434,7 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 			ordered = false
 		}
 		textBytes += int64(len(text))
-		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, style: styleIndex, hidden: hidden | style.hidden})
+		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, hidden: hidden})
 		if sh.wb.opts.Cells {
 			sh.keepDetail(&sh.cells[len(sh.cells)-1], typ, raw, f, sh.isDate)
 		}
@@ -472,7 +460,7 @@ func (sh *sheet) symbolText(f symbol.Font, text []byte) string {
 }
 
 // value returns what a cell shows, given what it holds.
-func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastcore.Hidden) {
+func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastcore.Display) {
 	switch typ {
 	case 's':
 		i, ok := atoi(bytes.TrimSpace(raw))
@@ -495,7 +483,7 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 		if style.symbol != symbol.None && (typ == 'i' || typ == 't') && len(out) > 0 {
 			out = append(out[:0], sh.symbolText(style.symbol, out)...)
 		}
-		var hidden gofastcore.Hidden
+		var hidden gofastcore.Display
 		if (typ == 'i' || typ == 't') && len(out) > 0 && !style.format.PlainText() {
 			var result numfmt.Result
 			raw = append(raw[:0], out...)
@@ -532,9 +520,9 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 
 // blank is the reason a value that its format displays as nothing cannot
 // be seen.
-func blank(r numfmt.Result) gofastcore.Hidden {
+func blank(r numfmt.Result) gofastcore.Display {
 	if r == numfmt.Blank {
-		return gofastcore.HiddenInvisible
+		return gofastcore.DisplayHidden
 	}
 	return 0
 }

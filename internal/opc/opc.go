@@ -81,6 +81,8 @@ type Package struct {
 	budget    atomic.Int64         // decompressed bytes still allowed
 	ambiguous int                  // members that different readers would read differently
 	recovered *Recovery            // set if the directory was rebuilt from the members' headers
+	trailing  []byte               // what follows the end of the archive, up to maxTrailing
+	afterEnd  int64                // how many bytes follow it in all
 }
 
 // Open reads the archive's directory and the content-types table.
@@ -113,6 +115,9 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		recovered: recovered,
 	}
 	p.budget.Store(lim.MaxDecodedBytes)
+	if recovered == nil {
+		p.trailing, p.afterEnd = trailing(r, size)
+	}
 	for _, f := range zr.File {
 		if strings.HasSuffix(f.Name, "/") {
 			continue // a directory entry
@@ -162,6 +167,46 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		return nil, err
 	}
 	return p, nil
+}
+
+// Trailing returns the bytes that follow the end of the archive (its
+// end-of-directory record and the comment it states), as many as
+// maxTrailing of them, and how many follow it in all; nil and 0 for none.
+// Office stops reading there; the bytes are data appended to the file.
+func (p *Package) Trailing() (data []byte, total int64) { return p.trailing, p.afterEnd }
+
+// maxTrailing bounds what is read of the data after the archive's end.
+const maxTrailing = 1 << 20
+
+// trailing finds the archive's end-of-directory record as archive/zip
+// does, the last one in the final 64 KiB whose comment fits in the file,
+// and returns what follows the record and its comment.
+func trailing(r io.ReaderAt, size int64) ([]byte, int64) {
+	const record = 22 // the record without its comment
+	window := min(size, record+0xFFFF+1024)
+	if window < record {
+		return nil, 0
+	}
+	buf := make([]byte, window)
+	if n, err := r.ReadAt(buf, size-window); int64(n) != window && err != nil {
+		return nil, 0
+	}
+	for i := len(buf) - record; i >= 0; i-- {
+		if buf[i] != 'P' || buf[i+1] != 'K' || buf[i+2] != 5 || buf[i+3] != 6 {
+			continue
+		}
+		comment := int(buf[i+20]) | int(buf[i+21])<<8
+		end := i + record + comment
+		if end > len(buf) {
+			return nil, 0 // a comment longer than the file: archive/zip refuses it too
+		}
+		total := int64(len(buf) - end)
+		if total == 0 {
+			return nil, 0
+		}
+		return append([]byte(nil), buf[end:end+int(min(total, maxTrailing))]...), total
+	}
+	return nil, 0
 }
 
 // Recovered returns what was found by the members' own headers, if the

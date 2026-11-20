@@ -58,8 +58,9 @@ func TestOneFileAsJSON(t *testing.T) {
 	if !strings.HasPrefix(stdout, "{\n  \"schema_version\"") || strings.Count(strings.TrimSpace(stdout), "\n") < 20 {
 		t.Errorf("standard output begins %.60q", stdout)
 	}
-	// What a person would want to know is said on standard error.
-	if !strings.Contains(stderr, "basic-pptx.pptx: warnings: text.hidden") {
+	// Standard error says only what a person would want to know: here,
+	// nothing, as the file has no warning of severity error.
+	if stderr != "" {
 		t.Errorf("standard error: %q", stderr)
 	}
 	if _, stderr, _ := command(t, "-quiet", fixture(t, "basic-pptx.pptx")); stderr != "" {
@@ -126,15 +127,16 @@ func TestMarkdownAndText(t *testing.T) {
 			t.Errorf("Markdown lacks %q:\n%s", want, stdout)
 		}
 	}
-	// Hidden text is in the output unless it is asked to be left out: all
-	// of it, or what is hidden for the reasons named.
-	stdout, _, _ = command(t, "-format", "markdown", "-exclude-hidden", fixture(t, "basic-pptx.pptx"))
-	if strings.Contains(stdout, "Backup slide content") || strings.Contains(stdout, "Text placed beside the slide") || !strings.Contains(stdout, "# Agenda") {
-		t.Errorf("with -exclude-hidden:\n%s", stdout)
+	// Text the file declares not shown is in the output unless it is
+	// asked to be left out: all of it, or what has the reasons named. Text
+	// placed beside the slide has no reason: positions are not judged.
+	stdout, _, _ = command(t, "-format", "markdown", "-exclude-display", fixture(t, "basic-pptx.pptx"))
+	if strings.Contains(stdout, "Backup slide content") || !strings.Contains(stdout, "Text placed beside the slide") || !strings.Contains(stdout, "# Agenda") {
+		t.Errorf("with -exclude-display:\n%s", stdout)
 	}
-	stdout, _, _ = command(t, "-format", "text", "-exclude-hidden=off_page,tiny", fixture(t, "basic-pptx.pptx"))
-	if !strings.Contains(stdout, "Backup slide content") || strings.Contains(stdout, "Text placed beside the slide") {
-		t.Errorf("with -exclude-hidden=off_page,tiny:\n%s", stdout)
+	stdout, _, _ = command(t, "-format", "text", "-exclude-display=no_ink", fixture(t, "basic-pptx.pptx"))
+	if !strings.Contains(stdout, "Backup slide content") {
+		t.Errorf("with -exclude-display=no_ink:\n%s", stdout)
 	}
 	// Several inputs: each is headed by its name.
 	stdout, _, _ = command(t, "-quiet", "-format", "text", fixture(t, "lists.docx"), fixture(t, "layout.xlsx"))
@@ -288,8 +290,9 @@ func TestUsageErrors(t *testing.T) {
 		"an unknown picture mode":    {"-images", "all", file},
 		"a range that is not one":    {"-parts", "five", file},
 		"a range the wrong way":      {"-parts", "5-2", file},
-		"a reason that is not one":   {"-exclude-hidden=sneaky", file},
-		"a reason beside a real one": {"-exclude-hidden=tiny,sneaky", file},
+		"a reason that is not one":   {"-exclude-display=sneaky", file},
+		"a reason beside a real one": {"-exclude-display=hidden,sneaky", file},
+		"a reason no longer known":   {"-exclude-display=tiny", file},
 	} {
 		stdout, stderr, status := command(t, args...)
 		if status != 2 || stdout != "" || stderr == "" {

@@ -77,19 +77,3 @@ https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/
   not be used in advertising or otherwise to promote the sale, use or other
   dealings in these Data Files or Software without prior written
   authorization of the copyright holder.
-
---------------------------------------------------------------------------------
-
-This software includes material derived from Dewiride PPTX Studio:
-
-  internal/pml/presetstyles.go
-  19 of PowerPoint's built-in table styles, derived from
-  corpus/ground-truth/table-styles.json of Dewiride PPTX Studio,
-  https://github.com/Dewiride-Open-Source/Dewiride-PPTX-Studio,
-  commit 875a825d156812dda5fd7a359599d69fe700c972.
-
-  Copyright 2026 Dewiride Technologies. Licensed under the Apache License,
-  Version 2.0. The licence and that project's NOTICE file are in
-  third_party/dewiride-pptx-studio, with a note of what was derived and how
-  it was changed.
-

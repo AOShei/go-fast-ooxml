@@ -34,7 +34,7 @@ test whose tool is missing skips itself.
 | File | Produced by | Content |
 |---|---|---|
 | `comparison.json`, `comparison.md` | `python bench/compare.py` | This library against the tools in use today, on the large files and the corpus, each measured as a process. The table in the top-level README is written by the same run |
-| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,571 files: how many were read, what the rest were, which warnings and hidden-text reasons occur |
+| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,571 files: how many were read, what the rest were, which warnings and display reasons occur |
 | `accuracy.json` | `go test -run TestBaselineAccuracy -update .` | How well each tool recovers the known text of each fixture: precision, recall, F1 and word order, scored by the same code that scores this library |
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
@@ -167,7 +167,8 @@ suite.
 Among the documents read, 36 have a part that failed (a sheet the
 workbook lists and does not contain, XML that breaks off, a member cut
 short) and 28 have a damaged part that is not the main one; each
-says so in its warnings. 256 documents have hidden text.
+says so in its warnings. 261 documents have text the file declares hidden,
+and 6 text drawn with no ink.
 
 The run found one defect: asking for spans changed how consecutive
 paragraphs of code in a Word document were grouped. It is fixed, and
@@ -226,7 +227,7 @@ counted on each run:
 | Cells | Class | Counted as |
 |---|---|---|
 | 127,228 | Dates and times: ISO 8601 here, as displayed there; equal to openpyxl's value | agreeing |
-| 179 | Displayed as nothing by the format; the value is kept here and flagged as hidden | agreeing |
+| 179 | Displayed as nothing by the format; the value is kept here, with the reason `hidden` | agreeing |
 | 5 | The fifteenth digit: 2.3561944901923448 is 2.35619449019234 to fifteen digits; LibreOffice rounds to sixteen first and shows ...235 | agreeing |
 | 2 | The same number in another notation (`1E+20`, `1E+020`) | agreeing |
 | 1,788 | Text longer than a cell can hold in Excel (one file, made to attack readers, with a string of a megabyte in each cell); LibreOffice shortens or drops it | left out |
@@ -290,7 +291,7 @@ document whole and less than its text alone. On Linux without the race
 detector `Rows` is also held under 48 MB.
 
 The cells that `Rows` gives are the cells of the sheet read whole, with the
-same hidden flags: checked on the fixtures and on every sixth corpus
+same display reasons: checked on the fixtures and on every sixth corpus
 workbook under 400 KB (`TestRowsOnFixturesAndCorpus`: 74 workbooks, 189
 sheets, 159,654 cells).
 
@@ -410,59 +411,39 @@ machine of `baseline.md` (`bench/powerpoint.txt`):
 | This library, one worker | 0.048 s |
 | This library, all workers | 0.010 s |
 
-## Hidden text on the corpus
+## What files declare, on the corpus
 
-`HIDDEN_SURVEY=1 go test -run TestWordHiddenSurvey -v .` lists every piece of
-text flagged as hidden in the corpus's Word files. It is how false alarms are
-found: the first run flagged white text in coloured shapes and text boxes, in
-three files, which is why the fill of a shape is now read.
+Over the corpus and the soak set (3,236 Word documents, 1,873 workbooks,
+1,218 presentations), files and blocks with each reason, measured on
+2026-11-20 with the build that stopped judging appearance, beside the one
+before it:
 
-As measured: 176 files read, 6 with flagged text, 10 blocks. Each was checked
-against the file by hand, and a separate search of the raw XML for hidden,
-tiny and white runs agrees:
-
-| What | Files | Flagged |
-|---|---|---|
-| Text formatted as hidden (form markers pasted from a web page) | 1 | yes |
-| White text on the white page (a banner pasted from a web page) | 1 | yes |
-| Footers that no page shows: one never named by a section, two even-page footers in documents without different odd and even pages | 3 | yes |
-| Bright yellow text on white, under the shared contrast threshold | 1 | yes |
-| White text on dark paragraph or cell shading | 2 | no |
-| White text on a dark highlight | 1 | no |
-| White text in a filled shape or text box | 3 | no |
-
-For Excel, `HIDDEN_SURVEY=1 go test -run TestExcelHiddenSurvey -v .` does
-the same. As measured: 449 workbooks read, 31 with hidden text.
-
-| What | Cells | Workbooks |
-|---|---|---|
-| On hidden sheets | 3,601 | 11 |
-| In hidden columns | 6,822 | 6 |
-| In hidden rows | 2,084 | 12 |
-| Values their format displays as nothing | 164 | 1 |
-| Text in the colour of its cell | 517 | 8 |
-| Text in hidden shapes (macro buttons) | 25 | 5 |
-| Invisible characters (zero-width spaces before a postcode) | 2 | 2 |
-
-The cells flagged for their colour were checked against the styles in the
-files: white text on unfilled cells, text in the colour of its fill (white
-on white, yellow on yellow, black on black), and the linked cells of check
-boxes in a one-point white font. Cells under conditional formatting are not
-judged, since their colours depend on their values.
-
-For PowerPoint, `HIDDEN_SURVEY=1 go test -run TestPowerPointHiddenSurvey -v .`.
-As measured: 105 presentations read, 7 with hidden text. The first runs
-flagged much more, and each false alarm changed the reader: titles in white
-on a fill their own shape's style gives them (a shape's own style comes
-before what it inherits from a placeholder), table headers in the colour a
-table style gives them (it comes before the presentation's default colour),
-and text under a picture that an animation brings in (a shape that an
-animation acts on does not count as covering anything).
-
-| What | Blocks | Presentations | Checked |
+| | Files before | Files now | Blocks now |
 |---|---|---|---|
-| On hidden slides | 40 | 2 | The slides are marked `show="0"` |
-| White text in shapes with no fill on the white slide: leftovers beside pictures and under diagrams | 17 | 1 | Five of the slides rendered with LibreOffice: the words are not to be seen |
-| Table cells: cyan on pale blue, bright yellow on white | 3 | 2 | Colours read from the table styles in the files; both are under the shared contrast threshold. The files are Apache POI's tests of font colours in tables |
-| Text under a grey rectangle drawn after it, a slide number under a full-width box | 5 | 2 | The first rendered with LibreOffice: the rectangle covers the words |
-| A legend of the brand's colours beside the slide, on the master | 47 | 1 | The shapes lie to the right of the slide's edge |
+| Word, `hidden` | 27 (`invisible`) | 104 | 325 |
+| Word, `no_ink` | 2 (`transparent`) | 2 | 2 |
+| Word, reasons removed: `low_contrast`, `tiny`, `off_page`, `clipped` | 24, 3, 2, 1 | | |
+| Excel, `hidden` | 119 (`invisible`) | 97 | 534 |
+| Excel, reasons removed: `low_contrast`, `tiny`, `invisible_chars` | 22, 2, 3 | | |
+| PowerPoint, `hidden` | 49 (`invisible`) | 51 | 588 |
+| PowerPoint, `no_ink` | 3 (`transparent`) | 4 | 6 |
+| PowerPoint, reasons removed: `low_contrast`, `off_page`, `occluded` | 13, 5, 2 | | |
+
+Word's `hidden` rose because a header or footer that no page shows, by the
+document's own settings, is declared hidden again: before, it was flagged
+only when it held more than 200 words. Excel's fell because the hidden
+stand-in Excel writes for each form control (the control itself is in the
+legacy drawing, and shown) is no longer taken for a hidden shape: about 20
+workbooks of buttons and check boxes. Text with no fill in PowerPoint was
+`invisible` and is `no_ink`.
+
+Five files have data after the end of their archive, each a single line
+feed, reported with `input.trailing_data`.
+
+Before this, the library judged colour, size, position and overlap. An
+audit of every file so flagged, each rendered with LibreOffice, found no
+malicious content in the corpus and eight kinds of false alarm, all in
+those judgements: the colours of notes pages, a table's own background,
+text boxes over shapes, text over pictures placed behind it, embossed
+text, and the stand-ins for form controls. Those checks were removed for
+the whole go-fast series.

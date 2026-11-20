@@ -10,6 +10,17 @@ minor version may change the API.
 To be released as 0.1.0, the first release, with `go-fast-core` v0.1.0,
 when the work planned before the release is done.
 
+**For code built against `main` before this release:** the series no longer
+judges whether text is visible. It reports what a file declares, in
+`Block.Display` (`hidden`, `no_ink`; JSON `display`, schema 0.2), in place
+of `Block.Hidden` and its reasons. Removed: the reasons `tiny`,
+`low_contrast`, `off_page`, `occluded`, `clipped`, `transparent` (now
+`no_ink`) and `invisible_chars`; the warnings `text.hidden`,
+`ooxml.hidden_unchecked` and `ooxml.unshown_text_long`;
+`File.HiddenChecked`, `Options.DeepHidden` and the command's
+`-deep-hidden`; the command's `-exclude-hidden` is `-exclude-display`.
+Invisible characters are kept in the text with no reason.
+
 ### Formats
 
 - **Word** (`.docx`, `.docm`, `.dotx`, `.dotm`): headings, paragraphs, list
@@ -43,34 +54,27 @@ when the work planned before the release is done.
   each cell) and the types and stored values of what they hold; with
   `Options.Spans`, cell hyperlinks; both in `Table.Cells`.
 - A last part of kind `stored`, in all three formats, for what a file
-  stores and shows nowhere, flagged only where out of proportion for its
-  kind (`ooxml.unshown_text_long`): the code of VBA projects,
-  custom XML data, Word's document variables, Excel's defined names, the
-  code of Excel 4 macro sheets, and the formulas of pivot caches'
-  calculated fields.
-- A header or footer that no page shows (in Word, one no section names
-  or a first-page or even-page one the document does not use; in
-  PowerPoint, one a notes or handout master switches off) is not flagged
-  hidden for that, only where it holds more than 200 words.
+  stores and shows nowhere: the code of VBA projects, custom XML data,
+  Word's document variables, Excel's defined names, the code of Excel 4
+  macro sheets, the formulas of pivot caches' calculated fields, and data
+  appended after the end of the zip archive (`after_end`, with
+  `input.trailing_data`).
 - Word's field codes that hold text of their own (index entries, the
   branches of IF, a citation tool's data) as `note` blocks of type `field` after their
   paragraph.
 - Equations in Word and PowerPoint written in UnicodeMath, with their
   structure; a Word display equation as a `formula` block.
-- The command's `-deep-hidden`.
 - Excel's drop-down lists as `note` blocks of type `choices` at their
   cells: the values, one per line, or the reference they are taken from.
 - Charts in all three formats, both kinds, as a caption with the title
   and tables of their data with role `chart`, the chart's type, name and
-  axis titles; series a filter leaves out, flagged invisible; Excel chart
+  axis titles; series a filter leaves out, with the reason `hidden`; Excel chart
   sheets; the workbook a chart embeds as an embedded file.
 - Pivot tables, as one table with role `pivot` and the pivot table's name;
   the records of pivot caches whose source is not in the workbook, in the
   stored part.
 - SmartArt in all three formats: the text of each node as list items in
-  the model's order and nesting, placed and judged for hidden text by the
-  drawing Office made of it; nodes the layout draws nowhere flagged
-  invisible.
+  the model's order and nesting, placed by the drawing Office made of it.
 - `Open`, `OpenBytes`, `OpenReaderAt` and `File`: a part at a time
   (`Parts`, `Part`), a sheet in bands of rows (`Rows`), embedded files
   (`Children`), without holding the document.
@@ -86,18 +90,15 @@ when the work planned before the release is done.
 - A file cut short, which has lost the directory of its archive, is read
   by its members' own headers as far as they go, and says so
   (`input.repaired`).
-- Hidden text is extracted and flagged with its reason: hidden formatting,
-  tiny text, text in the colour of its background, transparent text, text
-  off the slide or under another shape, invisible characters. See the
-  README for what each format's checks cover.
-- Contrast in tables is judged against what their table style paints:
-  Excel's 60 built-in styles from the standard, the workbook's own, and
-  PowerPoint's built-in styles that a file names without defining.
-- Contrast in Excel is judged with the colours conditional formatting
-  gives, its rules decided from stored values; cells whose colours depend
-  on formulas are counted by `ooxml.hidden_unchecked`.
-- Floating text boxes in Word off the page or under an opaque drawing.
-- With `Options.DeepHidden`, text judged against gradients and pictures.
+- Everything a file holds is extracted. Where the file declares text not
+  shown or drawn with no ink, the block says so (`Display`: `hidden`,
+  `no_ink`): hidden formatting; hidden sheets, rows, columns, slides and
+  shapes; headers and footers no page shows by the document's settings; a
+  number format that shows nothing; text with no fill or a fill of no
+  opacity. Nothing is judged from appearance (colour, size, position, what
+  covers what), and a block with no reason says nothing about whether a
+  reader can see it. See the README.
+- A picture that fills a shape in Word is a picture block.
 - A file protected by rights management is refused with a message that
   says what it is.
 - Macros, external references and encrypted content are reported, never

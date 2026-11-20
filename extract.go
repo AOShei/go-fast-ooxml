@@ -52,8 +52,8 @@ const (
 //	                          is read under the name in its header, and the
 //	                          first of two with one name is taken
 //	text.tracked_changes      a Word document has tracked changes
-//	text.hidden               text a reader cannot see; the blocks, spans
-//	                          and table cells concerned say why
+//	input.trailing_data       data follows the end of the zip archive; its
+//	                          text is in the stored part (after_end)
 //	structure.heading_level_clamped
 const (
 	// WarnPropertiesDamaged: a document-properties part could not be read
@@ -104,23 +104,6 @@ const (
 	// changed after it was encrypted, or damaged. What it decrypts to is
 	// extracted all the same.
 	WarnIntegrityMismatch = "ooxml.integrity_mismatch"
-
-	// The code below is raised while a presentation or a workbook is read.
-
-	// WarnHiddenUnchecked: some text was not compared with what lies
-	// under it (low_contrast) or over it (occluded), so the absence of
-	// those flags on the part says less than usual. On a slide: it has
-	// more overlapping shapes than the checks compare. On a sheet: cells
-	// have colours that conditional formatting gives by rules that are
-	// formulas, which are not evaluated.
-	WarnHiddenUnchecked = warn.HiddenUnchecked
-	// WarnUnshownTextLong: text that the file keeps and shows nowhere (a
-	// document variable, a defined name, a value of custom XML, the code
-	// of a field) is far longer than that kind of text usually is: over 30
-	// words where a few are usual. It is flagged invisible; the message
-	// says what and how long. Such text is not flagged for being unshown,
-	// which is routine.
-	WarnUnshownTextLong = warn.UnshownTextLong
 )
 
 // Extractor extracts Word, Excel and PowerPoint files. The zero value is
@@ -220,30 +203,4 @@ func wrap(err error) error {
 	// The message can quote names from the file; it is made safe to print
 	// and to store, since a caller may put it into a document's warnings.
 	return fmt.Errorf("gofastooxml: %s: %w", clean.Label(err.Error()), shared)
-}
-
-// hiddenInMetadata reports whether any property value holds invisible
-// characters. Properties cannot carry a block flag, so the finding becomes
-// a document-level warning.
-func hiddenInMetadata(m *gofastcore.Metadata) bool {
-	found := func(s string) bool { return gofastcore.InvisibleChars(s) != nil }
-	if found(m.Title) || found(m.Subject) || found(m.Language) || found(m.Application) {
-		return true
-	}
-	for _, s := range m.Authors {
-		if found(s) {
-			return true
-		}
-	}
-	for _, s := range m.Keywords {
-		if found(s) {
-			return true
-		}
-	}
-	for k, v := range m.Extra {
-		if found(k) || found(v) {
-			return true
-		}
-	}
-	return false
 }

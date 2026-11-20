@@ -1,5 +1,5 @@
 {
- "schema_version": "0.1",
+ "schema_version": "0.2",
  "source": {
   "format": "xlsx"
  },
@@ -11,7 +11,7 @@
    "blocks": [
     {
      "kind": "table",
-     "hidden": "invisible",
+     "display": "hidden",
      "loc": {
       "range": "A1:C4"
      },
@@ -39,13 +39,13 @@
         "6"
        ]
       ],
-      "hidden": [
+      "display": [
        {
         "row": 2,
         "col": 0,
         "row_span": 1,
         "col_span": 3,
-        "hidden": "invisible"
+        "display": "hidden"
        }
       ]
      }
@@ -83,12 +83,12 @@
    "kind": "sheet",
    "number": 2,
    "name": "Secret",
-   "hidden": "invisible",
+   "display": "hidden",
    "blocks": [
     {
      "kind": "table",
      "origin": "inferred",
-     "hidden": "invisible",
+     "display": "hidden",
      "loc": {
       "range": "A1:A1"
      },

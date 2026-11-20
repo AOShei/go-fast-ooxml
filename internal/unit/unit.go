@@ -57,9 +57,6 @@ type Source interface {
 	Stored() int
 	// Noun names a part of this format, in the plural: "sheets".
 	Noun() string
-	// HiddenChecked returns the reasons for hidden text that the reader
-	// checks completely.
-	HiddenChecked() gofastcore.Hidden
 	// Begin starts a pass over the document: the limits count from here.
 	Begin()
 	// Read reads the part with the given index, from 0. It always returns

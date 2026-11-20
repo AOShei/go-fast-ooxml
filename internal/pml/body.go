@@ -78,7 +78,6 @@ func (pg *page) body(sh *props) (title bool) {
 	if !pg.role.paper() {
 		t.Base.Ink = dml.Fill{Paint: dml.PaintSolid, Color: textInk}
 	}
-	t.Behind, t.Lit, t.Later, t.Under = sh.behind, sh.lit, false, sh.under
 	t.Styles, t.Link, t.SlideNumber = pg.p.opts.Spans, pg.link, pg.number
 	t.Cost = gofastcore.BlockCost
 	t.Read(s)
@@ -89,10 +88,6 @@ func (pg *page) body(sh *props) (title bool) {
 		return false
 	}
 	reasons := sh.reasons
-	if t.Clip && sh.boxed && sh.upright && sh.box.Y1-sh.box.Y0-t.Inset < t.Paras[0].Size {
-		// What does not fit is cut off, and not one line fits.
-		reasons |= gofastcore.HiddenClipped
-	}
 	kind, level, joined := gofastcore.KindParagraph, uint8(0), false
 	if sh.ph.has {
 		kind, level, joined = kindOf(sh.ph.typ)
@@ -134,7 +129,7 @@ func (pg *page) body(sh *props) (title bool) {
 		b := gofastcore.Block{Kind: kind, Level: level, Loc: loc}
 		if len(t.Paras) == 1 {
 			p := &t.Paras[0]
-			b.Text, b.Spans, b.Hidden = string(t.Buf[p.Start:p.End]), p.Spans, p.Hidden
+			b.Text, b.Spans, b.Display = string(t.Buf[p.Start:p.End]), p.Spans, p.Display
 		} else {
 			// A title of several paragraphs is one heading.
 			var text []byte
@@ -146,20 +141,20 @@ func (pg *page) body(sh *props) (title bool) {
 				}
 				at := len(text)
 				text = append(text, t.Buf[p.Start:p.End]...)
-				whole := p.Hidden
+				whole := p.Display
 				for _, sp := range p.Spans {
-					whole &^= sp.Hidden
+					whole &^= sp.Display
 					sp.Start, sp.End = sp.Start+at, sp.End+at
 					spans = append(spans, sp)
 				}
 				if whole != 0 {
-					spans = append(spans, gofastcore.Span{Start: at, End: len(text), Hidden: whole})
+					spans = append(spans, gofastcore.Span{Start: at, End: len(text), Display: whole})
 				}
 			}
 			b.Text = string(text)
-			b.Spans, b.Hidden = hidden.Settle(spans, 0, len(text), text)
+			b.Spans, b.Display = hidden.Settle(spans, 0, len(text), text)
 		}
-		b.Hidden |= reasons
+		b.Display |= reasons
 		pg.blocks = append(pg.blocks, b)
 		if level == 1 && pg.role == roleSlide && pg.title == "" {
 			pg.title = strings.Join(strings.Fields(b.Text), " ")
@@ -169,7 +164,7 @@ func (pg *page) body(sh *props) (title bool) {
 	}
 	for i := range t.Paras {
 		p := &t.Paras[i]
-		b := gofastcore.Block{Kind: kind, Text: string(t.Buf[p.Start:p.End]), Spans: p.Spans, Hidden: p.Hidden | reasons, Loc: loc}
+		b := gofastcore.Block{Kind: kind, Text: string(t.Buf[p.Start:p.End]), Spans: p.Spans, Display: p.Display | reasons, Loc: loc}
 		switch {
 		case kind == gofastcore.KindNote:
 			b.Attrs = map[string]string{gofastcore.AttrNoteType: gofastcore.NoteSpeaker}
@@ -217,31 +212,9 @@ func (pg *page) pic(g *group) {
 			if ok && !sh.hasBlip {
 				sh.blip, sh.hasBlip = string(id), true
 			}
-		case s.Is(ns.Draw, "srcRect"):
-			for i, side := range []string{"l", "t", "r", "b"} {
-				if v, ok := intAttr(s, side); ok {
-					sh.fill.Crop[i] = float64(v) / 100000
-				}
-			}
-		case s.Is(ns.Draw, "tile"):
-			sh.fill.Tile = true
-		case s.Is(ns.Draw, "alphaModFix"):
-			if n, ok := intAttr(s, "amt"); ok && n < 100000 {
-				sh.faded = true
-			}
-			s.Skip()
-		case s.Is(ns.Draw, "alphaMod"), s.Is(ns.Draw, "alphaBiLevel"), s.Is(ns.Draw, "clrChange"):
-			sh.faded = true // other ways of making part of a picture transparent
-			s.Skip()
 		default:
 			s.Skip()
 		}
-	}
-	// It is what fills its box.
-	crop, tile := sh.fill.Crop, sh.fill.Tile
-	sh.fill = dml.Fill{Paint: dml.PaintOther, Crop: crop, Tile: tile}
-	if rel, found := pg.rels[sh.blip]; sh.hasBlip && found && !rel.External && !sh.faded {
-		sh.fill.Blip = rel.Target
 	}
 	pg.place(&sh, g)
 	if pg.role.paper() {
@@ -251,7 +224,6 @@ func (pg *page) pic(g *group) {
 		pg.count("audio or video clip")
 	}
 	first := len(pg.blocks)
-	picture := ""
 	// A picture on a slide, or one a layout or master puts on every slide
 	// that shows it; not the empty frame of a placeholder there.
 	shown := pg.role == roleSlide || !sh.ph.has
@@ -277,15 +249,11 @@ func (pg *page) pic(g *group) {
 		}
 		if len(pg.blocks) > first {
 			b := &pg.blocks[first]
-			b.Hidden, b.Loc.BBox = sh.reasons, bbox(&sh)
-		}
-		if !rel.External && sh.rect && sh.upright && !sh.faded && sh.reasons&gofastcore.HiddenInvisible == 0 {
-			picture = rel.Target
+			b.Display, b.Loc.BBox = sh.reasons, bbox(&sh)
 		}
 	}
-	pg.paints(&sh, false)
 	if pg.role == roleSlide {
-		pg.add(&sh, g, first, false, false, picture)
+		pg.add(&sh, g, first, false)
 	}
 }
 
@@ -314,7 +282,7 @@ func (pg *page) frame(g *group) {
 			at := len(pg.blocks)
 			pg.table(&sh)
 			if len(pg.blocks) > at {
-				pg.add(&sh, g, at, false, false, "")
+				pg.add(&sh, g, at, false)
 			}
 		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
 			pg.chart(&sh, g)
@@ -333,8 +301,4 @@ func (pg *page) frame(g *group) {
 		// Anything else holds one of these.
 	}
 	pg.place(&sh, g)
-	if pg.role.paper() {
-		return
-	}
-	pg.paints(&sh, false)
 }

@@ -88,8 +88,8 @@ func renderSheets(doc *gofastcore.Document) []string {
 	for p := range doc.Parts {
 		part := &doc.Parts[p]
 		line := fmt.Sprintf("%s %d %q", part.Kind, part.Number, part.Name)
-		if part.Hidden != 0 {
-			line += " hidden=" + part.Hidden.String()
+		if part.Display != 0 {
+			line += " display=" + part.Display.String()
 		}
 		out = append(out, line)
 		for i := range part.Blocks {
@@ -102,11 +102,11 @@ func renderSheets(doc *gofastcore.Document) []string {
 			if b.Text != "" {
 				fmt.Fprintf(&sb, " %q", b.Text)
 			}
-			if b.Hidden != 0 {
-				fmt.Fprintf(&sb, " hidden=%s", b.Hidden)
+			if b.Display != 0 {
+				fmt.Fprintf(&sb, " display=%s", b.Display)
 			}
 			for _, sp := range b.Spans {
-				fmt.Fprintf(&sb, " [%q %s]", b.Text[sp.Start:sp.End], sp.Hidden)
+				fmt.Fprintf(&sb, " [%q %s]", b.Text[sp.Start:sp.End], sp.Display)
 			}
 			keys := make([]string, 0, len(b.Attrs))
 			for k := range b.Attrs {
@@ -124,8 +124,8 @@ func renderSheets(doc *gofastcore.Document) []string {
 				if len(t.Merges) > 0 {
 					fmt.Fprintf(&sb, " merges=%v", t.Merges)
 				}
-				for _, h := range t.Hidden {
-					fmt.Fprintf(&sb, " hidden(%d,%d %dx%d %s)", h.Row, h.Col, h.RowSpan, h.ColSpan, h.Hidden)
+				for _, h := range t.Display {
+					fmt.Fprintf(&sb, " display(%d,%d %dx%d %s)", h.Row, h.Col, h.RowSpan, h.ColSpan, h.Display)
 				}
 			}
 			if img := b.Image; img != nil {
@@ -311,21 +311,16 @@ func TestExcelHiddenSheetsRowsAndColumns(t *testing.T) {
 	doc := excel(t, pkg, nil)
 	expectSheets(t, doc,
 		`sheet 1 "Shown"`,
-		`  table A1:E6 inferred hidden=invisible [["A1" "B1" "C1" "D1" "E1"] ["A2" "B2" "C2" "D2" "E2"] ["A3" "B3" "C3" "D3" "E3"] ["A4" "B4" "C4" "D4" "E4"] ["A5" "B5" "C5" "D5" "E5"] ["A6" "B6" "C6" "D6" "E6"]]`+
-			` hidden(1,0 2x5 invisible) hidden(4,0 1x5 invisible) hidden(0,1 6x2 invisible) hidden(0,4 6x1 invisible)`,
-		`sheet 2 "Hidden" hidden=invisible`,
-		`  table A1:A1 inferred hidden=invisible [["on a hidden sheet"]]`,
-		`sheet 3 "VeryHidden" hidden=invisible`,
-		`  table A1:A1 inferred hidden=invisible [["on a sheet only a macro can show"]]`,
+		`  table A1:E6 inferred display=hidden [["A1" "B1" "C1" "D1" "E1"] ["A2" "B2" "C2" "D2" "E2"] ["A3" "B3" "C3" "D3" "E3"] ["A4" "B4" "C4" "D4" "E4"] ["A5" "B5" "C5" "D5" "E5"] ["A6" "B6" "C6" "D6" "E6"]]`+
+			` display(1,0 2x5 hidden) display(4,0 1x5 hidden) display(0,1 6x2 hidden) display(0,4 6x1 hidden)`,
+		`sheet 2 "Hidden" display=hidden`,
+		`  table A1:A1 inferred display=hidden [["on a hidden sheet"]]`,
+		`sheet 3 "VeryHidden" display=hidden`,
+		`  table A1:A1 inferred display=hidden [["on a sheet only a macro can show"]]`,
 	)
-	for i := range doc.Parts {
-		if !doc.Parts[i].Has(gofastcore.WarnTextHidden) {
-			t.Errorf("sheet %d has no text.hidden warning", i+1)
-		}
-	}
 	// The hidden text is in the text by default, and can be left out.
 	var visible strings.Builder
-	doc.WriteText(&visible, &gofastcore.RenderOptions{ExcludeHidden: gofastcore.HiddenAny})
+	doc.WriteText(&visible, &gofastcore.RenderOptions{ExcludeDisplay: gofastcore.DisplayAny})
 	for _, cell := range []string{"A2", "B1", "C4", "E6", "A5", "hidden sheet", "macro"} {
 		if !strings.Contains(doc.Text(), cell) {
 			t.Errorf("%q is not in the text", cell)
@@ -406,18 +401,20 @@ func TestExcelCellsThatHideTheirText(t *testing.T) {
 	for _, b := range doc.Parts[0].Blocks {
 		for r, row := range b.Table.Rows {
 			got[row[0]] = ""
-			for _, h := range b.Table.Hidden {
+			for _, h := range b.Table.Display {
 				if r >= h.Row && r < h.Row+h.RowSpan {
-					got[row[0]] = strings.TrimPrefix(got[row[0]]+"+"+h.Hidden.String(), "+")
+					got[row[0]] = strings.TrimPrefix(got[row[0]]+"+"+h.Display.String(), "+")
 				}
 			}
 		}
 	}
+	// Only a number format that shows nothing is a declaration; colours
+	// and sizes are not judged.
 	want := map[string]string{
-		"plain": "", "white on the sheet": "low_contrast", "white on navy": "", "white on a white fill": "low_contrast", "one point": "tiny",
-		"theme background": "low_contrast", "tinted near white": "low_contrast", "palette white": "low_contrast", "navy on navy": "low_contrast", "automatic": "",
+		"plain": "", "white on the sheet": "", "white on navy": "", "white on a white fill": "", "one point": "",
+		"theme background": "", "tinted near white": "", "palette white": "", "navy on navy": "", "automatic": "",
 		"white on a pattern": "", "white on a gradient": "", "light grey": "", "six points": "",
-		"1234.5": "invisible", "blanked text": "invisible", "-5": "invisible", "5": "", "shown": "", "all three": "invisible+tiny+low_contrast",
+		"1234.5": "hidden", "blanked text": "hidden", "-5": "hidden", "5": "", "shown": "", "all three": "hidden",
 	}
 	for text, reasons := range want {
 		if have, ok := got[text]; !ok || have != reasons {
@@ -429,74 +426,10 @@ func TestExcelCellsThatHideTheirText(t *testing.T) {
 	}
 }
 
-// Conditional formatting changes colours by value, which this library
-// does not work out. White text in such a range is not judged; white text
-// outside it still is.
-// Whether text can be seen is judged with the colours conditional
-// formatting gives where its rules match, as Excel decides them from the
-// stored values; a rule that gives no colour changes nothing, and one
-// that is a formula leaves the cells where it makes a difference
-// unjudged, and counted. A sheet read a band at a time is judged alike.
-func TestExcelConditionalFormatting(t *testing.T) {
-	styles := xlStyles(nil, []string{`<sz val="11"/><color rgb="FFFFFFFF"/>`, `<sz val="11"/><color rgb="FF000000"/>`}, nil,
-		`numFmtId="0" fontId="0" fillId="0"`, `numFmtId="0" fontId="1" fillId="0"`, `numFmtId="0" fontId="2" fillId="0"`) +
-		`<dxfs count="3"><dxf><fill><patternFill><bgColor rgb="FF000000"/></patternFill></fill></dxf>` + // 0: a black fill
-		`<dxf><font><color rgb="FFFFFFFF"/></font></dxf>` + // 1: white text
-		`<dxf><font><b/></font></dxf></dxfs>` // 2: bold, no colour
-	rule := func(sqref, attrs, formula string) string {
-		f := ""
-		if formula != "" {
-			f = `<formula>` + ooxmltest.EscapeXML(formula) + `</formula>`
-		}
-		return `<conditionalFormatting sqref="` + sqref + `"><cfRule ` + attrs + `>` + f + `</cfRule></conditionalFormatting>`
-	}
-	data := xlRow(1, xlStyledStr("A1", 1, "white, no rule"), xlStyled("B1", 1, "10"), xlStyled("C1", 1, "3"), xlStr("D1", "Secret plan"),
-		xlStr("E1", "public"), xlStyledStr("F1", 1, "white, a formula"), xlStr("G1", "bold by a formula"), xlStyledStr("H1", 1, "white, a data bar")) +
-		// Black text, under a scale from a white fill to a black one.
-		xlRow(2, xlStyled("A2", 2, "1"), xlStyled("B2", 2, "2"), xlStyled("C2", 2, "3")) +
-		xlRow(3, xlStr("A3", "x"), xlStr("B3", "X"), xlStr("C3", "y")) +
-		xlRow(4, xlNum("A4", "5"), xlNum("B4", "9"), xlNum("C4", "7")) +
-		xlRow(5, xlNum("A5", "10"), xlNum("B5", "3"))
-	extra := rule("B1:C1", `type="cellIs" dxfId="0" priority="1" operator="greaterThan"`, "5") +
-		rule("D1:E1", `type="containsText" dxfId="1" priority="2" operator="containsText" text="SECRET"`, `NOT(ISERROR(SEARCH("SECRET",D1)))`) +
-		rule("F1", `type="expression" dxfId="0" priority="3"`, "$Z$1>0") +
-		rule("G1", `type="expression" dxfId="2" priority="4"`, "$Z$1>0") +
-		`<conditionalFormatting sqref="A2:C2"><cfRule type="colorScale" priority="5"><colorScale><cfvo type="min"/><cfvo type="max"/>` +
-		`<color rgb="FFFFFFFF"/><color rgb="FF000000"/></colorScale></cfRule></conditionalFormatting>` +
-		rule("A3:C3", `type="duplicateValues" dxfId="1" priority="6"`, "") +
-		rule("A4:C4", `type="top10" dxfId="1" priority="7" rank="1"`, "") +
-		rule("A5:B5", `type="cellIs" dxfId="2" priority="8" operator="greaterThan" stopIfTrue="1"`, "5") +
-		rule("A5:B5", `type="cellIs" dxfId="1" priority="9" operator="greaterThan"`, "0") +
-		`<extLst><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"><x14:conditionalFormattings xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">` +
-		`<x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><x14:cfRule type="dataBar" id="{1}"/><xm:sqref>H1:H5</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst>`
-	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "C", Data: data, Extra: extra}).WithSheetStyles(styles)
-	doc := excel(t, pkg, nil)
-	expectSheets(t, doc,
-		`sheet 1 "C"`,
-		`  table A1:H5 inferred hidden=low_contrast [["white, no rule" "10" "3" "Secret plan" "public" "white, a formula" "bold by a formula" "white, a data bar"] ["1" "2" "3" "" "" "" "" ""] ["x" "X" "y" "" "" "" "" ""] ["5" "9" "7" "" "" "" "" ""] ["10" "3" "" "" "" "" "" ""]] `+
-			`hidden(0,0 1x1 low_contrast) hidden(0,2 1x2 low_contrast) hidden(0,7 1x1 low_contrast) hidden(1,2 1x1 low_contrast) hidden(2,0 1x2 low_contrast) hidden(3,1 2x1 low_contrast)`,
-	)
-	if p := doc.Parts[0]; !p.Has(gofastooxml.WarnHiddenUnchecked) {
-		t.Errorf("no warning of the cell not judged: %v", p.Warnings)
-	}
-	// A band at a time, the same.
-	f, err := gofastooxml.OpenBytes(pkg.Bytes(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var bands []gofastcore.Part
-	for part, err := range f.Rows(context.Background(), 1, 2) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		bands = append(bands, part)
-	}
-	sameCells(t, "bands of 2", cellsOf(t, bands...), cellsOf(t, doc.Parts[0]))
-}
-
 // A column of a thousand cells in white is one region, not a thousand.
 func TestExcelHiddenRegionsAreMerged(t *testing.T) {
-	styles := xlStyles(nil, []string{`<sz val="11"/><color rgb="FFFFFFFF"/>`}, nil, `numFmtId="0" fontId="0" fillId="0"`, `numFmtId="0" fontId="1" fillId="0"`)
+	// Style 1 is a number format that shows nothing.
+	styles := xlStyles(map[int]string{164: ";;;"}, nil, nil, `numFmtId="0" fontId="0" fillId="0"`, `numFmtId="164" fontId="0" fillId="0"`)
 	var rows strings.Builder
 	for r := 1; r <= 1000; r++ {
 		rows.WriteString(xlRow(r, xlNum("A"+strconv.Itoa(r), "1"), xlStyled("B"+strconv.Itoa(r), 1, "2"), xlStyled("C"+strconv.Itoa(r), 1, "3"), xlNum("D"+strconv.Itoa(r), "4")))
@@ -504,7 +437,7 @@ func TestExcelHiddenRegionsAreMerged(t *testing.T) {
 	rows.WriteString(xlRow(1001, xlStyled("A1001", 1, "5"), xlNum("B1001", "6"), xlStyled("C1001", 1, "7"), xlStyled("D1001", 1, "8")))
 	doc := excel(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "M", Data: rows.String()}).WithSheetStyles(styles), nil)
 	var regions []string
-	for _, h := range doc.Parts[0].Blocks[0].Table.Hidden {
+	for _, h := range doc.Parts[0].Blocks[0].Table.Display {
 		regions = append(regions, fmt.Sprintf("%d,%d %dx%d", h.Row, h.Col, h.RowSpan, h.ColSpan))
 	}
 	if got, want := strings.Join(regions, "; "), "0,1 1000x2; 1000,0 1x1; 1000,2 1x2"; got != want {
@@ -567,6 +500,12 @@ func TestExcelShapesAndPictures(t *testing.T) {
 		anchor(5, 1, shape("", `<a:prstGeom prst="rect"/>`, themed, para(run(">", "A note in a box,"), `<a:br/>`, run(">", "on two lines.")), para(), para(run(white, "White in a shape its style fills.")))) +
 		anchor(5, 8, shape("", `<a:noFill/>`, themed, para(run(">", "Seen, "), run(white, "white on the sheet"), run(">", ".")), para(run(` sz="100">`, "One point.")))) +
 		anchor(5, 14, shape(` hidden="1"`, `<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`, "", para(run(">", "In a hidden shape.")))) +
+		// The stand-in Excel writes for a form control kept in the legacy
+		// drawing, which is what is shown: it is marked hidden whether the
+		// control is or not.
+		anchor(10, 1, `<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="5" name="Button 1" hidden="1"><a:extLst><a:ext uri="{63B3BB69-23CF-44E3-9099-C40C66FF867C}">`+
+			`<a14:compatExt xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main" spid="_x0000_s1025"/></a:ext></a:extLst></xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr>`+
+			`<xdr:spPr/><xdr:txBody><a:bodyPr/><a:lstStyle/>`+para(run(">", "Button 1"))+`</xdr:txBody></xdr:sp>`) +
 		anchor(0, 20, `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="3" name="Picture 1" descr="A chart of sales"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill><xdr:spPr/></xdr:pic>`) +
 		anchor(0, 30, `<xdr:graphicFrame><xdr:nvGraphicFramePr><xdr:cNvPr id="4" name="Chart 1"/></xdr:nvGraphicFramePr><a:graphic><a:graphicData><c:chart r:id="rId2"/></a:graphicData></a:graphic></xdr:graphicFrame>`) +
 		// Two forms of one thing: the first is read, the second is not.
@@ -589,9 +528,10 @@ func TestExcelShapesAndPictures(t *testing.T) {
 		`  table A1:A1 inferred [["cell"]]`,
 		`  paragraph F2 "A note in a box,\non two lines."`,
 		`  paragraph F2 "White in a shape its style fills."`,
-		`  paragraph F9 "Seen, white on the sheet." hidden=low_contrast ["white on the sheet" low_contrast]`,
-		`  paragraph F9 "One point." hidden=tiny`,
-		`  paragraph F15 "In a hidden shape." hidden=invisible`,
+		`  paragraph K2 "Button 1"`,
+		`  paragraph F9 "Seen, white on the sheet."`,
+		`  paragraph F9 "One point."`,
+		`  paragraph F15 "In a hidden shape." display=hidden`,
 		`  image A21 "A chart of sales" image(xl/media/image1.png image/png 3x2)`,
 		// A chart is a caption and a table of its data at the cell its
 		// frame is anchored to: not cells of the sheet.
@@ -882,74 +822,6 @@ func TestExcelLinksInShapes(t *testing.T) {
 	ooxmltest.CheckDocument(t, doc)
 }
 
-// Text in a declared table is judged against the fill its table style
-// gives the cell, built in (from the standard) or the workbook's own: white
-// text on a table's dark header is seen; white text where the style leaves
-// the cell white is not.
-func TestExcelTableStyles(t *testing.T) {
-	const themeXML = `<a:theme xmlns:a="` + ooxmltest.NSDraw + `" name="x"><a:themeElements><a:clrScheme name="x">` +
-		`<a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2>` +
-		`<a:accent1><a:srgbClr val="1F3864"/></a:accent1></a:clrScheme></a:themeElements></a:theme>`
-	white := `<sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/>`
-	black := `<sz val="11"/><color rgb="FF000000"/><name val="Calibri"/>`
-	rows := func(r0 int) string {
-		var sb strings.Builder
-		// A header row, then three rows; column B is in white.
-		sb.WriteString(xlRow(r0, xlStr(fmt.Sprintf("A%d", r0), "Region"), xlStyledStr(fmt.Sprintf("B%d", r0), 1, "Sales")))
-		for i, name := range []string{"North", "South", "East"} {
-			r := r0 + 1 + i
-			sb.WriteString(xlRow(r, xlStr(fmt.Sprintf("A%d", r), name), xlStyledStr(fmt.Sprintf("B%d", r), 1, "hidden?")))
-		}
-		return sb.String()
-	}
-	table := func(n int, ref, style string) string {
-		return fmt.Sprintf(`<table xmlns="%s" id="%d" name="T%d" displayName="T%d" ref="%s"><tableColumns count="2"/>`+
-			`<tableStyleInfo name="%s" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>`, ooxmltest.NSSheet, n, n, n, ref, style)
-	}
-	styles := xlStyles(nil, []string{white, black}, nil, `numFmtId="0"`, `numFmtId="0" fontId="1"`, `numFmtId="0" fontId="2"`) +
-		// The workbook's own style: a black header, white rows.
-		`<dxfs count="2"><dxf><fill><patternFill><bgColor rgb="FF000000"/></patternFill></fill></dxf><dxf><fill><patternFill><bgColor rgb="FFFFFFFF"/></patternFill></fill></dxf></dxfs>` +
-		`<tableStyles count="1"><tableStyle name="Ours" pivot="0" count="2"><tableStyleElement type="headerRow" dxfId="0"/><tableStyleElement type="wholeTable" dxfId="1"/></tableStyle></tableStyles>`
-	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: rows(1) + rows(11),
-		Extra: `<tableParts count="2"><tablePart r:id="rId1"/><tablePart r:id="rId2"/></tableParts>`}).WithSheetStyles(styles)
-	pkg.Rel(firstSheet, relBase+"table", "../tables/table1.xml")
-	pkg.Add("xl/tables/table1.xml", ctTable, table(1, "A1:B4", "TableStyleMedium2"))
-	pkg.Rel(firstSheet, relBase+"table", "../tables/table2.xml")
-	pkg.Add("xl/tables/table2.xml", ctTable, table(2, "A11:B14", "Ours"))
-	pkg.Rel("xl/workbook.xml", relBase+"theme", "theme/theme1.xml")
-	pkg.Add("xl/theme/theme1.xml", ooxmltest.CTTheme, themeXML)
-	doc := excel(t, pkg, nil)
-	var got []string
-	for _, b := range doc.AllBlocks() {
-		if b.Table == nil {
-			continue
-		}
-		cells := map[[2]int]gofastcore.Hidden{}
-		for _, h := range b.Table.Hidden {
-			for r := h.Row; r < h.Row+h.RowSpan; r++ {
-				for c := h.Col; c < h.Col+h.ColSpan; c++ {
-					cells[[2]int{r, c}] |= h.Hidden
-				}
-			}
-		}
-		for r, row := range b.Table.Rows {
-			got = append(got, fmt.Sprintf("%s %s %v", b.Loc.Range, row[1], cells[[2]int{r, 1}]&gofastcore.HiddenLowContrast != 0))
-		}
-	}
-	want := []string{
-		// TableStyleMedium2: the header is filled with accent 1, dark;
-		// the first stripe with accent 1 lightened 80%, a pale blue that
-		// white text can still be told from; the second not at all.
-		"A1:B4 Sales false", "A1:B4 hidden? false", "A1:B4 hidden? true", "A1:B4 hidden? false",
-		// The workbook's own: a black header, white rows.
-		"A11:B14 Sales false", "A11:B14 hidden? true", "A11:B14 hidden? true", "A11:B14 hidden? true",
-	}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("got\n  %q\nwant\n  %q", got, want)
-	}
-	ooxmltest.CheckDocument(t, doc)
-}
-
 // A drop-down list is a note of type choices at the cells it is for: the
 // values of a list written out, one per line, or the reference a list is
 // taken from. A list whose arrow is hidden, or whose cells are all
@@ -974,8 +846,8 @@ func TestExcelDropDownLists(t *testing.T) {
 		`  table A1:B1 inferred [["Answer" "Size"]]`,
 		`  table D1:D3 inferred [["S"] ["M"] ["L"]]`,
 		`  note E1:E3 "=Lists!$A$1:$A$3" type=choices`,
-		`  note F1:G4 "in\nhidden\ncolumns" hidden=invisible type=choices`,
-		`  note H1 "secret\nlist" hidden=invisible type=choices`,
+		`  note F1:G4 "in\nhidden\ncolumns" display=hidden type=choices`,
+		`  note H1 "secret\nlist" display=hidden type=choices`,
 		`  note A2:A10 "Yes\nNo\n\"Maybe\"\nsure" type=choices`,
 		`  note C5 B2:B10 "=$D$1:$D$3" type=choices`,
 	)

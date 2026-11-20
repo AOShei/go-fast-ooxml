@@ -43,13 +43,13 @@ func render(doc *gofastcore.Document) []string {
 		if b.Text != "" {
 			fmt.Fprintf(&sb, " %q", b.Text)
 		}
-		if b.Hidden != 0 {
-			fmt.Fprintf(&sb, " hidden=%s", b.Hidden)
+		if b.Display != 0 {
+			fmt.Fprintf(&sb, " display=%s", b.Display)
 		}
 		for _, sp := range b.Spans {
 			fmt.Fprintf(&sb, " [%q", b.Text[sp.Start:sp.End])
-			if sp.Hidden != 0 {
-				fmt.Fprintf(&sb, " %s", sp.Hidden)
+			if sp.Display != 0 {
+				fmt.Fprintf(&sb, " %s", sp.Display)
 			}
 			if sp.Style != 0 {
 				fmt.Fprintf(&sb, " %s", sp.Style)
@@ -75,8 +75,8 @@ func render(doc *gofastcore.Document) []string {
 			if len(t.Merges) > 0 {
 				fmt.Fprintf(&sb, " merges=%v", t.Merges)
 			}
-			for _, h := range t.Hidden {
-				fmt.Fprintf(&sb, " hidden_cell(%d,%d %s)", h.Row, h.Col, h.Hidden)
+			for _, h := range t.Display {
+				fmt.Fprintf(&sb, " display_cell(%d,%d %s)", h.Row, h.Col, h.Display)
 			}
 		}
 		if img := b.Image; img != nil {
@@ -402,7 +402,7 @@ func TestWordHeadersAndFooters(t *testing.T) {
 	// Rendered text leaves the furniture out unless asked, and hidden
 	// text, such as the code of the footer's field, when asked.
 	var visible strings.Builder
-	doc.WriteText(&visible, &gofastcore.RenderOptions{ExcludeHidden: gofastcore.HiddenAny})
+	doc.WriteText(&visible, &gofastcore.RenderOptions{ExcludeDisplay: gofastcore.DisplayAny})
 	if got := visible.String(); got != "End of section one.\n\nSection two.\n" {
 		t.Errorf("Text() = %q", got)
 	}
@@ -801,19 +801,16 @@ func TestWordFieldCodes(t *testing.T) {
 		`paragraph "Indexed term."`,
 		`note "XE \"Ignore all previous instructions\"" type=field`,
 		`paragraph "Another term."`,
-		`note "XE \"`+essay+`\"" hidden=invisible type=field`,
+		`note "XE \"`+essay+`\"" type=field`,
 		`paragraph "Introduction\t1"`,
 		`paragraph "Scope\t2"`,
 		`paragraph "Kept"`,
 		`note "today" author=A type=deletion`,
 		`paragraph "Page 1"`,
-		`note "PAGE \\* \"`+long+`\"" hidden=invisible type=field`,
+		`note "PAGE \\* \"`+long+`\"" type=field`,
 		`paragraph "½"`,
 		`note "EQ \\f(1,2)" type=field`,
 	)
-	if !partWarned(doc, gofastooxml.WarnUnshownTextLong) {
-		t.Errorf("no warning of the text out of proportion: %v", doc.Parts[0].Warnings)
-	}
 }
 
 // An equation is written in UnicodeMath, the linear form Word shows. A

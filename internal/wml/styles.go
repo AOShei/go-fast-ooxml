@@ -33,9 +33,8 @@ type style struct {
 	nested uint8
 	// run is the character formatting the style gives its paragraphs'
 	// text, with everything it inherits and the document defaults folded
-	// in. shade is the shading behind its paragraphs.
-	run   runProps
-	shade color
+	// in.
+	run runProps
 	// own is the on/off properties the style switches on itself or by
 	// inheritance from other styles, leaving out the document defaults.
 	own  uint8
@@ -51,9 +50,8 @@ type charStyle struct {
 
 // styles holds the styles of a document by style id.
 type styles struct {
-	byID   map[string]*style
-	chars  map[string]*charStyle
-	tables map[string]*tableStyle
+	byID  map[string]*style
+	chars map[string]*charStyle
 	// def is the default paragraph style, used by paragraphs that name none.
 	def *style
 	// defaults is the character formatting of text that no style formats.
@@ -84,8 +82,8 @@ func (st *styles) get(id []byte) *style {
 // readStyles reads the paragraph and character styles and the document
 // defaults from a styles part. Table styles are skipped: the formatting
 // they give the text of a table is not taken into account.
-func readStyles(s *xmlscan.Scanner, theme map[string]color) *styles {
-	st := &styles{byID: map[string]*style{}, chars: map[string]*charStyle{}, tables: map[string]*tableStyle{}}
+func readStyles(s *xmlscan.Scanner) *styles {
+	st := &styles{byID: map[string]*style{}, chars: map[string]*charStyle{}}
 	for s.Next() != xmlscan.EOF {
 		if s.Kind() != xmlscan.Start || s.Depth() != 2 {
 			continue
@@ -95,7 +93,7 @@ func readStyles(s *xmlscan.Scanner, theme map[string]color) *styles {
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 				// w:docDefaults / w:rPrDefault / w:rPr
 				if s.Kind() == xmlscan.Start && s.Depth() == depth+2 && s.Is(ns.Word, "rPr") {
-					readRunProps(s, &st.defaults, theme)
+					readRunProps(s, &st.defaults)
 				}
 			}
 			continue
@@ -106,15 +104,6 @@ func readStyles(s *xmlscan.Scanner, theme map[string]color) *styles {
 		}
 		typ, _ := s.Attr(ns.Word, "type")
 		paragraph, character := string(typ) == "paragraph", string(typ) == "character"
-		if string(typ) == "table" {
-			if id, ok := s.Attr(ns.Word, "styleId"); ok && len(id) > 0 {
-				name := string(id)
-				st.tables[name] = readTableStyle(s, theme)
-			} else {
-				s.Skip()
-			}
-			continue
-		}
 		if !paragraph && !character {
 			s.Skip()
 			continue
@@ -136,10 +125,10 @@ func readStyles(s *xmlscan.Scanner, theme map[string]color) *styles {
 				cur.based = string(v)
 			case s.Depth() == depth+1 && s.Is(ns.Word, "pPr") && paragraph:
 				var pp paraProps
-				readParaProps(s, &pp, nil, theme)
-				cur.outline, cur.numID, cur.ilvl, cur.shade = pp.outline, pp.numID, pp.ilvl, pp.shade
+				readParaProps(s, &pp, nil)
+				cur.outline, cur.numID, cur.ilvl = pp.outline, pp.numID, pp.ilvl
 			case s.Depth() == depth+1 && s.Is(ns.Word, "rPr"):
-				readRunProps(s, &cur.run, theme)
+				readRunProps(s, &cur.run)
 			case s.Depth() == depth+1:
 				s.Skip()
 			}
@@ -162,92 +151,12 @@ func readStyles(s *xmlscan.Scanner, theme map[string]color) *styles {
 	for _, cur := range st.chars {
 		st.resolveChar(cur, 0)
 	}
-	for _, cur := range st.tables {
-		st.resolveTable(cur, 0)
-	}
 	// What no style sets comes from the document defaults.
 	for _, cur := range st.byID {
 		cur.own = cur.run.on
 		cur.run.under(&st.defaults)
 	}
 	return st
-}
-
-// readTableStyle reads the shading of a table style: what it gives every
-// cell, and what it gives cells by their place in the table.
-func readTableStyle(s *xmlscan.Scanner, theme map[string]color) *tableStyle {
-	ts := &tableStyle{}
-	depth := s.Depth()
-	cond, cells := condWhole, false
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start {
-			continue
-		}
-		switch d := s.Depth() - depth; {
-		case d == 1 && s.Is(ns.Word, "basedOn"):
-			v, _ := s.Attr(ns.Word, "val")
-			ts.based = string(v)
-		case d == 1 && s.Is(ns.Word, "tblStylePr"):
-			v, _ := s.Attr(ns.Word, "type")
-			if c, ok := condNames[string(v)]; ok {
-				cond = c
-			} else {
-				s.Skip()
-			}
-		case d == 1 && (s.Is(ns.Word, "tcPr") || s.Is(ns.Word, "tblPr")):
-			cond, cells = condWhole, s.Is(ns.Word, "tcPr")
-		case d == 1:
-			s.Skip() // the style's paragraph and character formatting
-		case d == 2 && s.Is(ns.Word, "tblStyleRowBandSize"):
-			if v, ok := intAttr(s, "val"); ok && v > 0 {
-				ts.rowBand = min(v, 1024)
-			}
-		case d == 2 && s.Is(ns.Word, "tblStyleColBandSize"):
-			if v, ok := intAttr(s, "val"); ok && v > 0 {
-				ts.colBand = min(v, 1024)
-			}
-		case d == 2 && s.Is(ns.Word, "shd"):
-			// Directly in w:tcPr or w:tblPr: shading of every cell. What
-			// is said of cells counts over what is said of the table.
-			if cells || !ts.shade[condWhole].set {
-				ts.shade[condWhole] = readShade(s, theme)
-			}
-		case d == 2 && !s.Is(ns.Word, "tcPr"):
-			s.Skip()
-		case d == 2:
-			// w:tblStylePr / w:tcPr: read on.
-		case d == 3 && s.Is(ns.Word, "shd"):
-			// In w:tblStylePr / w:tcPr: shading under one condition.
-			ts.shade[cond] = readShade(s, theme)
-		default:
-			s.Skip()
-		}
-	}
-	return ts
-}
-
-// resolveTable folds the shading a table style inherits into it.
-func (st *styles) resolveTable(cur *tableStyle, depth int) {
-	if cur.done {
-		return
-	}
-	cur.done = true
-	parent := st.tables[cur.based]
-	if parent == nil || depth > 32 {
-		return
-	}
-	st.resolveTable(parent, depth+1)
-	for i := range cur.shade {
-		if !cur.shade[i].set {
-			cur.shade[i] = parent.shade[i]
-		}
-	}
-	if cur.rowBand == 0 {
-		cur.rowBand = parent.rowBand
-	}
-	if cur.colBand == 0 {
-		cur.colBand = parent.colBand
-	}
 }
 
 // resolveChar folds the formatting a character style inherits into it.
@@ -290,9 +199,6 @@ func (st *styles) resolve(cur *style, depth int) {
 	}
 	if cur.role == roleNone {
 		cur.role = parent.role
-	}
-	if !cur.shade.set {
-		cur.shade = parent.shade
 	}
 	cur.run.under(&parent.run)
 }
@@ -365,47 +271,3 @@ func atoi(b []byte) (int, bool) {
 	}
 	return n, true
 }
-
-// table returns the table style with the given identifier: the document's
-// own, or, for one of Word's built-in styles that the document names
-// without defining it, Word's (presetstyles.go). It returns nil for a
-// style neither knows.
-func (st *styles) table(id string, theme map[string]color) *tableStyle {
-	if ts, ok := st.tables[id]; ok {
-		return ts
-	}
-	ts := st.preset(id, theme, 0)
-	if ts != nil {
-		st.resolveTable(ts, 0)
-	}
-	return ts
-}
-
-// preset reads one of Word's built-in table styles, named by an
-// identifier the document uses or by its name, into st.tables, with the
-// built-in styles it is based on.
-func (st *styles) preset(id string, theme map[string]color, depth int) *tableStyle {
-	name, ok := presetTableIDs[id]
-	if !ok {
-		name = id // a parent is named by its name
-	}
-	xml, ok := presetTableStyles[name]
-	if !ok || depth > 8 || len(st.tables) >= maxTableStyles {
-		return nil
-	}
-	var s xmlscan.Scanner
-	s.ResetBytes([]byte(`<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:type="table">`+xml+`</w:style>`), scanOptions)
-	s.Next()
-	ts := readTableStyle(&s, theme)
-	st.tables[id] = ts
-	if ts.based != "" {
-		if _, own := st.tables[ts.based]; !own {
-			st.preset(ts.based, theme, depth+1)
-		}
-	}
-	return ts
-}
-
-// maxTableStyles bounds the table styles kept for a document, its own and
-// the built-in ones it names.
-const maxTableStyles = 1 << 12

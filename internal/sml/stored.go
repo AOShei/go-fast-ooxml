@@ -18,9 +18,7 @@ import (
 // programs, the records of pivot caches whose source is gone and the
 // formulas of calculated fields (pivot.go), and custom XML data. They
 // are read as data, never evaluated, and given in the document's stored
-// part (gofastcore.PartStored). They are not flagged hidden for being
-// stored, which is routine; a name whose text is out of proportion is
-// (stored.MaxWords).
+// part (gofastcore.PartStored), with no display reason.
 
 // definedName is one name the workbook defines.
 type definedName struct {
@@ -75,19 +73,12 @@ func (b *Book) storedIndex() int {
 func (b *Book) readStored(ctx context.Context) *unit.Result {
 	p := stored.NewPart(ctx, b.storedIndex()+1)
 	res := &unit.Result{}
-	// A name's or a calculated field's formula is short; one whose text
-	// is a page long is out of proportion, and flagged.
-	formula := func(kind, name, text, what string) gofastcore.Block {
-		blk := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
+	formula := func(name, text, what string) gofastcore.Block {
+		return gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
 			Attrs: map[string]string{gofastcore.AttrStored: what, gofastcore.AttrName: name}}
-		if n := stored.QuotedWords(text); n > stored.MaxWords {
-			blk.Hidden = gofastcore.HiddenInvisible
-			p.Long(kind, name, n)
-		}
-		return blk
 	}
 	for _, n := range b.names {
-		if !p.Add(formula("a defined name", n.name, n.name+": "+n.formula, gofastcore.StoredDefinedName)) {
+		if !p.Add(formula(n.name, n.name+": "+n.formula, gofastcore.StoredDefinedName)) {
 			break
 		}
 	}
@@ -130,11 +121,12 @@ func (b *Book) readStored(ctx context.Context) *unit.Result {
 	}
 	// The formulas of calculated fields.
 	for _, f := range b.calculated {
-		if !p.Add(formula("a calculated field", f.name, f.name+": ="+f.formula, gofastcore.StoredPivotCache)) {
+		if !p.Add(formula(f.name, f.name+": ="+f.formula, gofastcore.StoredPivotCache)) {
 			break
 		}
 	}
-	b.extra.XML(ctx, b.wb.pkg, p, nil)
+	b.extra.XML(ctx, b.wb.pkg, p)
+	b.extra.AfterEnd(b.wb.pkg, p)
 	res.Limited = p.Finish()
 	res.Part, res.Damaged = p.Part, p.Damaged
 	return res
