@@ -74,7 +74,7 @@ func TestPowerPointTextWithNoFill(t *testing.T) {
 }
 
 // textOnly asks for no picture blocks, for tests about text that have
-// pictures in them only as what lies behind or over it.
+// pictures in them only as scenery.
 var textOnly = &gofastcore.Options{Images: gofastcore.ImagesNone}
 
 func TestPowerPointHiddenTextInTables(t *testing.T) {

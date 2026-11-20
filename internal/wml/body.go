@@ -42,8 +42,10 @@ type parser struct {
 	cell      *cellProps // properties of the table cell being read, if any
 	row       *rowProps
 
-	tables   int // tables being read; notes wait until the outermost is out
-	produced int // text and images emitted so far, for alternate content
+	tables   int  // tables being read; notes wait until the outermost is out
+	boxes    int  // text boxes being read
+	body     bool // the parser reads the main body, where a horizontal line is a thematic break
+	produced int  // text and images emitted so far, for alternate content
 	alts     []alternate
 	polls    int
 }
@@ -164,6 +166,7 @@ type paraState struct {
 	flags     clean.Flags        // how its text is cleaned
 	verbatim  bool               // it is code: its text is kept as written
 	display   []byte             // the text of its display equations
+	lead      int                // a thematic break before its text: its index in parser.after, plus one
 }
 
 var noFormatting runProps
@@ -553,11 +556,20 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 		}
 		b.Attrs[gofastcore.AttrNotation] = gofastcore.NotationUnicodeMath
 	}
+	lead := p.para.lead
 	p.text = p.text[:p.para.start]
 	p.spans = p.spans[:p.para.spanStart]
 	p.para, p.href, p.hrefDepth = outer, outerHref, outerDepth
 	if !ok {
 		return
+	}
+	// A horizontal line that came before the paragraph's text stands
+	// before it; one that came after, or in a paragraph with no text,
+	// follows it with the rest of what waits.
+	if i := lead - 1; i >= 0 && i < len(p.after) && p.after[i].Kind == gofastcore.KindThematicBreak {
+		brk := p.after[i]
+		p.after = append(p.after[:i], p.after[i+1:]...)
+		emit(brk)
 	}
 	// Word's own id for the paragraph: what a citation can point at in a
 	// format with no pages.
@@ -845,7 +857,7 @@ func (p *parser) run(deleted bool) {
 		case "commentReference":
 			p.commentRef()
 		case "drawing", "pict", "object":
-			p.drawing()
+			p.drawing(deleted)
 		case "fldChar":
 			// A field: its code, then what it displays. The code of a
 			// HYPERLINK field says where the displayed text leads.
@@ -1157,11 +1169,17 @@ func (p *parser) deletion() {
 
 // drawing reads w:drawing, w:pict or w:object: a picture, a text box, an
 // embedded object. Pictures and the text of text boxes become blocks after
-// the paragraph they are anchored in.
-func (p *parser) drawing() {
+// the paragraph they are anchored in. deleted says the run is in a tracked
+// deletion.
+//
+// Word's Horizontal Line is a legacy shape the file marks as one
+// (o:hr="t"). In the main body, outside tables and text boxes, it is a
+// thematic break and not a picture. A paragraph that only has a border
+// is not one: the file does not say it is a break.
+func (p *parser) drawing(deleted bool) {
 	s := &p.s
 	var alt, target, name string
-	var external bool
+	var external, line bool
 	boxes := len(p.after)
 	// The drawing is declared hidden: wp:docPr hidden, or a VML shape
 	// whose style says visibility:hidden.
@@ -1218,11 +1236,16 @@ func (p *parser) drawing() {
 			if v, ok := s.Attr(xmlscan.NoSpace, "style"); ok && vmlHidden(v) {
 				unseen = true
 			}
+			if v, ok := s.Attr(ns.Office, "hr"); ok && vmlOn(v) {
+				line = true
+			}
 		case s.Is(ns.Word, "txbxContent"):
 			// A text box: its paragraphs follow the one it hangs on.
 			outerCell := p.cell
 			p.cell = nil
+			p.boxes++
 			p.container(func(b gofastcore.Block) { p.after = append(p.after, b) })
+			p.boxes--
 			p.cell = outerCell
 		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
 			p.chart(name)
@@ -1234,6 +1257,10 @@ func (p *parser) drawing() {
 		for i := boxes; i < len(p.after); i++ {
 			hideWhole(&p.after[i], gofastcore.DisplayHidden)
 		}
+	}
+	if line && p.body && p.tables == 0 && p.cell == nil && p.boxes == 0 {
+		p.horizontalLine(deleted, unseen)
+		return
 	}
 	if target == "" || p.r.opts.Images == gofastcore.ImagesNone {
 		if target != "" {
@@ -1270,6 +1297,38 @@ func (p *parser) drawing() {
 		b.Display |= gofastcore.DisplayHidden
 	}
 	p.after = append(p.after, b)
+}
+
+// horizontalLine records Word's Horizontal Line as a thematic break: after
+// the paragraph it is in or, if no text has come before it there, before
+// the paragraph. One in a tracked deletion is not recorded, since a break
+// has no text for a deletion note to hold.
+func (p *parser) horizontalLine(deleted, unseen bool) {
+	if deleted {
+		return
+	}
+	if !p.r.text.Take(gofastcore.BlockCost) {
+		p.s.Abort(warn.ErrText)
+		return
+	}
+	p.produced++
+	b := gofastcore.Block{Kind: gofastcore.KindThematicBreak, Origin: gofastcore.OriginNative}
+	if unseen {
+		b.Display = gofastcore.DisplayHidden
+	}
+	if len(bytes.TrimSpace(p.text[p.para.start:])) == 0 && p.para.lead == 0 {
+		p.para.lead = len(p.after) + 1
+	}
+	p.after = append(p.after, b)
+}
+
+// vmlOn reads a VML true or false value: t, true, f, false.
+func vmlOn(v []byte) bool {
+	switch string(v) {
+	case "t", "true", "1", "on":
+		return true
+	}
+	return false
 }
 
 // vmlHidden reports whether the style attribute of a legacy drawing shape
