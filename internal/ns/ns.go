@@ -42,6 +42,7 @@ const (
 	Chart2012                                              // c15: extensions of charts, among them series filtered out
 	ChartDraw                                              // cdr: shapes drawn on a chart
 	DiagramDraw                                            // dsp: the drawing Office made of a SmartArt diagram
+	Draw2010                                               // a14: DrawingML 2010 extensions
 )
 
 // Spaces is the table handed to every scanner.
@@ -91,6 +92,7 @@ var Spaces = map[string]xmlscan.Space{
 	"http://schemas.openxmlformats.org/drawingml/2006/chartDrawing":             ChartDraw,
 	"http://purl.oclc.org/ooxml/drawingml/chartDrawing":                         ChartDraw,
 	"http://schemas.microsoft.com/office/drawing/2008/diagram":                  DiagramDraw,
+	"http://schemas.microsoft.com/office/drawing/2010/main":                     Draw2010,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part

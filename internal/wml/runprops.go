@@ -1,19 +1,17 @@
 package wml
 
 import (
-	"strings"
-
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
-	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
-// Whether a reader can see a run of text depends on its character
-// formatting: hidden, too small, the colour of what is behind it. Word
-// stores that formatting in layers. A run's own properties come first,
+// What the file declares about the display of a run of text is in its
+// character formatting: hidden text (w:vanish, w:specVanish), and text
+// drawn with no ink (a Word 2010 text fill of nothing, or fully
+// transparent). Colour, size and position are not judged. Word stores
+// character formatting in layers. A run's own properties come first,
 // then its character style, then its paragraph's style, then the
 // document's defaults; each layer supplies what the ones before left
 // unset. This file reads the layers and puts them together.
@@ -25,20 +23,6 @@ import (
 // applied for hidden text. It is not applied to bold and the like, which
 // are reported from the run and its character style alone.
 
-// color is a colour that may be unset, or "automatic", which Word draws
-// dark on a light background and light on a dark one, so that it is never
-// invisible.
-type color struct {
-	set, auto bool
-	unknown   bool // there is a colour, and it could not be worked out
-	r, g, b   uint8
-	// With DeepHidden, what an unknown colour is made of: the stops of a
-	// gradient, the colours of a picture.
-	under []theme.Color
-}
-
-var white = color{set: true, r: 255, g: 255, b: 255}
-
 // On/off run properties.
 const (
 	propVanish uint8 = 1 << iota
@@ -46,8 +30,7 @@ const (
 	propItalic
 	propUnderline
 	propStrike
-	propTransparent
-	propSqueezed // fitted into a width too small to read
+	propNoInk // a Word 2010 text fill of nothing, or fully transparent
 )
 
 // Vertical alignment of a run.
@@ -60,15 +43,10 @@ const (
 
 // runProps is one layer of character formatting.
 type runProps struct {
-	has       uint8 // which on/off properties this layer sets
-	on        uint8 // and to what
-	size      int16 // in half-points; 0 if not set
-	scale     int16 // width of the characters, in percent; 0 if not set
-	vert      int8
-	color     color
-	shade     color // shading behind the run
-	highlight color
-	style     string // the character style the run names
+	has   uint8 // which on/off properties this layer sets
+	on    uint8 // and to what
+	vert  int8
+	style string // the character style the run names
 	// font is the symbol font the run's text is in (w:rFonts), if fontSet;
 	// symbol.None for an ordinary font.
 	font    symbol.Font
@@ -80,23 +58,8 @@ func (p *runProps) under(parent *runProps) {
 	inherit := parent.has &^ p.has
 	p.has |= inherit
 	p.on |= parent.on & inherit
-	if p.size == 0 {
-		p.size = parent.size
-	}
-	if p.scale == 0 {
-		p.scale = parent.scale
-	}
 	if p.vert == vertUnset {
 		p.vert = parent.vert
-	}
-	if !p.color.set {
-		p.color = parent.color
-	}
-	if !p.shade.set {
-		p.shade = parent.shade
-	}
-	if !p.highlight.set {
-		p.highlight = parent.highlight
 	}
 	if !p.fontSet {
 		p.font, p.fontSet = parent.font, parent.fontSet
@@ -116,7 +79,7 @@ func (p *runProps) setFlag(prop uint8, on bool) {
 
 // empty reports whether the layer sets nothing.
 func (p *runProps) empty() bool {
-	return p.has == 0 && p.size == 0 && p.scale == 0 && p.vert == vertUnset && !p.color.set && !p.shade.set && !p.highlight.set && p.style == "" && !p.fontSet
+	return p.has == 0 && p.vert == vertUnset && p.style == "" && !p.fontSet
 }
 
 // onOff reads the value of an on/off element: present without a value, or
@@ -126,53 +89,35 @@ func onOff(s *xmlscan.Scanner) bool {
 	return !has || isOn(v)
 }
 
-// readRunProps reads w:rPr into a layer. theme resolves theme colour
-// names and may be nil.
-func readRunProps(s *xmlscan.Scanner, rp *runProps, theme map[string]color) {
+// readRunProps reads w:rPr into a layer.
+func readRunProps(s *xmlscan.Scanner, rp *runProps) {
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start || s.Depth() != depth+1 {
 			continue
 		}
 		if s.Space() == ns.Word14 && string(s.Local()) == "textFill" {
-			// Word 2010 text effects: a fill with full transparency, or
-			// no fill at all, leaves nothing to see.
+			// Word 2010 text effects: the fill the letters are drawn
+			// with, whatever w:color says. No fill, or full transparency,
+			// is no ink.
+			noInk := false
 			inner := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= inner {
 				if s.Kind() != xmlscan.Start {
 					continue
 				}
-				// The fill is the colour the text is drawn in, whatever
-				// w:color says.
 				switch string(s.Local()) {
 				case "noFill":
-					rp.setFlag(propTransparent, true)
+					noInk = true
 				case "alpha":
 					if v, ok := s.Attr(ns.Word14, "val"); ok {
 						if n, ok := atoi(v); ok && n >= 100000 {
-							rp.setFlag(propTransparent, true)
+							noInk = true
 						}
 					}
-				case "srgbClr":
-					rp.color = unknown
-					if v, ok := s.Attr(ns.Word14, "val"); ok {
-						if c, ok := hexColor(v); ok {
-							rp.color = c
-						}
-					}
-				case "schemeClr":
-					rp.color = unknown
-					if v, ok := s.Attr(ns.Word14, "val"); ok {
-						if c, ok := theme[drawingNames[string(v)]]; ok {
-							rp.color = c
-						}
-					}
-				case "gradFill":
-					rp.color = unknown
-				case "lumMod", "lumOff", "tint", "shade", "satMod", "satOff", "hueMod", "hueOff":
-					rp.color = unknown // an adjusted colour is not computed
 				}
 			}
+			rp.setFlag(propNoInk, noInk)
 			continue
 		}
 		if s.Space() != ns.Word {
@@ -180,7 +125,7 @@ func readRunProps(s *xmlscan.Scanner, rp *runProps, theme map[string]color) {
 			continue
 		}
 		switch string(s.Local()) {
-		case "vanish":
+		case "vanish", "specVanish":
 			rp.setFlag(propVanish, onOff(s))
 		case "b":
 			rp.setFlag(propBold, onOff(s))
@@ -191,10 +136,6 @@ func readRunProps(s *xmlscan.Scanner, rp *runProps, theme map[string]color) {
 		case "u":
 			v, _ := s.Attr(ns.Word, "val")
 			rp.setFlag(propUnderline, string(v) != "none")
-		case "sz":
-			if v, ok := intAttr(s, "val"); ok && v > 0 {
-				rp.size = int16(min(v, 30000))
-			}
 		case "vertAlign":
 			v, _ := s.Attr(ns.Word, "val")
 			switch string(v) {
@@ -204,29 +145,6 @@ func readRunProps(s *xmlscan.Scanner, rp *runProps, theme map[string]color) {
 				rp.vert = vertSub
 			default:
 				rp.vert = vertBaseline
-			}
-		case "color":
-			rp.color = readColor(s, "val", "themeColor", theme)
-		case "shd":
-			rp.shade = readShade(s, theme)
-		case "w":
-			// The width of the characters, as a percentage of normal.
-			if v, ok := intAttr(s, "val"); ok && v > 0 {
-				rp.scale = int16(min(v, 30000))
-			}
-		case "fitText":
-			// The run is squeezed into a given width, in twentieths of a
-			// point.
-			if v, ok := intAttr(s, "val"); ok {
-				rp.setFlag(propSqueezed, float64(v)/20 < gofastcore.HiddenTinySize)
-			}
-		case "highlight":
-			v, _ := s.Attr(ns.Word, "val")
-			if c, ok := highlights[string(v)]; ok {
-				rp.highlight = c
-			} else {
-				// "none": no highlight, whatever a style says.
-				rp.highlight = color{set: true, auto: true}
 			}
 		case "rFonts":
 			// The font of the characters a document mostly has: w:ascii,
@@ -254,138 +172,17 @@ func readRunProps(s *xmlscan.Scanner, rp *runProps, theme map[string]color) {
 	}
 }
 
-// readColor reads a colour from an element such as w:color or w:shd: a
-// six-digit value, "auto", or failing that a theme colour by name. Word
-// writes the value it computed from the theme alongside the theme name,
-// so the theme is only consulted when the value is missing. Tints and
-// shades of theme colours are not applied.
-func readColor(s *xmlscan.Scanner, valueAttr, themeAttr string, theme map[string]color) color {
-	// A theme colour supersedes the value, which is there for programs
-	// that know no themes. Lightened or darkened, the value is the colour
-	// Word worked out, and is taken.
-	v, _ := s.Attr(ns.Word, valueAttr)
-	if name, ok := s.Attr(ns.Word, themeAttr); ok && !shaded(s, themeAttr) {
-		if c, found := theme[themeNames[string(name)]]; found {
-			return c
-		}
-	}
-	if c, ok := hexColor(v); ok {
-		return c
-	}
-	if name, ok := s.Attr(ns.Word, themeAttr); ok {
-		if c, found := theme[themeNames[string(name)]]; found {
-			return c
-		}
-	}
-	if string(v) == "auto" {
-		return color{set: true, auto: true}
-	}
-	return color{}
-}
-
-// shaded reports whether a theme colour is lightened or darkened
-// (themeTint, themeShade; themeFillTint, themeFillShade).
-func shaded(s *xmlscan.Scanner, themeAttr string) bool {
-	prefix := "theme"
-	if themeAttr == "themeFill" {
-		prefix = "themeFill"
-	}
-	_, tint := s.Attr(ns.Word, prefix+"Tint")
-	_, shade := s.Attr(ns.Word, prefix+"Shade")
-	return tint || shade
-}
-
-func hexColor(v []byte) (color, bool) {
-	c, ok := theme.Hex(v)
-	return color{set: ok, r: c.R, g: c.G, b: c.B}, ok
-}
-
-// themeNames maps the names Word uses for theme colours in a document to
-// the names of the colours in the theme part.
-var themeNames = map[string]string{
-	"dark1": "dk1", "light1": "lt1", "dark2": "dk2", "light2": "lt2",
-	"text1": "dk1", "background1": "lt1", "text2": "dk2", "background2": "lt2",
-	"accent1": "accent1", "accent2": "accent2", "accent3": "accent3",
-	"accent4": "accent4", "accent5": "accent5", "accent6": "accent6",
-	"hyperlink": "hlink", "followedHyperlink": "folHlink",
-}
-
-// highlights are the colours of Word's text highlighter.
-var highlights = map[string]color{
-	"black":       {set: true, r: 0, g: 0, b: 0},
-	"blue":        {set: true, r: 0, g: 0, b: 255},
-	"cyan":        {set: true, r: 0, g: 255, b: 255},
-	"green":       {set: true, r: 0, g: 255, b: 0},
-	"magenta":     {set: true, r: 255, g: 0, b: 255},
-	"red":         {set: true, r: 255, g: 0, b: 0},
-	"yellow":      {set: true, r: 255, g: 255, b: 0},
-	"white":       {set: true, r: 255, g: 255, b: 255},
-	"darkBlue":    {set: true, r: 0, g: 0, b: 128},
-	"darkCyan":    {set: true, r: 0, g: 128, b: 128},
-	"darkGreen":   {set: true, r: 0, g: 128, b: 0},
-	"darkMagenta": {set: true, r: 128, g: 0, b: 128},
-	"darkRed":     {set: true, r: 128, g: 0, b: 0},
-	"darkYellow":  {set: true, r: 128, g: 128, b: 0},
-	"darkGray":    {set: true, r: 128, g: 128, b: 128},
-	"lightGray":   {set: true, r: 192, g: 192, b: 192},
-}
-
-// readTheme reads the colour scheme of a theme part.
-func readTheme(s *xmlscan.Scanner) (map[string]color, *theme.Scheme) {
-	scheme := theme.Read(s)
-	out := map[string]color{}
-	for name, c := range scheme.Colors() {
-		out[name] = color{set: true, r: c.R, g: c.G, b: c.B}
-	}
-	return out, scheme
-}
-
-// hiddenReasons says why text with the given formatting cannot be seen,
-// if it cannot. background is what lies behind the paragraph: its own
-// shading, its table cell's, or the page.
-func (p *runProps) hiddenReasons(background color) gofastcore.Hidden {
-	var h gofastcore.Hidden
+// display returns what the formatting declares about the display of the
+// text: hidden, or drawn with no ink.
+func (p *runProps) display() gofastcore.Display {
+	var d gofastcore.Display
 	if p.is(propVanish) {
-		h |= gofastcore.HiddenInvisible
+		d |= gofastcore.DisplayHidden
 	}
-	if p.is(propTransparent) {
-		h |= gofastcore.HiddenTransparent
+	if p.is(propNoInk) {
+		d |= gofastcore.DisplayNoInk
 	}
-	// Sizes are in half-points; text with no size set is 10 points. Text
-	// can also be made too small to read by narrowing its characters.
-	size := 10.0
-	if p.size > 0 {
-		size = float64(p.size) / 2
-	}
-	if p.scale > 0 && p.scale < 100 {
-		size = size * float64(p.scale) / 100
-	}
-	if size < gofastcore.HiddenTinySize || p.is(propSqueezed) {
-		h |= gofastcore.HiddenTiny
-	}
-	if p.color.known() {
-		// Nearest first: the run's own shading, a highlight, then what is
-		// behind the paragraph.
-		behind := background
-		switch {
-		case p.shade.set && !p.shade.auto:
-			behind = p.shade
-		case p.highlight.known():
-			behind = p.highlight
-		}
-		if !behind.set || behind.auto {
-			behind = white
-		}
-		switch {
-		case !behind.unknown:
-			if gofastcore.LowContrast(p.color.r, p.color.g, p.color.b, behind.r, behind.g, behind.b) {
-				h |= gofastcore.HiddenLowContrast
-			}
-		case dml.LowOnMost(theme.Color{R: p.color.r, G: p.color.g, B: p.color.b}, 1, behind.under):
-			h |= gofastcore.HiddenLowContrast
-		}
-	}
-	return h
+	return d
 }
 
 // style returns the inline formatting to report for a run: what the run
@@ -412,57 +209,4 @@ func (p *runProps) inline() gofastcore.Style {
 		st |= gofastcore.StyleSub
 	}
 	return st
-}
-
-// vmlSize reads the width and height, in points, from the style attribute
-// of a legacy drawing shape ("width:1pt;height:1pt"). A dimension that is
-// absent or in another unit comes back as -1.
-func vmlSize(style []byte) (width, height float64) {
-	width, height = -1, -1
-	for _, decl := range strings.Split(string(style), ";") {
-		name, value, ok := strings.Cut(decl, ":")
-		if !ok {
-			continue
-		}
-		name, value = strings.ToLower(strings.TrimSpace(name)), strings.TrimSpace(value)
-		if name != "width" && name != "height" {
-			continue
-		}
-		number, isPt := strings.CutSuffix(value, "pt")
-		if !isPt {
-			continue
-		}
-		v, ok := parseFloat(number)
-		if !ok {
-			continue
-		}
-		if name == "width" {
-			width = v
-		} else {
-			height = v
-		}
-	}
-	return width, height
-}
-
-// parseFloat reads a plain non-negative decimal number.
-func parseFloat(s string) (float64, bool) {
-	if s == "" || len(s) > 16 {
-		return 0, false
-	}
-	v, frac, seenDot := 0.0, 0.1, false
-	for _, c := range s {
-		switch {
-		case c == '.' && !seenDot:
-			seenDot = true
-		case c >= '0' && c <= '9' && !seenDot:
-			v = v*10 + float64(c-'0')
-		case c >= '0' && c <= '9':
-			v += float64(c-'0') * frac
-			frac /= 10
-		default:
-			return 0, false
-		}
-	}
-	return v, true
 }

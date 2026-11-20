@@ -136,8 +136,8 @@ func TestFileGivesWhatExtractGives(t *testing.T) {
 			}
 			name := fmt.Sprintf("%s, %d workers", s.name, workers)
 
-			if f.Format() != want.Source.Format || f.Source() != want.Source || f.NumParts() != len(want.Parts) || f.HiddenChecked() != want.HiddenChecked {
-				t.Errorf("%s: format %q, %d parts, checked %s; the document has %q, %d, %s", name, f.Format(), f.NumParts(), f.HiddenChecked(), want.Source.Format, len(want.Parts), want.HiddenChecked)
+			if f.Format() != want.Source.Format || f.Source() != want.Source || f.NumParts() != len(want.Parts) {
+				t.Errorf("%s: format %q, %d parts; the document has %q, %d", name, f.Format(), f.NumParts(), want.Source.Format, len(want.Parts))
 			}
 			if asJSON(t, f.Metadata()) != asJSON(t, want.Metadata) {
 				t.Errorf("%s: metadata differs", name)
@@ -156,7 +156,7 @@ func TestFileGivesWhatExtractGives(t *testing.T) {
 			// that what it knows comes from this reading alone.
 			f, _ = gofastooxml.OpenBytes(s.data, opts)
 			built := gofastcore.New(f.Format())
-			built.Source, built.Metadata, built.HiddenChecked = f.Source(), f.Metadata(), f.HiddenChecked()
+			built.Source, built.Metadata = f.Source(), f.Metadata()
 			for part, err := range f.Parts(context.Background()) {
 				if err != nil {
 					t.Fatalf("%s: %v", name, err)
@@ -252,7 +252,7 @@ func TestFileLimitsAreTheSameAsExtracts(t *testing.T) {
 			// the first used up or left behind.
 			for pass := 1; pass <= 2; pass++ {
 				built := gofastcore.New(f.Format())
-				built.Source, built.Metadata, built.HiddenChecked = f.Source(), f.Metadata(), f.HiddenChecked()
+				built.Source, built.Metadata = f.Source(), f.Metadata()
 				for part, err := range f.Parts(context.Background()) {
 					if err != nil {
 						t.Fatalf("%s: %v", name, err)
@@ -596,8 +596,8 @@ func withoutStyle(t testing.TB, doc *gofastcore.Document) string {
 				b := &d.Parts[i].Blocks[k]
 				var kept []gofastcore.Span
 				for _, s := range b.Spans {
-					if s.Hidden != 0 {
-						kept = append(kept, gofastcore.Span{Start: s.Start, End: s.End, Hidden: s.Hidden})
+					if s.Display != 0 {
+						kept = append(kept, gofastcore.Span{Start: s.Start, End: s.End, Display: s.Display})
 					}
 				}
 				b.Spans = kept

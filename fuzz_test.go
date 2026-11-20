@@ -37,7 +37,7 @@ func FuzzOpen(f *testing.F) {
 	}
 	// A small budget keeps a fuzzed decompression bomb cheap, and a low
 	// bound on the rounds of hashing keeps a fuzzed password check cheap.
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, DeepHidden: true}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}}
 	e := &gofastooxml.Extractor{MaxSpinCount: 2000}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		doc, err := e.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
@@ -104,7 +104,7 @@ func FuzzDocx(f *testing.F) {
 	}
 	f.Add([]byte(`<w:document`+ooxmltest.WordNS+`><w:background w:color="000000"><v:background><v:fill type="gradient"/></v:background></w:background><w:body>`+
 		ooxmltest.Para("x")+`<w:sectPr><w:headerReference w:type="first" r:id="rId5"/><w:titlePg/></w:sectPr></w:body></w:document>`), formatted, numbering, []byte(ooxmltest.Para("note")))
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Spans: true, DeepHidden: true}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Spans: true}
 	f.Fuzz(func(t *testing.T, body, styles, numbering, note []byte) {
 		pkg := ooxmltest.Docx("")
 		pkg.AddBytes("word/document.xml", ooxmltest.CTDocument, body)
@@ -164,7 +164,7 @@ func FuzzXlsx(f *testing.F) {
 		f.Add(s, styles, strs, drawing)
 		f.Add(s, symbolStyles, strs, drawing)
 	}
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Cells: true, Spans: true, DeepHidden: true}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Cells: true, Spans: true}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
 	f.Fuzz(func(t *testing.T, sheet, styles, strs, drawing []byte) {
 		pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S"}, ooxmltest.Sheet{Name: "T", State: "hidden", Data: xlRow(1, `<c r="A1" t="s"><v>1</v></c>`)})
@@ -199,7 +199,6 @@ func FuzzXlsx(f *testing.F) {
 				t.Fatalf("rows: %v", err)
 			}
 			band := gofastcore.New("xlsx")
-			band.HiddenChecked = f.HiddenChecked()
 			band.Parts = []gofastcore.Part{part}
 			if verr := band.Validate(); verr != nil {
 				t.Errorf("a band of rows is not a valid part: %v", verr)
@@ -298,7 +297,7 @@ func FuzzPptx(f *testing.F) {
 	// A table in one of PowerPoint's built-in styles, which the file
 	// does not define.
 	f.Add(bytes.Replace(slide, []byte(style), []byte("{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"), 1), layout, master, extras[0])
-	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Spans: true, DeepHidden: true}
+	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Spans: true}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
 	picture := jpegBytes(f, 2, 2)
 	f.Fuzz(func(t *testing.T, slide, layout, master, extra []byte) {

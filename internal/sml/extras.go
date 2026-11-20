@@ -6,7 +6,6 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -280,17 +279,12 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 	sh.load(target, func(s *xmlscan.Scanner) {
 		var row, col int32 // the cell the current anchor starts at
 		var alt, name string
-		var unseen bool          // the current shape is marked hidden
-		var own, styled dml.Fill // the current shape's fill, and the one its style gives it
-		var ink dml.Color        // the colour its style gives its text
-		props := 0               // depth of the shape properties being read
-		choice := -1             // blocks there were when the current choice of alternatives began
+		var unseen bool   // the current shape is marked hidden
+		var ink dml.Color // the colour its style gives its text
+		choice := -1      // blocks there were when the current choice of alternatives began
 		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start {
 				continue
-			}
-			if props > 0 && s.Depth() <= props {
-				props = 0
 			}
 			switch {
 			case s.Is(ns.MC, "Choice"):
@@ -322,7 +316,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					}
 				}
 			case s.Is(ns.SheetDraw, "sp"), s.Is(ns.SheetDraw, "pic"), s.Is(ns.SheetDraw, "graphicFrame"):
-				alt, name, unseen, own, styled, ink, props = "", "", false, dml.Fill{}, dml.Fill{}, dml.Color{}, 0
+				alt, name, unseen, ink = "", "", false, dml.Color{}
 			case s.Is(ns.SheetDraw, "cNvPr"):
 				if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && len(v) > 0 {
 					alt, _ = clean.String(v, clean.Prose)
@@ -333,26 +327,15 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
 					name = clean.Name(string(v))
 				}
-			case s.Is(ns.SheetDraw, "spPr"):
-				props = s.Depth()
-			case props > 0 && s.Depth() == props+1 && s.Space() == ns.Draw:
-				if f, ok := dml.ReadFill(s); ok {
-					own = f
-				} else if s.Is(ns.Draw, "ln") {
-					s.Skip() // the outline has a fill of its own
-				}
-			case s.Is(ns.Draw, "fillRef"):
-				// The fill the shape's style gives it, unless it has its own.
-				idx, _ := intAttr(s, "idx")
-				styled = pal.StyleFill(idx, dml.ReadColor(s))
+			case s.Is(ns.Draw2010, "compatExt"):
+				// The stand-in Excel writes for a form control kept in the
+				// legacy drawing (spid), which is what is shown: the
+				// stand-in is marked hidden whether the control is or not.
+				unseen = false
 			case s.Is(ns.Draw, "fontRef"):
 				ink = dml.ReadColor(s)
 			case s.Is(ns.SheetDraw, "txBody"):
-				fill := own
-				if fill.Paint == dml.PaintUnset {
-					fill = styled
-				}
-				out = sh.textBody(s, out, &pal, row, col, fill, ink, unseen, link)
+				out = sh.textBody(s, out, &pal, row, col, ink, unseen, link)
 			case s.Is(ns.Draw, "blip"):
 				id, ok := s.Attr(ns.Rel, "embed")
 				if !ok {
@@ -388,7 +371,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					sh.noteErr(rel.Target, err)
 				}
 				if unseen {
-					b.Hidden = gofastcore.HiddenInvisible
+					b.Display = gofastcore.DisplayHidden
 				}
 				b.Loc.Range = cellName(row, col)
 				out = append(out, placed{row: row, col: col, block: b})
@@ -423,39 +406,29 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 }
 
 // textBody reads the text of a shape (the element whose Start token is
-// current): one block for each of its paragraphs that has text. Text too
-// small to read, or in the colour of what is behind it, is marked; so is
-// all of it if the shape is hidden.
-func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, row, col int32, fill dml.Fill, ink dml.Color, unseen bool, link func([]byte) string) []placed {
+// current): one block for each of its paragraphs that has text. Text the
+// file declares drawn with no ink is marked so; all of it is hidden if the
+// shape is.
+func (sh *sheet) textBody(s *xmlscan.Scanner, out []placed, pal *dml.Palette, row, col int32, ink dml.Color, unseen bool, link func([]byte) string) []placed {
 	t := &sh.shapes
 	t.Palette, t.Chain, t.Base = pal, nil, dml.RunProps{}
 	if ink.IsSet() {
 		t.Base.Ink = dml.Fill{Paint: dml.PaintSolid, Color: ink}
 	}
-	// What the text is seen against: the shape's fill if it is one plain
-	// colour, the sheet if it has none.
-	switch fill.Paint {
-	case dml.PaintSolid:
-		t.Behind, t.Lit = pal.Opaque(fill, nil)
-	case dml.PaintOther:
-		t.Lit = false
-	default:
-		t.Behind, t.Lit = theme.White, true
-	}
-	t.Later, t.Styles, t.Link, t.SlideNumber = false, sh.wb.opts.Spans, link, ""
+	t.Styles, t.Link, t.SlideNumber = sh.wb.opts.Spans, link, ""
 	t.Read(s)
 	sh.removed += t.Removed
 	sh.unmapped += t.Unmapped
 	t.Removed, t.Unmapped = 0, 0
 	for i := range t.Paras {
 		p := &t.Paras[i]
-		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(t.Buf[p.Start:p.End]), Spans: p.Spans, Hidden: p.Hidden}
+		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(t.Buf[p.Start:p.End]), Spans: p.Spans, Display: p.Display}
 		if p.Listed {
 			b.Kind, b.Level, b.Ordered, b.Marker = gofastcore.KindListItem, uint8(p.Level+1), p.Ordered, p.Marker
 		}
 		if unseen {
 			// All of it, whatever is true of parts.
-			b.Hidden |= gofastcore.HiddenInvisible
+			b.Display |= gofastcore.DisplayHidden
 		}
 		b.Loc.Range = cellName(row, col)
 		out = append(out, placed{row: row, col: col, block: b})

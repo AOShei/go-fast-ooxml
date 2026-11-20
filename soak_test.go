@@ -33,7 +33,7 @@ type soakReport struct {
 	Formats  map[string]int `json:"formats"`
 	Refused  map[string]int `json:"refused"`
 	Warnings map[string]int `json:"documents_with_warning"`
-	Hidden   map[string]int `json:"documents_with_hidden_text"`
+	Display  map[string]int `json:"documents_with_display"`
 	Children int            `json:"embedded_documents"`
 	// Unlocked counts the encrypted files that were then opened with the
 	// password their project's tests give; they are counted as refused
@@ -189,7 +189,7 @@ func TestSoak(t *testing.T) {
 	}
 	stopWatching := watchHeap(ceiling)
 
-	report := soakReport{Formats: map[string]int{}, Refused: map[string]int{}, Warnings: map[string]int{}, Hidden: map[string]int{}}
+	report := soakReport{Formats: map[string]int{}, Refused: map[string]int{}, Warnings: map[string]int{}, Display: map[string]int{}}
 	type timed struct {
 		name string
 		took time.Duration
@@ -328,12 +328,12 @@ func TestSoak(t *testing.T) {
 		for _, w := range doc.AllWarnings() {
 			codes[w.Code] = true
 		}
-		var hidden gofastcore.Hidden
+		var hidden gofastcore.Display
 		for _, b := range doc.AllBlocks() {
-			hidden |= b.Hidden
+			hidden |= b.Display
 			if b.Table != nil {
-				for _, h := range b.Table.Hidden {
-					hidden |= h.Hidden
+				for _, h := range b.Table.Display {
+					hidden |= h.Display
 				}
 			}
 		}
@@ -346,7 +346,7 @@ func TestSoak(t *testing.T) {
 			report.Warnings[c]++
 		}
 		for r := range reasons {
-			report.Hidden[r]++
+			report.Display[r]++
 		}
 	}
 	for range max(2, runtime.GOMAXPROCS(0)/3) {

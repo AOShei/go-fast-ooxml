@@ -9,23 +9,12 @@ import (
 	"github.com/AOShei/go-fast-core"
 )
 
-// HiddenChecked is the set of hidden-text reasons each format checks
-// completely, as documented in the plan. CheckDocument holds every
-// extracted document to it.
-var HiddenChecked = map[string]gofastcore.Hidden{
-	"docx": gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars,
-	"xlsx": gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars,
-	"pptx": gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenOffPage |
-		gofastcore.HiddenOccluded | gofastcore.HiddenTransparent | gofastcore.HiddenChars,
-}
-
 // CheckDocument applies the invariants every document extracted by this
 // library must satisfy, whatever the input:
 //
 //   - it passes gofastcore's Validate;
 //   - its JSON form decodes back to an equal document;
-//   - its format is one this library produces, and HiddenChecked is the
-//     documented set for that format;
+//   - its format is one this library produces;
 //   - a part without text carries exactly one of part.failed, part.no_text
 //     and part.image_only, and a part with text carries none of them.
 //
@@ -52,11 +41,10 @@ func CheckDocument(t testing.TB, doc *gofastcore.Document) {
 		t.Errorf("JSON round trip changed the document\n first: %s\nsecond: %s", clip(data), clip(again))
 	}
 
-	want, known := HiddenChecked[doc.Source.Format]
-	if !known {
+	switch doc.Source.Format {
+	case "docx", "xlsx", "pptx":
+	default:
 		t.Errorf("source.format %q is not one of docx, xlsx, pptx", doc.Source.Format)
-	} else if doc.HiddenChecked != want {
-		t.Errorf("hidden_checked is %q, want %q for %s", doc.HiddenChecked, want, doc.Source.Format)
 	}
 
 	for i := range doc.Parts {

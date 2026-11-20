@@ -4,11 +4,9 @@
 // part (gofastcore.PartStored), after what is its own. The code is read as
 // text and never run.
 //
-// Such data is not flagged hidden for being stored: files routinely keep
-// it, and a flag on all of it would tell a clean file from a poisoned one
-// in neither. What is flagged is text out of proportion for its kind (see
-// Long): a document variable holding a paragraph, a value of custom XML
-// that is a page of text.
+// The stored part says where its text comes from (Attrs["stored"]). No
+// display reason is set for being stored: the file declares nothing about
+// the display of such data.
 package stored
 
 import (
@@ -21,13 +19,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/vba"
-	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -40,8 +38,9 @@ const (
 
 // Source names the parts a package keeps for the file as a whole.
 type Source struct {
-	vba []string // VBA projects
-	xml []string // custom XML data
+	vba      []string // VBA projects
+	xml      []string // custom XML data
+	afterEnd bool     // data follows the end of the archive
 }
 
 // maxCustomXML bounds the custom XML parts read from one package.
@@ -76,6 +75,8 @@ func Find(pkg *opc.Package, rels []opc.Rel) Source {
 			seen[name] = true
 		}
 	}
+	_, n := pkg.Trailing()
+	src.afterEnd = n > 0
 	return src
 }
 
@@ -96,7 +97,7 @@ func hasText(pkg *opc.Package, name string) bool {
 }
 
 // Empty reports whether there is nothing to read.
-func (s Source) Empty() bool { return len(s.vba) == 0 && len(s.xml) == 0 }
+func (s Source) Empty() bool { return len(s.vba) == 0 && len(s.xml) == 0 && !s.afterEnd }
 
 // Macros reads the modules of the VBA projects into the part.
 func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
@@ -149,15 +150,13 @@ func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
 }
 
 // XML reads the custom XML data into the part, a block for each part
-// that holds text. A value out of proportion is flagged, by a span over
-// it, unless the part is one shown says the document shows: data a
-// content control is bound to (by the part's item ID) is on the page.
-func (s Source) XML(ctx context.Context, pkg *opc.Package, p *Part, shown func(itemID string) bool) {
+// that holds text.
+func (s Source) XML(ctx context.Context, pkg *opc.Package, p *Part) {
 	for _, name := range s.xml {
 		if p.Full() || ctx.Err() != nil {
 			return
 		}
-		text, long, cut, err := customXML(pkg, name, p.room.Left())
+		text, cut, err := customXML(pkg, name, p.room.Left())
 		p.note(name, err)
 		if text == "" {
 			continue
@@ -165,13 +164,6 @@ func (s Source) XML(ctx context.Context, pkg *opc.Package, p *Part, shown func(i
 		label := clean.Label(path.Base(pkg.Written(name)))
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text, Attrs: map[string]string{
 			gofastcore.AttrStored: gofastcore.StoredCustomXML, gofastcore.AttrName: label}}
-		if len(long) > 0 && (shown == nil || !shown(ItemID(pkg, name))) {
-			for _, l := range long {
-				b.Spans = append(b.Spans, gofastcore.Span{Start: l.start, End: l.end, Hidden: gofastcore.HiddenInvisible})
-				b.Hidden = gofastcore.HiddenInvisible // a block has the reasons of its spans
-				p.Long("a value of custom XML", label, l.words)
-			}
-		}
 		if !p.Add(b) {
 			return
 		}
@@ -179,97 +171,29 @@ func (s Source) XML(ctx context.Context, pkg *opc.Package, p *Part, shown func(i
 	}
 }
 
-// ItemID returns the ID of a custom XML part's data store item, which
-// content controls bind to, from the part's properties; empty if it has
-// none.
-func ItemID(pkg *opc.Package, name string) string {
-	rels, _ := pkg.Rels(name)
-	for _, rel := range rels {
-		if rel.External || !ns.IsRel(rel.Type, "customXmlProps") || !pkg.Has(rel.Target) {
-			continue
-		}
-		var s xmlscan.Scanner
-		c, err := pkg.Scan(rel.Target, &s, scanOptions)
-		if err != nil {
-			continue
-		}
-		for s.Next() != xmlscan.EOF {
-			if s.Kind() == xmlscan.Start && string(s.Local()) == "datastoreItem" {
-				v, _ := s.AttrAny("itemID")
-				c.Close()
-				return strings.ToUpper(string(v))
-			}
-		}
-		c.Close()
-	}
-	return ""
-}
-
-// MaxWords is how many words unshown text that routinely holds a few may
-// hold before it is out of proportion for its kind: core's guide. Over
-// the corpus and the soak set, half of document variables, defined names
-// and values of custom XML are of one word, and 99 in 100 of under 35.
-const MaxWords = 30
-
-// MaxFurnitureWords is how many words a header or footer that no page
-// shows may hold before it is out of proportion. Headers and footers hold
-// more than the short values MaxWords is for: a letterhead's addresses, a
-// disclaimer. Over the corpus and the soak set, half of Word's that have
-// text have 3 words, 99 in 100 under 70, and the longest 185.
-const MaxFurnitureWords = 200
-
-// Words returns the number of words in text.
-func Words(text string) int { return len(strings.Fields(text)) }
-
-// QuotedWords returns the number of words in the quoted strings of a
-// formula or a field's code: its text, as against its names and
-// operators.
-func QuotedWords(code string) int {
-	n := 0
-	for rest := code; ; {
-		_, after, found := strings.Cut(rest, `"`)
-		if !found {
-			return n
-		}
-		quoted, next, closed := strings.Cut(after, `"`)
-		n += Words(quoted)
-		if !closed {
-			return n
-		}
-		rest = next
-	}
-}
-
-// Longs gathers the pieces of unshown text out of proportion for their
-// kind that a part holds, for the warning that says so.
-type Longs struct {
-	n     int
-	shown []string
-}
-
-// Add records one: what kind of text it is, its name, and its length.
-func (l *Longs) Add(kind, name string, words int) {
-	l.n++
-	if len(l.shown) < 5 {
-		item := fmt.Sprintf("%s of %d words", kind, words)
-		if name != "" {
-			item += " (" + clean.Label(name) + ")"
-		}
-		l.shown = append(l.shown, item)
-	}
-}
-
-// Warn puts the warning on the part, if there is anything to say.
-func (l *Longs) Warn(part *gofastcore.Part) {
-	if l.n == 0 {
+// AfterEnd reads into the part the data that follows the end of the
+// archive: its text, if it is text (UTF-8), as a block with Attrs["stored"]
+// "after_end", and a warning that says how many bytes there are.
+func (s Source) AfterEnd(pkg *opc.Package, p *Part) {
+	data, total := pkg.Trailing()
+	if !s.afterEnd || total == 0 {
 		return
 	}
-	msg := strings.Join(l.shown, ", ")
-	if l.n > len(l.shown) {
-		msg += fmt.Sprintf(", and %d more", l.n-len(l.shown))
+	msg := fmt.Sprintf("%d bytes follow the end of the zip archive", total)
+	if total == 1 {
+		msg = "1 byte follows the end of the zip archive"
 	}
-	part.Warn(gofastcore.SeverityWarning, warn.UnshownTextLong, fmt.Sprintf(
-		"%d pieces of text that the file keeps and shows nowhere are far longer than their kind usually is, and are flagged: %s", l.n, msg))
+	switch text, _ := clean.String(data, clean.Prose); {
+	case !utf8.Valid(data):
+		msg += "; they are not text"
+	case text != "":
+		if int64(len(data)) < total {
+			msg += fmt.Sprintf("; the first %d are read", len(data))
+		}
+		p.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
+			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredAfterEnd}})
+	}
+	p.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputTrailingData, msg)
 }
 
 // Part is a stored part being made.
@@ -279,7 +203,6 @@ type Part struct {
 	Damaged []string
 
 	room      *gofastcore.TextBudget
-	longs     Longs
 	cut       bool // the limit on text was reached
 	budget    bool // the decompression budget ran out
 	undecoded int  // bytes of macro code not decoded
@@ -292,10 +215,6 @@ func NewPart(ctx context.Context, number int) *Part {
 	return &Part{Part: gofastcore.Part{Kind: gofastcore.PartStored, Number: number},
 		room: gofastcore.TextBudgetFrom(ctx)}
 }
-
-// Long records that the part holds a piece of text out of proportion for
-// its kind, which the caller has flagged.
-func (p *Part) Long(kind, name string, words int) { p.longs.Add(kind, name, words) }
 
 // Room is the text budget the part takes from.
 func (p *Part) Room() *gofastcore.TextBudget { return p.room }
@@ -328,8 +247,8 @@ func (p *Part) note(name string, err error) {
 	}
 }
 
-// Finish adds the part's warnings and flags its blocks. It reports
-// whether a limit cut the reading short.
+// Finish adds the part's warnings and completes it (gofastcore's
+// Part.Finish). It reports whether a limit cut the reading short.
 func (p *Part) Finish() (limited bool) {
 	if p.budget {
 		p.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; what the file stores is cut off there")
@@ -348,8 +267,7 @@ func (p *Part) Finish() (limited bool) {
 	if len(p.Blocks) == 0 {
 		p.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")
 	}
-	p.longs.Warn(&p.Part)
-	p.MarkHidden()
+	p.Part.Finish()
 	return p.cut || p.budget
 }
 
@@ -377,11 +295,11 @@ var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 // values are not read: a part that keeps its data in them (the schema of
 // a document library, say) gives little or nothing. At most about room
 // bytes are given; cut says there was more.
-func customXML(pkg *opc.Package, name string, room int64) (text string, long []longValue, cut bool, err error) {
+func customXML(pkg *opc.Package, name string, room int64) (text string, cut bool, err error) {
 	var s xmlscan.Scanner
 	c, err := pkg.Scan(name, &s, scanOptions)
 	if err != nil {
-		return "", nil, false, err
+		return "", false, err
 	}
 	defer c.Close()
 	var sb strings.Builder
@@ -400,25 +318,15 @@ func customXML(pkg *opc.Package, name string, room int64) (text string, long []l
 			}
 			local := clean.Name(string(s.Local()))
 			if int64(sb.Len()+len(local)+len(value)+3) > room {
-				return sb.String(), long, true, s.Err()
+				return sb.String(), true, s.Err()
 			}
 			if sb.Len() > 0 {
 				sb.WriteByte('\n')
 			}
 			sb.WriteString(local)
 			sb.WriteString(": ")
-			start := sb.Len()
 			sb.WriteString(strings.ReplaceAll(value, "\n", " "))
-			if n := Words(value); n > MaxWords {
-				long = append(long, longValue{start: start, end: sb.Len(), words: n})
-			}
 		}
 	}
-	return sb.String(), long, false, s.Err()
-}
-
-// longValue is a value of custom XML out of proportion: where it is in
-// the block's text, and its length.
-type longValue struct {
-	start, end, words int
+	return sb.String(), false, s.Err()
 }

@@ -27,20 +27,6 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
-// HiddenChecked is the set of hidden-text reasons this reader checks
-// completely: hidden slides and shapes and text with neither fill nor
-// outline (invisible), text under two points after any shrinking to fit
-// (tiny), text in the colour of what it is seen against (low_contrast),
-// shapes that lie wholly outside the slide (off_page), text whose shape
-// lies wholly under a later opaque rectangle or picture (occluded), text
-// filled with zero opacity (transparent), and invisible characters. A
-// slide with more overlapping shapes than the checks will work through
-// says so with ooxml.hidden_unchecked. Text cut off by a box too small
-// for it (clipped) is flagged where the file states it, and is not in
-// this set.
-const HiddenChecked = gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast |
-	gofastcore.HiddenOffPage | gofastcore.HiddenOccluded | gofastcore.HiddenTransparent | gofastcore.HiddenChars
-
 // Config holds the limits that are this format's own.
 type Config struct {
 	// MaxCells bounds the table cells kept from a presentation, all
@@ -80,21 +66,15 @@ type shared struct {
 	sheets map[string]*layout
 	themes map[string]*themeEntry
 	images map[string]*gofastcore.Image
-	opaque map[string]bool        // pictures: whether one hides what is behind it
-	grids  map[string]*media.Grid // pictures reduced to colours, for DeepHidden
 
 	// What the notes master [0] and the handout master [1] put on every
 	// page they make, read once, and the bytes of its text.
 	paperOnce  [2]sync.Once
 	paper      [2][]gofastcore.Block
 	paperFrom  [2][]int8 // the placeholder of each block: header 0, footer 1, none -1
-	paperLong  [2][2]int // the words of a header (0) or footer (1) not shown and out of proportion
 	paperBytes [2]int
 	damaged    []string // parts that could not be read in full
 
-	tableOnce  sync.Once
-	tables     map[string]*tableStyle
-	presets    map[string]*tableStyle // PowerPoint's built-in styles that tables have named, under mu
 	authorOnce sync.Once
 	authors    map[string]string
 }
@@ -102,7 +82,7 @@ type shared struct {
 func newShared(cells int64) *shared {
 	sh := &shared{
 		sheets: map[string]*layout{}, themes: map[string]*themeEntry{},
-		images: map[string]*gofastcore.Image{}, opaque: map[string]bool{},
+		images: map[string]*gofastcore.Image{},
 	}
 	sh.cells.Store(cells)
 	sh.repeated.Store(maxRepeated)
@@ -305,9 +285,6 @@ func (d *Deck) Stored() int {
 // Noun names the parts of a presentation.
 func (d *Deck) Noun() string { return "slides" }
 
-// HiddenChecked returns the reasons this reader checks completely.
-func (d *Deck) HiddenChecked() gofastcore.Hidden { return HiddenChecked }
-
 // Begin starts a pass over the presentation: the limits count from here.
 func (d *Deck) Begin() {
 	d.p.pkg.Restore(d.after)
@@ -323,7 +300,8 @@ func (d *Deck) Read(ctx context.Context, index int) *unit.Result {
 	if index == d.Stored() {
 		p := stored.NewPart(ctx, index+1)
 		d.extra.Macros(ctx, d.p.pkg, p)
-		d.extra.XML(ctx, d.p.pkg, p, nil)
+		d.extra.XML(ctx, d.p.pkg, p)
+		d.extra.AfterEnd(d.p.pkg, p)
 		res := &unit.Result{}
 		res.Limited = p.Finish()
 		res.Part, res.Damaged = p.Part, p.Damaged
@@ -334,7 +312,7 @@ func (d *Deck) Read(ctx context.Context, index int) *unit.Result {
 		// document has at least one part, and this one says it is empty.
 		res := &unit.Result{Part: gofastcore.Part{Kind: gofastcore.PartSlide, Number: 1, Width: d.p.width, Height: d.p.height}}
 		res.Part.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "the presentation has no slides")
-		res.Part.MarkHidden()
+		res.Part.Finish()
 		return res
 	}
 	pg := d.pages.Get().(*page)

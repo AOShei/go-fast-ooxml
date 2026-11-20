@@ -74,13 +74,13 @@ func TestPowerPointSmartArt(t *testing.T) {
 	doc := powerpoint(t, pkg, nil)
 	var got []string
 	for _, b := range doc.Parts[0].Blocks {
-		got = append(got, fmt.Sprintf("%s %d %q %s %v", b.Kind, b.Level, b.Text, b.Hidden, b.Loc.BBox))
+		got = append(got, fmt.Sprintf("%s %d %q %s %v", b.Kind, b.Level, b.Text, b.Display, b.Loc.BBox))
 	}
 	want := []string{
 		`list_item 1 "Plan"  {100 50 200 100}`,
 		`list_item 2 "Agree scope"  {100 110 200 160}`,
 		`list_item 1 "Ship"  {220 50 320 100}`,
-		`list_item 1 "Kept out" invisible {100 50 400 250}`,
+		`list_item 1 "Kept out"  {100 50 400 250}`,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("blocks:\n %s\nwant:\n %s", strings.Join(got, "\n "), strings.Join(want, "\n "))
@@ -183,7 +183,7 @@ func TestSmartArtAsLibreOffice(t *testing.T) {
 			dgm[norm(k)] = true
 		}
 		for k := range pageCount(doc) {
-			if doc.Parts[k].Hidden != 0 {
+			if doc.Parts[k].Display != 0 {
 				continue // a hidden slide: everything on it is flagged
 			}
 			loText := map[string]bool{}
@@ -204,7 +204,7 @@ func TestSmartArtAsLibreOffice(t *testing.T) {
 					ours[norm(x)] = true
 					ours[strings.Join(strings.Fields(x), "")] = true
 				}
-				if b.Kind == gofastcore.KindListItem && b.HiddenWhole()&gofastcore.HiddenInvisible == 0 {
+				if b.Kind == gofastcore.KindListItem && b.DisplayWhole()&gofastcore.DisplayHidden == 0 {
 					seenHere[norm(b.Text)] = true
 				}
 			}
@@ -214,7 +214,7 @@ func TestSmartArtAsLibreOffice(t *testing.T) {
 					continue
 				}
 				ours[text] = true
-				if b.HiddenWhole()&gofastcore.HiddenInvisible != 0 {
+				if b.DisplayWhole()&gofastcore.DisplayHidden != 0 {
 					if seenHere[text] {
 						continue // the same text is drawn from another node
 					}

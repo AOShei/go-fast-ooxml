@@ -110,17 +110,18 @@ func TestColourMap(t *testing.T) {
 	text, _ := Scheme("tx1")
 	accent, _ := Scheme("accent1")
 	direct, _ := Scheme("dk1")
-	if c, _, _ := pal.Resolve(text, nil); c != theme.Black {
+	black, white := theme.Color{}, theme.Color{R: 255, G: 255, B: 255}
+	if c, _, _ := pal.Resolve(text, nil); c != black {
 		t.Errorf("tx1 under the usual map: %v", c)
 	}
 	pal.Map = dark
-	if c, _, _ := pal.Resolve(text, nil); c != theme.White {
+	if c, _, _ := pal.Resolve(text, nil); c != white {
 		t.Errorf("tx1 under a dark map: %v", c)
 	}
 	if c, _, _ := pal.Resolve(accent, nil); c != (theme.Color{R: 0xED, G: 0x7D, B: 0x31}) {
 		t.Errorf("accent1 mapped to accent2: %v", c)
 	}
-	if c, _, _ := pal.Resolve(direct, nil); c != theme.Black {
+	if c, _, _ := pal.Resolve(direct, nil); c != black {
 		t.Errorf("dk1 does not go through the map: %v", c)
 	}
 	// A map cannot point a name at another mapped name; such an entry is
@@ -135,7 +136,6 @@ func TestColourMap(t *testing.T) {
 }
 
 func TestFills(t *testing.T) {
-	pal := palette()
 	read := func(xml string) (Fill, bool) {
 		return ReadFill(scan(strings.Replace(xml, ">", ` xmlns:a="`+nsDraw+`">`, 1)))
 	}
@@ -154,21 +154,6 @@ func TestFills(t *testing.T) {
 	}
 	if _, ok := read(`<a:ln><a:solidFill/></a:ln>`); ok {
 		t.Error("an outline was read as a fill")
-	}
-	// A reference to a fill style of the theme is a plain fill only if
-	// the style is: the second here is a gradient and the third adjusts
-	// the colour.
-	accent, _ := Scheme("accent1")
-	for index, want := range map[int]Paint{0: PaintNone, 1: PaintSolid, 2: PaintOther, 3: PaintOther, 4: PaintOther, 1000: PaintNone, 1001: PaintSolid, 1002: PaintOther, -5: PaintOther} {
-		if got := pal.StyleFill(index, accent).Paint; got != want {
-			t.Errorf("fill style %d: %v, want %v", index, got, want)
-		}
-	}
-	if (&Palette{Map: DefaultMap}).StyleFill(1, accent).Paint != PaintOther {
-		t.Error("a fill style of a theme that is not there was taken to be plain")
-	}
-	if _, ok := pal.Opaque(Fill{Paint: PaintSolid, Color: ReadColor(scan(`<a:x xmlns:a="` + nsDraw + `"><a:srgbClr val="000000"><a:alpha val="99000"/></a:srgbClr></a:x>`))}, nil); ok {
-		t.Error("a fill that is 99% opaque was taken to hide what is behind it")
 	}
 }
 
@@ -257,18 +242,17 @@ func TestTextInheritance(t *testing.T) {
 	if style("") != nil || style(`<a:defPPr/><a:extLst/>`) != nil {
 		t.Error("a list style that says nothing is not nil")
 	}
-	far := style(`<a:lvl1pPr><a:buChar char="•"/><a:defRPr sz="100" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:defRPr></a:lvl1pPr>` +
+	far := style(`<a:lvl1pPr><a:buChar char="•"/><a:defRPr sz="100" b="1"><a:noFill/></a:defRPr></a:lvl1pPr>` +
 		`<a:lvl2pPr><a:buAutoNum type="alphaLcParenR"/><a:defRPr sz="2000"/></a:lvl2pPr>`)
 	near := style(`<a:lvl1pPr><a:defRPr sz="2400" b="0"/></a:lvl1pPr>`)
 	body := `<p:txBody xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="` + nsDraw + `"><a:bodyPr/>` +
 		`<a:lstStyle><a:lvl3pPr><a:buNone/><a:defRPr sz="150"/></a:lvl3pPr></a:lstStyle>` +
-		`<a:p><a:r><a:t>size from the nearer style, colour and bullet from the farther</a:t></a:r></a:p>` +
-		`<a:p><a:pPr lvl="1"/><a:r><a:rPr sz="100"/><a:t>tiny by its own size</a:t></a:r><a:r><a:t>, numbered by the farther style</a:t></a:r></a:p>` +
-		`<a:p><a:pPr lvl="2"/><a:r><a:t>tiny by the body's own style, which also takes the bullet away</a:t></a:r></a:p>` +
-		`<a:p><a:pPr lvl="8"><a:buChar char="*"/></a:pPr><a:r><a:rPr><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>a level nothing speaks of</a:t></a:r></a:p></p:txBody>`
+		`<a:p><a:r><a:t>size from the nearer style, no ink and bullet from the farther</a:t></a:r></a:p>` +
+		`<a:p><a:pPr lvl="1"/><a:r><a:rPr sz="100"/><a:t>a size of its own</a:t></a:r><a:r><a:t>, numbered by the farther style</a:t></a:r></a:p>` +
+		`<a:p><a:pPr lvl="2"/><a:r><a:t>sized by the body's own style, which also takes the bullet away</a:t></a:r></a:p>` +
+		`<a:p><a:pPr lvl="8"><a:buChar char="*"/></a:pPr><a:r><a:rPr><a:solidFill><a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr></a:solidFill></a:rPr><a:t>a level nothing speaks of, with a fill of no opacity</a:t></a:r></a:p></p:txBody>`
 	var txt Text
 	txt.Palette, txt.Chain, txt.Styles = pal, []*ListStyle{nil, near, far}, true
-	txt.Behind, txt.Lit = theme.White, true
 	txt.Read(scan(body))
 	type para struct {
 		text, marker, hidden string
@@ -278,13 +262,13 @@ func TestTextInheritance(t *testing.T) {
 	}
 	var got []para
 	for _, p := range txt.Paras {
-		got = append(got, para{string(txt.Buf[p.Start:p.End]), p.Marker, p.Hidden.String(), p.Level, len(p.Spans), p.Size})
+		got = append(got, para{string(txt.Buf[p.Start:p.End]), p.Marker, p.Display.String(), p.Level, len(p.Spans), p.Size})
 	}
 	want := []para{
-		{"size from the nearer style, colour and bullet from the farther", "•", "low_contrast", 0, 0, 24},
-		{"tiny by its own size, numbered by the farther style", "a)", "tiny", 1, 1, 1},
-		{"tiny by the body's own style, which also takes the bullet away", "", "tiny", 2, 0, 1.5},
-		{"a level nothing speaks of", "*", "", 8, 0, 18},
+		{"size from the nearer style, no ink and bullet from the farther", "•", "no_ink", 0, 0, 24},
+		{"a size of its own, numbered by the farther style", "a)", "", 1, 0, 1},
+		{"sized by the body's own style, which also takes the bullet away", "", "", 2, 0, 1.5},
+		{"a level nothing speaks of, with a fill of no opacity", "*", "no_ink", 8, 0, 18},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("%d paragraphs: %+v", len(got), got)
@@ -308,7 +292,7 @@ func TestTextAllocations(t *testing.T) {
 	body.WriteString(`</p:txBody>`)
 	data := []byte(body.String())
 	var txt Text
-	txt.Palette, txt.Behind, txt.Lit = pal, theme.White, true
+	txt.Palette = pal
 	var s xmlscan.Scanner
 	read := func() {
 		s.ResetBytes(data, &xmlscan.Options{Spaces: ns.Spaces})

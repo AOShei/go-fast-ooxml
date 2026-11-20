@@ -2,7 +2,6 @@ package wml
 
 import (
 	"context"
-	"strings"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
@@ -16,10 +15,8 @@ import (
 // What a Word document holds that is shown on no page: its document
 // variables (names and values that fields and macros read, kept in the
 // settings), the code of its VBA project, and custom XML data. They are
-// given in the document's stored part. They are not flagged for being
-// stored, which is routine; a variable or a value out of proportion for
-// its kind is (stored.MaxWords). Custom XML that a content control is
-// bound to is shown there, and is never out of proportion.
+// given in the document's stored part, with no display reason: the file
+// declares nothing about their display.
 
 // maxVariables bounds the document variables read.
 const maxVariables = 1 << 14
@@ -82,15 +79,8 @@ func (b *Body) readStored(ctx context.Context) *unit.Result {
 				case label == "":
 					text = value
 				}
-				blk := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
-					Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredDocumentVariable, gofastcore.AttrName: label}}
-				if n := stored.Words(value); n > stored.MaxWords {
-					// A variable is a name and a few words; one that
-					// holds a paragraph is out of proportion.
-					blk.Hidden = gofastcore.HiddenInvisible
-					p.Long("a document variable", label, n)
-				}
-				p.Add(blk)
+				p.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
+					Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredDocumentVariable, gofastcore.AttrName: label}})
 			}
 			c.Close()
 			if s.Err() != nil {
@@ -99,35 +89,10 @@ func (b *Body) readStored(ctx context.Context) *unit.Result {
 		}
 	}
 	b.extra.Macros(ctx, b.pkg, p)
-	b.extra.XML(ctx, b.pkg, p, b.bound)
+	b.extra.XML(ctx, b.pkg, p)
+	b.extra.AfterEnd(b.pkg, p)
 	res := &unit.Result{}
 	res.Limited = p.Finish()
 	res.Part, res.Damaged = p.Part, p.Damaged
 	return res
-}
-
-// bound reports whether a content control of the body shows the data of
-// the custom XML store item with the given ID. The body is looked through
-// for its bindings the first time it is asked.
-func (b *Body) bound(itemID string) bool {
-	if itemID == "" {
-		return false
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.bindings == nil {
-		b.bindings = map[string]bool{}
-		var s xmlscan.Scanner
-		if c, err := b.pkg.Scan(b.main, &s, scanOptions); err == nil {
-			for s.Next() != xmlscan.EOF {
-				if s.Kind() == xmlscan.Start && s.Is(ns.Word, "dataBinding") && len(b.bindings) < 1<<12 {
-					if v, ok := s.Attr(ns.Word, "storeItemID"); ok {
-						b.bindings[strings.ToUpper(string(v))] = true
-					}
-				}
-			}
-			c.Close()
-		}
-	}
-	return b.bindings[itemID]
 }

@@ -3,7 +3,6 @@ package pml
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
@@ -139,7 +138,6 @@ type placeholder struct {
 	ref   phRef
 	box   dml.Rect
 	boxed bool
-	fill  dml.Fill
 	list  *dml.ListStyle
 	up    *placeholder // on a layout: the master's placeholder it takes after
 }
@@ -170,15 +168,6 @@ func match(list []placeholder, ref phRef, byNumber bool) *placeholder {
 	return kin
 }
 
-// painted is an area a shape paints, which text drawn later may be seen
-// against.
-type painted struct {
-	box   dml.Rect
-	color theme.Color
-	lit   bool     // one known colour over all of the box
-	fill  dml.Fill // otherwise, for DeepHidden: a gradient or a picture, upright
-}
-
 // layout is a slide layout or a slide master as the slides that use it
 // need it.
 type layout struct {
@@ -187,16 +176,13 @@ type layout struct {
 	theme  *theme.Scheme // of the master
 	cmap   dml.ColorMap  // in force for it
 	show   bool          // a layout: the master's shapes show on its slides
-	bg     dml.Fill      // its own background, if it has one
 	phs    []placeholder
-	paint  []painted          // what its shapes paint, in drawing order
 	static []gofastcore.Block // its own text, which shows on every slide that uses it
 	// staticBytes is the size of that text: what a slide that repeats it
 	// adds to the text of the document.
 	staticBytes int
 	repeats     []bool            // of a layout: which of static the master has too
 	styles      [3]*dml.ListStyle // a master's text styles
-	loose       bool              // it paints something whose place is not known
 }
 
 // sheet returns the layout or master in the named part, reading it the
@@ -260,13 +246,9 @@ type props struct {
 	hide    bool
 	media   bool // it plays sound or video
 	xfrm    dml.Xfrm
-	rect    bool     // its outline is a plain rectangle
-	fill    dml.Fill // its own
-	styled  dml.Fill // from its style
 	font    dml.Color
 	blip    string // a picture: the relationship of its image
 	linked  bool   // the image is outside the file
-	faded   bool   // the picture is made partly transparent
 	hasBlip bool
 
 	// Worked out by place.
@@ -275,25 +257,16 @@ type props struct {
 	box     dml.Rect
 	boxed   bool
 	upright bool
-	reasons gofastcore.Hidden
-	paint   dml.Fill // what fills it, its own or inherited
-	behind  theme.Color
-	lit     bool
-	under   []theme.Color // with DeepHidden, where it is not one colour: the colours behind its text
+	reasons gofastcore.Display // what the file declares about its display
 }
 
-// shape is a shape that has been read, for ordering the page and for
-// finding what covers what.
+// shape is a shape that has been read, for ordering the page.
 type shape struct {
 	box        dml.Rect
 	boxed      bool
-	first, end int      // its blocks
-	unit       int      // the top-level shape or group it is part of
-	title      bool     // the slide's title
-	text       bool     // it has text that could be covered
-	cover      bool     // it hides what is under it
-	picture    string   // a picture that hides what is under it if it has no transparency
-	ids        [4]int64 // its identifier and those of the groups it is in
+	first, end int  // its blocks
+	unit       int  // the top-level shape or group it is part of
+	title      bool // the slide's title
 }
 
 // page reads one part that holds a tree of shapes: a slide, a layout, a
@@ -320,26 +293,12 @@ type page struct {
 	// What the part says of itself.
 	hidden     bool // show="0"
 	showMaster bool
-	bg         dml.Fill
 	found      *dml.ColorMap // a colour map the part states
 
-	// The background, resolved: one colour, or with DeepHidden a gradient
-	// or a picture.
-	backdrop theme.Color
-	lit      bool
-	bgFill   dml.Fill
-
-	shapes  []shape
-	blocks  []gofastcore.Block
-	paint   []painted
-	phs     []placeholder
-	loose   bool // something is painted whose place is not known
-	unit    int
-	effort  int // comparisons the hidden-text checks may still make
-	skipped int // shapes left unchecked when it ran out
-
-	animated    []int64 // the shapes and groups that animations act on
-	allAnimated bool    // more of them than are kept
+	shapes []shape
+	blocks []gofastcore.Block
+	phs    []placeholder
+	unit   int
 
 	title    string
 	sawImage bool
@@ -363,11 +322,10 @@ type page struct {
 
 // reset makes the page ready to read a part, or to read it again.
 func (pg *page) reset() {
-	pg.hidden, pg.showMaster, pg.bg, pg.found = false, true, dml.Fill{}, nil
-	pg.shapes, pg.blocks, pg.paint, pg.phs = pg.shapes[:0], pg.blocks[:0], pg.paint[:0], nil
-	pg.loose, pg.unit, pg.skipped = false, 0, 0
+	pg.hidden, pg.showMaster, pg.found = false, true, nil
+	pg.shapes, pg.blocks, pg.phs = pg.shapes[:0], pg.blocks[:0], nil
+	pg.unit = 0
 	pg.hf, pg.hfBlock, pg.ownHF = [2]bool{true, true}, [2][]int{}, [2]bool{}
-	pg.animated, pg.allAnimated = pg.animated[:0], false
 	pg.title, pg.sawImage, pg.unread, pg.charts = "", false, nil, pg.charts[:0]
 	pg.external, pg.programs, pg.cut, pg.failure = 0, 0, "", nil
 	pg.text.Removed, pg.text.Unmapped, pg.text.Programs = 0, 0, 0
@@ -449,8 +407,7 @@ func (pg *page) part() {
 				m := dml.ReadColorMap(s)
 				pg.found = &m
 				s.Skip()
-			case s.Is(ns.Pres, "timing") && pg.role == roleSlide:
-				pg.timing()
+			case s.Is(ns.Pres, "timing"):
 				return // nothing that is read comes after it
 			case s.Is(ns.Pres, "extLst") && pg.role != roleMaster:
 				return
@@ -468,10 +425,7 @@ func (pg *page) part() {
 			}
 		case 3:
 			switch {
-			case s.Is(ns.Pres, "bg"):
-				pg.background()
 			case s.Is(ns.Pres, "spTree"):
-				pg.settle()
 				g := group{m: dml.Identity, top: true}
 				pg.items(&g)
 			case s.Is(ns.Draw, "overrideClrMapping"):
@@ -495,82 +449,6 @@ func (pg *page) part() {
 
 // maxAnimated bounds the animated shapes that are kept.
 const maxAnimated = 1 << 14
-
-// timing reads p:timing, the slide's animations, for one thing: which
-// shapes they act on. A shape that appears, moves or leaves during the
-// show does not hide what is under it for the whole of the show.
-func (pg *page) timing() {
-	s := &pg.s
-	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Pres, "spTgt") {
-			continue
-		}
-		if id, ok := intAttr(s, "spid"); ok {
-			if len(pg.animated) < maxAnimated {
-				pg.animated = append(pg.animated, id)
-			} else {
-				pg.allAnimated = true
-			}
-		}
-	}
-	slices.Sort(pg.animated)
-}
-
-// background reads p:bg, the page's own background.
-func (pg *page) background() {
-	s := &pg.s
-	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start {
-			continue
-		}
-		switch {
-		case s.Is(ns.Pres, "bgPr"):
-			inner := s.Depth()
-			for s.Next() != xmlscan.EOF && s.Depth() >= inner {
-				if s.Kind() != xmlscan.Start {
-					continue
-				}
-				if f, ok := dml.ReadFill(s); ok {
-					if pg.bg.Paint == dml.PaintUnset {
-						pg.bg = pg.resolveFill(f)
-					}
-					continue
-				}
-				s.Skip()
-			}
-		case s.Is(ns.Pres, "bgRef"):
-			// One of the theme's background styles, in a colour.
-			idx, _ := intAttr(s, "idx")
-			pg.bg = pg.pal.StyleFill(int(idx), dml.ReadColor(s))
-		default:
-			s.Skip()
-		}
-	}
-}
-
-// settle works out what the page's background is: its own, or its
-// layout's, or its master's, and white if none says.
-func (pg *page) settle() {
-	fill := pg.bg
-	for l := pg.parent; fill.Paint == dml.PaintUnset && l != nil; l = l.master {
-		fill = l.bg
-	}
-	pg.bgFill = dml.Fill{}
-	switch fill.Paint {
-	case dml.PaintUnset, dml.PaintNone:
-		pg.backdrop, pg.lit = theme.White, true
-	default:
-		pg.backdrop, pg.lit = pg.pal.Opaque(fill, nil)
-		if !pg.lit && fill.Paint == dml.PaintOther {
-			pg.bgFill = fill
-		}
-	}
-	// Each shape may be compared with a few others; a page that asks for
-	// more than this is not checked to the end, and says so.
-	pg.effort = 1 << 18
-}
 
 // items reads the shapes in the element whose Start token is current: a
 // shape tree, a group, or one of two alternative forms of a shape.
@@ -707,19 +585,9 @@ func (pg *page) shapeProps(sh *props) {
 		if s.Kind() != xmlscan.Start {
 			continue
 		}
-		if f, ok := dml.ReadFill(s); ok {
-			if sh.fill.Paint == dml.PaintUnset {
-				sh.fill = pg.resolveFill(f)
-			}
-			continue
-		}
-		switch {
-		case s.Is(ns.Draw, "xfrm"):
+		if s.Is(ns.Draw, "xfrm") {
 			sh.xfrm = dml.ReadXfrm(s)
 			continue
-		case s.Is(ns.Draw, "prstGeom"):
-			v, _ := s.Attr(xmlscan.NoSpace, "prst")
-			sh.rect = string(v) == "rect"
 		}
 		s.Skip()
 	}
@@ -734,15 +602,11 @@ func (pg *page) shapeStyle(sh *props) {
 		if s.Kind() != xmlscan.Start {
 			continue
 		}
-		switch {
-		case s.Is(ns.Draw, "fillRef"):
-			idx, _ := intAttr(s, "idx")
-			sh.styled = pg.pal.StyleFill(int(idx), dml.ReadColor(s))
-		case s.Is(ns.Draw, "fontRef"):
+		if s.Is(ns.Draw, "fontRef") {
 			sh.font = dml.ReadColor(s)
-		default:
-			s.Skip()
+			continue
 		}
+		s.Skip()
 	}
 }
 
@@ -772,123 +636,13 @@ func (pg *page) place(sh *props, g *group) {
 		}
 	}
 	if sh.hide || g.hide {
-		sh.reasons |= gofastcore.HiddenInvisible
+		sh.reasons |= gofastcore.DisplayHidden
 	}
-	if w, h := pg.p.width, pg.p.height; sh.boxed && w > 0 && h > 0 && !pg.role.paper() &&
-		(sh.box.X1 <= 0 || sh.box.Y1 <= 0 || sh.box.X0 >= w || sh.box.Y0 >= h) {
-		sh.reasons |= gofastcore.HiddenOffPage
-	}
-
-	// Its fill: its own, or the one its own style gives it, or the one
-	// the placeholder it takes after has.
-	sh.paint = sh.fill
-	if sh.paint.Paint == dml.PaintUnset && sh.styled.Paint != dml.PaintNone {
-		sh.paint = sh.styled
-	}
-	for in := sh.in; sh.paint.Paint == dml.PaintUnset && in != nil; in = in.up {
-		sh.paint = in.fill
-	}
-	sh.under = nil
-	switch sh.paint.Paint {
-	case dml.PaintSolid:
-		sh.behind, sh.lit = pg.pal.Opaque(sh.paint, nil)
-	case dml.PaintOther:
-		sh.lit = false
-		if sh.boxed && sh.upright {
-			sh.under = pg.samples(sh.paint, sh.box, sh.box)
-		}
-	default:
-		sh.behind, sh.lit, sh.under = pg.behind(sh.box, sh.boxed)
-	}
-}
-
-// behind works out what something in the given box, with no fill of its
-// own, is seen against: the last thing painted under it, if that is one
-// colour over the whole box, or the page's background if nothing is.
-func (pg *page) behind(box dml.Rect, boxed bool) (theme.Color, bool, []theme.Color) {
-	if pg.role.paper() {
-		return theme.White, true, nil // a notes page is paper
-	}
-	// What the layout and the master draw is under the slide's shapes,
-	// unless the slide hides it; a layout may hide its master's.
-	lists := [3][]painted{pg.paint}
-	loose := pg.loose
-	if l := pg.parent; l != nil && pg.showMaster {
-		if pg.role == roleSlide {
-			lists[1], loose = l.paint, loose || l.loose
-			if !l.show {
-				l = nil
-			} else {
-				l = l.master
-			}
-		}
-		if l != nil {
-			lists[2], loose = l.paint, loose || l.loose
-		}
-	}
-	if !boxed || loose {
-		// Where it is, or where something painted is, is not known: it is
-		// seen against the background only if nothing is painted at all.
-		if len(lists[0])+len(lists[1])+len(lists[2]) == 0 && !loose {
-			return pg.backdrop, pg.lit, nil
-		}
-		return theme.Color{}, false, nil
-	}
-	for _, list := range lists {
-		for i := len(list) - 1; i >= 0; i-- {
-			if pg.effort--; pg.effort < 0 {
-				pg.skipped++
-				return theme.Color{}, false, nil
-			}
-			pt := &list[i]
-			if !pt.box.Overlaps(box) {
-				continue
-			}
-			if pt.lit && pt.box.Contains(box) {
-				return pt.color, true, nil
-			}
-			if pt.fill.Paint == dml.PaintOther && pt.box.Contains(box) {
-				return theme.Color{}, false, pg.samples(pt.fill, pt.box, box)
-			}
-			return theme.Color{}, false, nil
-		}
-	}
-	if !pg.lit && pg.bgFill.Paint == dml.PaintOther {
-		return pg.backdrop, false, pg.samples(pg.bgFill, dml.Rect{X1: pg.p.width, Y1: pg.p.height}, box)
-	}
-	return pg.backdrop, pg.lit, nil
-}
-
-// paints records that the shape paints its box, for text drawn after it.
-func (pg *page) paints(sh *props, lit bool) {
-	if sh.reasons&gofastcore.HiddenInvisible != 0 {
-		return
-	}
-	if !sh.boxed {
-		pg.loose = true
-		return
-	}
-	pt := painted{box: sh.box}
-	if lit && sh.upright {
-		pt.color, pt.lit = sh.behind, sh.lit
-	}
-	if sh.upright && sh.paint.Paint == dml.PaintOther && pg.p.opts.DeepHidden {
-		pt.fill = sh.paint
-	}
-	pg.paint = append(pg.paint, pt)
 }
 
 // add records a shape that has been read.
-func (pg *page) add(sh *props, g *group, first int, title, cover bool, picture string) {
-	text := false
-	for i := first; i < len(pg.blocks) && !text; i++ {
-		text = pg.blocks[i].Kind != gofastcore.KindImage
-	}
-	pg.shapes = append(pg.shapes, shape{
-		box: sh.box, boxed: sh.boxed, first: first, end: len(pg.blocks), unit: pg.unit, title: title,
-		text:  text && sh.boxed && sh.box.X1 > sh.box.X0 && sh.box.Y1 > sh.box.Y0,
-		cover: cover, picture: picture, ids: [4]int64{sh.id, g.ids[0], g.ids[1], g.ids[2]},
-	})
+func (pg *page) add(sh *props, g *group, first int, title bool) {
+	pg.shapes = append(pg.shapes, shape{box: sh.box, boxed: sh.boxed, first: first, end: len(pg.blocks), unit: pg.unit, title: title})
 }
 
 // sp reads a shape (p:sp).
@@ -933,10 +687,7 @@ func (pg *page) sp(g *group) {
 	if sh.ph.has && pg.role != roleSlide {
 		// A placeholder of a layout or master is not shown on a slide; it
 		// is what the slide's own placeholder takes after.
-		ph := placeholder{ref: sh.ph, box: sh.box, boxed: sh.boxed, fill: sh.fill, list: list}
-		if ph.fill.Paint == dml.PaintUnset {
-			ph.fill = sh.styled
-		}
+		ph := placeholder{ref: sh.ph, box: sh.box, boxed: sh.boxed, list: list}
 		if sh.in != nil {
 			ph.up = sh.in
 		}
@@ -945,13 +696,8 @@ func (pg *page) sp(g *group) {
 		}
 		return
 	}
-	painted := sh.paint.Paint == dml.PaintSolid || sh.paint.Paint == dml.PaintOther
-	if painted {
-		pg.paints(&sh, sh.rect)
-	}
-	cover := painted && sh.rect && sh.upright && sh.lit && sh.boxed && sh.reasons&gofastcore.HiddenInvisible == 0
-	if len(pg.blocks) > first || painted {
-		pg.add(&sh, g, first, title, cover, "")
+	if len(pg.blocks) > first {
+		pg.add(&sh, g, first, title)
 	}
 }
 

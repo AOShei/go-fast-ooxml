@@ -63,7 +63,7 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 			below, open = parseRange([]byte(blocks[n-1].Loc.Range))
 		}
 		whole := sh.part
-		band := gofastcore.Part{Kind: whole.Kind, Number: whole.Number, Name: whole.Name, Hidden: whole.Hidden, Blocks: blocks}
+		band := gofastcore.Part{Kind: whole.Kind, Number: whole.Number, Name: whole.Name, Display: whole.Display, Blocks: blocks}
 		if last {
 			sh.limits()
 			whole = sh.part
@@ -76,7 +76,7 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 		if len(blocks) > 0 || !emitted {
 			sh.finish(false) // says of an empty sheet that it has no text
 		} else {
-			sh.part.MarkHidden()
+			sh.part.Finish()
 		}
 		band, sh.part = sh.part, whole
 		sh.noValue, sh.split, sh.removed, sh.unmapped, sh.pending = 0, 0, 0, 0, 0

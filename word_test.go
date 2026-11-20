@@ -29,7 +29,7 @@ func TestWordFixtures(t *testing.T) {
 			// Every invariant, and every block including its hidden-text
 			// flags and the ranges they cover.
 			ooxmltest.CheckDocument(t, doc)
-			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Hidden: true})
+			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Display: true})
 		})
 	}
 }
@@ -244,78 +244,4 @@ func pandocHeadings(t testing.TB, data []byte) (map[string]int, bool) {
 		out[fmt.Sprintf("%d %s", len(m[1]), spaces.ReplaceAllString(strings.TrimSpace(text), " "))]++
 	}
 	return out, true
-}
-
-// TestWordHiddenSurvey reads every Word file of the corpus and reports
-// what is flagged as hidden, by reason. It asserts nothing about the
-// counts: it is how false alarms on real documents are found. Set
-// HIDDEN_SURVEY=1 to list every flagged piece of text.
-func TestWordHiddenSurvey(t *testing.T) {
-	if testing.Short() {
-		t.Skip("reads the whole corpus")
-	}
-	detail := os.Getenv("HIDDEN_SURVEY") != ""
-	files, flagged, blocks := 0, 0, 0
-	byReason := map[string]int{}
-	filesByReason := map[string]int{}
-	for _, f := range ooxmltest.LoadManifest(t, "corpus.json") {
-		if f.Format != "docx" || f.Note != "" {
-			continue
-		}
-		data, err := os.ReadFile(f.AbsPath(t))
-		if err != nil {
-			continue
-		}
-		doc, err := extract(t, data, &gofastcore.Options{Spans: true})
-		if err != nil {
-			continue
-		}
-		files++
-		ooxmltest.CheckDocument(t, doc)
-		seen := map[string]bool{}
-		note := func(reasons gofastcore.Hidden, kind gofastcore.Kind, text string) {
-			for _, name := range strings.Split(reasons.String(), "+") {
-				byReason[name]++
-				seen[name] = true
-			}
-			if detail {
-				if len(text) > 70 {
-					text = text[:70]
-				}
-				t.Logf("%-40s %-9s %-22s %q", f.Name, kind, reasons, text)
-			}
-		}
-		for _, b := range doc.Parts[0].Blocks {
-			if b.Hidden == 0 {
-				continue
-			}
-			blocks++
-			if whole := b.HiddenWhole(); whole != 0 {
-				note(whole, b.Kind, b.Text)
-			}
-			for _, sp := range b.Spans {
-				if sp.Hidden != 0 {
-					note(sp.Hidden, b.Kind, b.Text[sp.Start:sp.End])
-				}
-			}
-			if b.Table != nil {
-				for _, h := range b.Table.Hidden {
-					note(h.Hidden, b.Kind, b.Table.Rows[h.Row][h.Col])
-				}
-			}
-		}
-		if len(seen) > 0 {
-			flagged++
-		}
-		for name := range seen {
-			filesByReason[name]++
-		}
-	}
-	if files == 0 {
-		t.Skip("no corpus files downloaded")
-	}
-	t.Logf("%d Word files, %d with hidden text, %d blocks flagged", files, flagged, blocks)
-	for name, n := range byReason {
-		t.Logf("  %-16s %5d pieces in %3d files", name, n, filesByReason[name])
-	}
 }

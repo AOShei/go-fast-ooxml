@@ -36,7 +36,7 @@ func TestExcelFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			ooxmltest.CheckDocument(t, doc)
-			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Hidden: true})
+			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Display: true})
 		})
 	}
 }
@@ -80,14 +80,14 @@ func sheetCells(t testing.TB, part *gofastcore.Part) (cells map[cellAt]string, u
 						t.Errorf("sheet %q: cell %v is in two tables", part.Name, at)
 					}
 					cells[at] = text
-					if b.HiddenWhole()&gofastcore.HiddenInvisible != 0 {
+					if b.DisplayWhole()&gofastcore.DisplayHidden != 0 {
 						unseen[at] = true
 					}
 				}
 			}
 		}
-		for _, h := range b.Table.Hidden {
-			if h.Hidden&gofastcore.HiddenInvisible == 0 {
+		for _, h := range b.Table.Display {
+			if h.Display&gofastcore.DisplayHidden == 0 {
 				continue
 			}
 			for r := h.Row; r < h.Row+h.RowSpan; r++ {
@@ -395,117 +395,4 @@ func sameNumber(a, b string) bool {
 	x, err1 := strconv.ParseFloat(a, 64)
 	y, err2 := strconv.ParseFloat(b, 64)
 	return err1 == nil && err2 == nil && x == y
-}
-
-// TestExcelHiddenSurvey reads every workbook of the corpus and reports
-// what is flagged as hidden. It asserts nothing about the counts: it is
-// how false alarms on real workbooks are found. Set HIDDEN_SURVEY=1 to
-// list the flagged cells, a few per sheet and kind.
-func TestExcelHiddenSurvey(t *testing.T) {
-	if testing.Short() {
-		t.Skip("reads the whole corpus")
-	}
-	detail := os.Getenv("HIDDEN_SURVEY") != ""
-	files, flagged := 0, 0
-	cells := map[string]int{}
-	inFiles := map[string]int{}
-	for _, f := range ooxmltest.LoadManifest(t, "corpus.json") {
-		if f.Format != "xlsx" || f.Note != "" {
-			continue
-		}
-		data, err := os.ReadFile(f.AbsPath(t))
-		if err != nil {
-			continue
-		}
-		doc, err := extract(t, data, nil)
-		if err != nil {
-			continue
-		}
-		files++
-		seen := map[string]bool{}
-		for p := range doc.Parts {
-			part := &doc.Parts[p]
-			shown := map[string]int{}
-			note := func(what, where, text string, n int) {
-				cells[what] += n
-				seen[what] = true
-				if shown[what]++; detail && shown[what] <= 3 {
-					if len(text) > 50 {
-						text = text[:50]
-					}
-					t.Logf("%-46s %-22s %-34s %-14s %q", f.Name, part.Name, what, where, text)
-				}
-			}
-			if part.Hidden != 0 {
-				n := 0
-				for _, b := range part.Blocks {
-					if b.Table != nil {
-						for _, row := range b.Table.Rows {
-							for _, c := range row {
-								if c != "" {
-									n++
-								}
-							}
-						}
-					}
-				}
-				note("hidden sheet", "", "", n)
-				continue
-			}
-			for _, b := range part.Blocks {
-				if b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
-					if b.Table == nil && b.Hidden != 0 {
-						note("shape text: "+b.Hidden.String(), b.Loc.Range, b.Text, 1)
-					}
-					continue
-				}
-				origin := parseA1(t, b.Loc.Range)
-				rows, cols := len(b.Table.Rows), len(b.Table.Rows[0])
-				for _, h := range b.Table.Hidden {
-					what := "cell: " + h.Hidden.String()
-					switch {
-					case h.Hidden == gofastcore.HiddenChars:
-						what = "invisible characters"
-					case h.Hidden == gofastcore.HiddenInvisible && h.ColSpan == cols && h.Col == 0:
-						what = "hidden row"
-					case h.Hidden == gofastcore.HiddenInvisible && h.RowSpan == rows && h.Row == 0:
-						what = "hidden column"
-					case h.Hidden == gofastcore.HiddenInvisible:
-						what = "value its format shows as nothing"
-					}
-					n, sample := 0, ""
-					for r := h.Row; r < h.Row+h.RowSpan; r++ {
-						for c := h.Col; c < h.Col+h.ColSpan; c++ {
-							if text := b.Table.Rows[r][c]; text != "" {
-								if n++; sample == "" {
-									sample = text
-								}
-							}
-						}
-					}
-					if n > 0 {
-						note(what, cellAt{origin.row + h.Row, origin.col + h.Col}.String(), sample, n)
-					}
-				}
-			}
-		}
-		if len(seen) > 0 {
-			flagged++
-		}
-		for what := range seen {
-			inFiles[what]++
-		}
-	}
-	if files == 0 {
-		t.Skip("no corpus files downloaded")
-	}
-	t.Logf("%d workbooks, %d with hidden text", files, flagged)
-	names := make([]string, 0, len(cells))
-	for name := range cells {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		t.Logf("  %-44s %8d cells in %3d workbooks", name, cells[name], inFiles[name])
-	}
 }

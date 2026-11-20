@@ -334,7 +334,7 @@ func TestExcelDropDownListsAsOpenpyxl(t *testing.T) {
 					differ = append(differ, fmt.Sprintf("%s %s!%s: no note, openpyxl %q", names[i], sheet.Sheet, key, l.Formula))
 				case b.Text != want:
 					differ = append(differ, fmt.Sprintf("%s %s!%s: %q, openpyxl %q", names[i], sheet.Sheet, key, b.Text, l.Formula))
-				case (b.Hidden&gofastcore.HiddenInvisible != 0) != l.Hidden && l.Hidden:
+				case (b.Display&gofastcore.DisplayHidden != 0) != l.Hidden && l.Hidden:
 					differ = append(differ, fmt.Sprintf("%s %s!%s: arrow hidden, not flagged", names[i], sheet.Sheet, key))
 				default:
 					agree++

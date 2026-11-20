@@ -1,5 +1,5 @@
 {
- "schema_version": "0.1",
+ "schema_version": "0.2",
  "source": {
   "format": "pptx"
  },
@@ -106,10 +106,10 @@
     {
      "kind": "paragraph",
      "text": "Backup slide content",
-     "hidden": "invisible"
+     "display": "hidden"
     }
    ],
-   "hidden": "invisible"
+   "display": "hidden"
   },
   {
    "kind": "slide",
@@ -123,8 +123,7 @@
     },
     {
      "kind": "paragraph",
-     "text": "Text placed beside the slide",
-     "hidden": "off_page"
+     "text": "Text placed beside the slide"
     }
    ]
   }

@@ -148,7 +148,7 @@ func TestEncryptedFixtures(t *testing.T) {
 			}
 			// LibreOffice saves the file again, and does not write which
 			// row of a table is its header.
-			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Hidden: true, NoHeaderRows: strings.Contains(f.Producer, "LibreOffice")})
+			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Display: true, NoHeaderRows: strings.Contains(f.Producer, "LibreOffice")})
 			_, said := withoutDecrypted(t, doc)
 			if len(said) != 1 || said[0].Code != gofastooxml.WarnDecrypted {
 				t.Errorf("warnings: %v", said)

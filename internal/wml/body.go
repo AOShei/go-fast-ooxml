@@ -9,14 +9,11 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
-	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/hidden"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
-	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -37,9 +34,6 @@ type parser struct {
 	symbols []byte             // for translating text in a symbol font
 	para    paraState          // the paragraph being read
 	after   []gofastcore.Block // blocks that follow the paragraph or table in progress
-
-	box color       // the fill of the text box being read; unset outside one
-	tbl *tableState // the table being read
 
 	href      string     // target of the hyperlink being read, when links are asked for
 	hrefDepth int        // depth of its element
@@ -81,9 +75,10 @@ func (p *parser) inCode() bool {
 }
 
 // fieldChar reads w:fldChar: a field begins, its code ends, or it ends.
-// The code of a field is never shown; it is kept as a note after the
-// paragraph its field ends in, flagged as hidden. A field in the code of
-// another is part of that one's code, written in braces as Word shows it.
+// The code of a field is never shown; one that holds text of its own is
+// kept as a note after the paragraph its field ends in (fieldNote). A
+// field in the code of another is part of that one's code, written in
+// braces as Word shows it.
 func (p *parser) fieldChar() {
 	typ, _ := p.s.Attr(ns.Word, "fldCharType")
 	switch string(typ) {
@@ -129,16 +124,13 @@ func (p *parser) fieldChar() {
 }
 
 // fieldNote keeps the code of a field as a note after the paragraph, if
-// the code holds text that is shown nowhere. Most fields are structure:
-// a page number, a cross-reference, a table of contents, a merge field.
-// Their codes say what to show, and what they show is the text; they are
-// not kept. Other codes are kept: an index entry, the branches of IF, the
-// text of SET, ASK or FILLIN, a citation tool's data. Like the other data
-// a file keeps and shows nowhere, they are not flagged for that, which is
-// routine. Flagged as hidden are a structural field whose code holds more
-// than such a field needs, and a code whose text is out of proportion for
-// a field (stored.MaxWords words in its quoted strings), apart from a
-// citation tool's, whose data is long by nature.
+// the code holds text of its own. Most fields are structure: a page
+// number, a cross-reference, a table of contents, a merge field. Their
+// codes say what to show, and what they show is the text; they are not
+// kept, unless a code holds more than such a field needs. Other codes are
+// kept: an index entry, the branches of IF, the text of SET, ASK or
+// FILLIN, a citation tool's data. The file declares nothing about the
+// display of a code, and no reason is set.
 func (p *parser) fieldNote(code []byte) {
 	text := p.clean(code, clean.Prose)
 	if text == "" {
@@ -150,34 +142,9 @@ func (p *parser) fieldNote(code []byte) {
 	if structural && plainCode(text) {
 		return
 	}
-	var hidden gofastcore.Hidden
-	switch n := stored.QuotedWords(text); {
-	case structural:
-		hidden = gofastcore.HiddenInvisible // more than it needs
-		p.r.longs.Add("the code of a "+keyword+" field", "", stored.QuotedWords(text))
-	case n > stored.MaxWords && !citation(text):
-		hidden = gofastcore.HiddenInvisible
-		p.r.longs.Add("the code of a field", keyword, n)
-	}
 	p.r.fields++
-	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: hidden,
+	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text,
 		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField}})
-}
-
-// citation reports whether a field's code is a citation tool's data
-// (Zotero, Mendeley, EndNote, Citavi), which is long by nature.
-func citation(code string) bool {
-	fields := strings.Fields(code)
-	if len(fields) < 2 || !strings.EqualFold(fields[0], "ADDIN") {
-		return false
-	}
-	tool := strings.ToUpper(fields[1])
-	for _, prefix := range []string{"ZOTERO_", "CSL_", "MENDELEY", "EN.", "CITAVI"} {
-		if strings.HasPrefix(tool, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // structuralFields are the fields whose codes name what to show (a page
@@ -199,14 +166,36 @@ var structuralFields = map[string]bool{
 	"QUOTE": true, "INFO": true, "DOCPROPERTIES": true, "GREETINGLINE": true, "ADDRESSBLOCK": true,
 }
 
-// maxPlainCode bounds the code of a structural field that is not kept.
-const maxPlainCode = 4 << 10
+// Bounds on the code of a structural field that is not kept: its length,
+// and the words in its quoted arguments.
+const (
+	maxPlainCode  = 4 << 10
+	maxPlainWords = 30
+)
 
 // plainCode reports whether a structural field's code is no more than such
 // a field needs: names, switches, a format, a list of styles, but no more
-// than stored.MaxWords words of text in its quoted arguments.
+// than maxPlainWords words of text in its quoted arguments.
 func plainCode(code string) bool {
-	return len(code) <= maxPlainCode && stored.QuotedWords(code) <= stored.MaxWords
+	return len(code) <= maxPlainCode && quotedWords(code) <= maxPlainWords
+}
+
+// quotedWords returns the number of words in the quoted strings of a
+// field's code: its text, as against its names and switches.
+func quotedWords(code string) int {
+	n := 0
+	for rest := code; ; {
+		_, after, found := strings.Cut(rest, `"`)
+		if !found {
+			return n
+		}
+		quoted, next, closed := strings.Cut(after, `"`)
+		n += len(strings.Fields(quoted))
+		if !closed {
+			return n
+		}
+		rest = next
+	}
 }
 
 // alternate tracks one mc:AlternateContent element: a file may hold the
@@ -221,25 +210,21 @@ type alternate struct {
 type paraProps struct {
 	style   *style
 	styleID string
-	numID   int   // -1 not set, 0 none
-	ilvl    int8  // -1 not set
-	outline int8  // -1 not set, 9 body text
-	shade   color // shading behind the paragraph
+	numID   int  // -1 not set, 0 none
+	ilvl    int8 // -1 not set
+	outline int8 // -1 not set, 9 body text
 }
 
 // paraState is what the runs of the paragraph being read need to know.
 type paraState struct {
-	start     int               // where its text begins in parser.text
-	spanStart int               // where its spans begin in parser.spans
-	base      *runProps         // the formatting its style and the defaults give its text
-	own       uint8             // the on/off properties its style switches on, apart from the defaults
-	hidden    gofastcore.Hidden // why text with only that formatting cannot be seen, if so
-	behind    color             // what lies behind its text
-	flags     clean.Flags       // how its text is cleaned
-	verbatim  bool              // it is code: its text is kept as written
-	display   []byte            // the text of its display equations
-	seq       int               // its number, in the order paragraphs begin
-	section   int               // the section it is in: properties it carries end it, after it
+	start     int                // where its text begins in parser.text
+	spanStart int                // where its spans begin in parser.spans
+	base      *runProps          // the formatting its style and the defaults give its text
+	own       uint8              // the on/off properties its style switches on, apart from the defaults
+	declared  gofastcore.Display // what that formatting declares about the display of its text
+	flags     clean.Flags        // how its text is cleaned
+	verbatim  bool               // it is code: its text is kept as written
+	display   []byte             // the text of its display equations
 }
 
 var noFormatting runProps
@@ -249,16 +234,13 @@ type cellProps struct {
 	vMerge   int8 // 0 none, 1 restart, 2 continue
 	text     []byte
 	hasBlock bool
-	shade    color             // shading behind the cell
-	cnf      int               // conditions of the table's style the cell says apply to it
-	hidden   gofastcore.Hidden // reasons any of its text cannot be seen
+	hidden   gofastcore.Display // what the file declares about the display of any of its text
 }
 
 type rowProps struct {
 	header     bool
 	deleted    bool
 	gridBefore int
-	clipped    bool // an exact height too small to show a line of text
 }
 
 func (r *reader) newParser(name string, rels map[string]opc.Rel) *parser {
@@ -291,27 +273,6 @@ func (p *parser) document(out *[]gofastcore.Block) {
 			p.flush(func(b gofastcore.Block) { p.emitBody(out, b) })
 			continue
 		}
-		if s.Depth() == 2 && s.Is(ns.Word, "background") {
-			// The page colour. Word shows it only when the document's
-			// settings say so. A child element makes it a gradient or a
-			// picture, which is not one colour; with DeepHidden, text is
-			// judged against the gradient's two colours or the picture's.
-			c := readColor(s, "color", "themeColor", p.r.theme)
-			first := c
-			for s.Next() != xmlscan.EOF && s.Depth() >= 2 {
-				if s.Kind() != xmlscan.Start {
-					continue
-				}
-				c = unknown
-				if p.r.opts.DeepHidden && s.Is(ns.VML, "fill") {
-					c.under = p.pageFill(s, first)
-				}
-			}
-			if p.r.showBackground && c.set && !c.auto {
-				p.r.page = c
-			}
-			continue
-		}
 		if s.Depth() >= 2 {
 			s.Skip()
 		}
@@ -323,7 +284,7 @@ func (p *parser) document(out *[]gofastcore.Block) {
 // whether spans are asked for or not.
 func (p *parser) emitBody(out *[]gofastcore.Block, b gofastcore.Block) {
 	if n := len(*out); n > 0 && b.Kind == gofastcore.KindCode && (*out)[n-1].Kind == gofastcore.KindCode &&
-		b.Hidden == 0 && (*out)[n-1].Hidden == 0 {
+		b.Display == 0 && (*out)[n-1].Display == 0 {
 		last := &(*out)[n-1]
 		at := len(last.Text) + 1
 		last.Text += "\n" + b.Text
@@ -452,37 +413,10 @@ func (p *parser) section() {
 	s := &p.s
 	titlePage := false
 	var notes [2]notePr
-	g := letter
-	defer func() {
-		p.r.endSection(notes)
-		if len(p.r.pages) < 1<<16 {
-			p.r.pages = append(p.r.pages, g)
-		}
-	}()
+	defer func() { p.r.endSection(notes) }()
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
-			continue
-		}
-		if s.Depth() == depth+1 && (s.Is(ns.Word, "pgSz") || s.Is(ns.Word, "pgMar")) {
-			// Lengths in twentieths of a point; a margin given as
-			// negative is one that text does not push.
-			twips := func(name string, into *float64) {
-				if v, ok := s.Attr(ns.Word, name); ok {
-					if n, err := strconv.ParseInt(string(v), 10, 32); err == nil {
-						*into = abs(float64(n)) / 20
-					}
-				}
-			}
-			if s.Is(ns.Word, "pgSz") {
-				twips("w", &g.w)
-				twips("h", &g.h)
-			} else {
-				twips("top", &g.top)
-				twips("bottom", &g.bottom)
-				twips("left", &g.left)
-				twips("right", &g.right)
-			}
 			continue
 		}
 		if s.Depth() == depth+1 && s.Is(ns.Word, "titlePg") {
@@ -537,7 +471,7 @@ func (p *parser) section() {
 }
 
 // readParaProps reads w:pPr. p is nil when the properties are a style's.
-func readParaProps(s *xmlscan.Scanner, pp *paraProps, p *parser, theme map[string]color) {
+func readParaProps(s *xmlscan.Scanner, pp *paraProps, p *parser) {
 	pp.numID, pp.ilvl, pp.outline = -1, -1, -1
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
@@ -558,8 +492,6 @@ func readParaProps(s *xmlscan.Scanner, pp *paraProps, p *parser, theme map[strin
 			if v, ok := intAttr(s, "val"); ok && v <= 9 {
 				pp.outline = int8(v)
 			}
-		case "shd":
-			pp.shade = readShade(s, theme)
 		case "numPr":
 			inner := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= inner {
@@ -607,8 +539,7 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 	// A paragraph can sit inside another's run, in a text box; the outer
 	// one's state is put back when this one is done.
 	outer, outerHref, outerDepth := p.para, p.href, p.hrefDepth
-	p.para = paraState{start: len(p.text), spanStart: len(p.spans), seq: p.r.paragraphs, section: len(p.r.sections)}
-	p.r.paragraphs++
+	p.para = paraState{start: len(p.text), spanStart: len(p.spans)}
 	p.href, p.hrefDepth = "", 0
 	p.format(&pp)
 	depth := s.Depth()
@@ -647,7 +578,7 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 			case "r":
 				p.run(false)
 			case "pPr":
-				readParaProps(s, &pp, p, p.r.theme)
+				readParaProps(s, &pp, p)
 				p.format(&pp)
 			case "del":
 				p.deletion()
@@ -697,8 +628,7 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 }
 
 // format works out what the paragraph's properties mean for its runs: the
-// formatting they inherit, what lies behind them, and how their text is
-// cleaned. It is called again when the properties are read, since they
+// formatting they inherit, and how their text is cleaned. It is called again when the properties are read, since they
 // are the paragraph's first child.
 func (p *parser) format(pp *paraProps) {
 	st := &p.para
@@ -706,7 +636,6 @@ func (p *parser) format(pp *paraProps) {
 	if p.r.styles != nil {
 		st.base = &p.r.styles.defaults
 	}
-	st.behind = pp.shade
 	st.own = 0
 	if pp.style != nil {
 		st.base, st.own = &pp.style.run, pp.style.own
@@ -723,57 +652,28 @@ func (p *parser) format(pp *paraProps) {
 		if pp.style.role == roleCode && !(outline >= 0 && outline < 9) && numID <= 0 {
 			st.flags, st.verbatim = clean.Verbatim, true
 		}
-		if !st.behind.set || st.behind.auto {
-			st.behind = pp.style.shade
-		}
 	}
-	if !st.behind.set || st.behind.auto {
-		st.behind = p.backdrop()
-	}
-	st.hidden = st.base.hiddenReasons(st.behind)
-}
-
-// backdrop returns what lies behind a paragraph that has no shading of
-// its own. Nearest first: its table cell's shading, set on the cell or by
-// the table's style; the fill of the text box it is in; the page.
-func (p *parser) backdrop() color {
-	if p.cell != nil {
-		if p.cell.shade.set && !p.cell.shade.auto {
-			return p.cell.shade
-		}
-		if p.tbl != nil {
-			if c, ok := p.tbl.styleShade(p.cell.cnf); ok {
-				return c
-			}
-			if p.tbl.shade.set && !p.tbl.shade.auto {
-				return p.tbl.shade
-			}
-		}
-	}
-	if p.box.set {
-		return p.box
-	}
-	return p.r.page
+	st.declared = st.base.display()
 }
 
 // hideWhole records that all of a block is hidden for the given reasons.
 // The reasons then belong to the block, not to parts of it.
-func hideWhole(b *gofastcore.Block, reasons gofastcore.Hidden) {
-	b.Hidden |= reasons
+func hideWhole(b *gofastcore.Block, reasons gofastcore.Display) {
+	b.Display |= reasons
 	if b.Table != nil {
-		kept := b.Table.Hidden[:0]
-		for _, h := range b.Table.Hidden {
-			if h.Hidden &^= reasons; h.Hidden != 0 {
+		kept := b.Table.Display[:0]
+		for _, h := range b.Table.Display {
+			if h.Display &^= reasons; h.Display != 0 {
 				kept = append(kept, h)
 			}
 		}
-		if b.Table.Hidden = kept; len(kept) == 0 {
-			b.Table.Hidden = nil
+		if b.Table.Display = kept; len(kept) == 0 {
+			b.Table.Display = nil
 		}
 	}
 	kept := b.Spans[:0]
 	for _, sp := range b.Spans {
-		if sp.Hidden &^= reasons; sp.Hidden != 0 || sp.Style != 0 || sp.Href != "" {
+		if sp.Display &^= reasons; sp.Display != 0 || sp.Style != 0 || sp.Href != "" {
 			kept = append(kept, sp)
 		}
 	}
@@ -814,13 +714,13 @@ func (p *parser) linkTarget() string {
 // span records the formatting of the text of the current paragraph from
 // start to the end of what has been read, joining it to the span before
 // if that one ends where this begins and says the same.
-func (p *parser) span(start int, style gofastcore.Style, href string, hidden gofastcore.Hidden) {
+func (p *parser) span(start int, style gofastcore.Style, href string, hidden gofastcore.Display) {
 	from, to := start-p.para.start, len(p.text)-p.para.start
 	if to <= from {
 		return
 	}
 	if n := len(p.spans); n > p.para.spanStart {
-		if last := &p.spans[n-1]; last.End == from && last.Style == style && last.Href == href && last.Hidden == hidden {
+		if last := &p.spans[n-1]; last.End == from && last.Style == style && last.Href == href && last.Display == hidden {
 			last.End = to
 			return
 		}
@@ -831,7 +731,7 @@ func (p *parser) span(start int, style gofastcore.Style, href string, hidden gof
 		p.s.Abort(warn.ErrText)
 		return
 	}
-	p.spans = append(p.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Hidden: hidden})
+	p.spans = append(p.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Display: hidden})
 }
 
 // block turns the paragraph that has just been read into a block.
@@ -889,7 +789,7 @@ func (p *parser) block(pp *paraProps) (gofastcore.Block, bool) {
 	}
 
 	b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(raw[from:to])}
-	b.Spans, b.Hidden = settle(p.spans[p.para.spanStart:], from, to, raw)
+	b.Spans, b.Display = settle(p.spans[p.para.spanStart:], from, to, raw)
 	var marker string
 	var ordered, listed bool
 	if numID > 0 {
@@ -929,8 +829,8 @@ func (p *parser) block(pp *paraProps) (gofastcore.Block, bool) {
 }
 
 // settle turns the spans collected while a paragraph was read into the
-// spans and hidden reasons of its block.
-func settle(collected []gofastcore.Span, from, to int, raw []byte) ([]gofastcore.Span, gofastcore.Hidden) {
+// spans and display reasons of its block.
+func settle(collected []gofastcore.Span, from, to int, raw []byte) ([]gofastcore.Span, gofastcore.Display) {
 	return hidden.Settle(collected, from, to, raw)
 }
 
@@ -974,7 +874,7 @@ func (p *parser) run(deleted bool) {
 		}
 		switch string(s.Local()) {
 		case "rPr":
-			readRunProps(s, &direct, p.r.theme)
+			readRunProps(s, &direct)
 		case "t":
 			if deleted || p.inCode() {
 				s.Skip()
@@ -1031,7 +931,7 @@ func (p *parser) run(deleted bool) {
 	p.tidy(start)
 	// What the run's formatting means for its text. A run that sets
 	// nothing of its own has its paragraph's answer.
-	hidden := p.para.hidden
+	hidden := p.para.declared
 	var style gofastcore.Style
 	href := ""
 	if p.r.opts.Spans {
@@ -1055,15 +955,15 @@ func (p *parser) run(deleted bool) {
 			style = direct.inline()
 		}
 		direct.under(p.para.base)
-		hidden = direct.hiddenReasons(p.para.behind)
+		hidden = direct.display()
 	}
 	// What hangs on a hidden run is hidden with it: the footnote whose
 	// reference it holds, the text box or picture anchored in it. A
 	// comment is not; it is shown in the margin whatever it is about.
-	if hidden&gofastcore.HiddenInvisible != 0 {
+	if hidden&gofastcore.DisplayHidden != 0 {
 		for i := hung; i < len(p.after); i++ {
 			if b := &p.after[i]; b.Kind != gofastcore.KindNote {
-				hideWhole(b, gofastcore.HiddenInvisible)
+				hideWhole(b, gofastcore.DisplayHidden)
 			}
 		}
 	}
@@ -1256,7 +1156,7 @@ func (p *parser) noteRef(notes map[int]note, kind int) {
 	key := [2]string{"foot", "end"}[kind] + strconv.Itoa(id)
 	if n, found := notes[id]; ok && found && n.text != "" && !p.r.usedNotes[key] {
 		p.r.usedNotes[key] = true
-		p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: n.text, Spans: n.spans, Hidden: n.hidden})
+		p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: n.text, Spans: n.spans, Display: n.hidden})
 		p.produced++
 	}
 }
@@ -1276,7 +1176,7 @@ func (p *parser) commentRef() {
 	if n.date != "" {
 		attrs[gofastcore.AttrDate] = n.date
 	}
-	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: n.text, Spans: n.spans, Hidden: n.hidden, Attrs: attrs})
+	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: n.text, Spans: n.spans, Display: n.hidden, Attrs: attrs})
 }
 
 // deletion reads w:del inside a paragraph: text removed by a tracked
@@ -1323,23 +1223,10 @@ func (p *parser) drawing() {
 	s := &p.s
 	var alt, target, name string
 	var external bool
-	// A text box of a fixed size shows no more than fits in it. One
-	// smaller than a line of text in either direction shows nothing.
-	width, height := -1.0, -1.0 // in points; -1 unknown
-	autofit := false
 	boxes := len(p.after)
-	hasBox := false
-	// The fill of the shape being read, which is what the text of its
-	// text box is seen against. Unset is no fill.
-	var fill color
-	shapes := 0      // shapes seen: sizes are only understood for one alone
-	shapeProps := 0  // depth of the shape's properties while they are read
-	ownFill := false // the shape sets its fill itself, not through its style
-	// Where it floats, if it is anchored at a place of its own, and the
-	// fill of its one shape, which may hide what is under it.
-	anchor := float{paragraph: p.para.seq, section: p.para.section}
-	anchored := false
-	var shapeFill color
+	// The drawing is declared hidden: wp:docPr hidden, or a VML shape
+	// whose style says visibility:hidden.
+	unseen := false
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -1355,40 +1242,11 @@ func (p *parser) drawing() {
 			s.Skip()
 			continue
 		}
-		if shapeProps > 0 && s.Depth() <= shapeProps {
-			shapeProps = 0
-		}
 		switch {
-		case s.Is(ns.WordDraw, "anchor"):
-			anchored = true
-			readAnchor(s, &anchor)
-		case s.Is(ns.WordDraw, "simplePos"):
-			readSimplePos(s, &anchor)
-		case s.Is(ns.WordDraw, "positionH"):
-			readPosition(s, &anchor.h)
-		case s.Is(ns.WordDraw, "positionV"):
-			readPosition(s, &anchor.v)
-		case s.Is(ns.WordShape, "wsp"):
-			fill, ownFill, shapeProps = color{}, false, 0
-			shapes++
-		case s.Is(ns.WordShape, "spPr"):
-			shapeProps = s.Depth()
-		case shapeProps > 0 && s.Depth() == shapeProps+1 && s.Space() == ns.Draw:
-			if f, ok := dml.ReadFill(s); ok {
-				fill, ownFill = p.r.drawingFill(p.picture(f)), true
-			} else if s.Is(ns.Draw, "ln") {
-				s.Skip() // the outline has a fill of its own
-			}
-		case s.Is(ns.Draw, "fillRef"):
-			// The fill the shape's style gives it, unless it has its own:
-			// one of the theme's fill styles, in a colour.
-			if idx, ok := s.Attr(xmlscan.NoSpace, "idx"); ok && !ownFill {
-				n, _ := atoi(idx)
-				fill = p.r.drawingFill(p.r.drawn.StyleFill(n, dml.ReadColor(s)))
-			}
-		case s.Is(ns.VML, "fill"):
-			fill = vmlFillElement(s, fill)
 		case s.Is(ns.WordDraw, "docPr"):
+			if v, ok := s.Attr(xmlscan.NoSpace, "hidden"); ok && isOn(v) {
+				unseen = true
+			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
 				name = clean.Name(string(v))
 			}
@@ -1418,52 +1276,25 @@ func (p *parser) drawing() {
 			if v, ok := s.Attr(xmlscan.NoSpace, "alt"); ok && alt == "" {
 				alt = p.clean(v, clean.Prose)
 			}
-			if v, ok := s.Attr(xmlscan.NoSpace, "style"); ok {
-				width, height = vmlSize(v)
-				autofit = autofit || bytes.Contains(v, []byte("mso-fit-shape-to-text:t"))
+			if v, ok := s.Attr(xmlscan.NoSpace, "style"); ok && vmlHidden(v) {
+				unseen = true
 			}
-			fill = vmlFill(s)
-			shapes++
-		case s.Is(ns.WordDraw, "extent"):
-			// Sizes are in EMU: 12,700 to the point.
-			if cx, ok := emuAttr(s, "cx"); ok {
-				width = cx
-			}
-			if cy, ok := emuAttr(s, "cy"); ok {
-				height = cy
-			}
-		case s.Is(ns.Draw, "spAutoFit"):
-			autofit = true // the box grows to fit its text
 		case s.Is(ns.Word, "txbxContent"):
 			// A text box: its paragraphs follow the one it hangs on.
-			hasBox = true
-			shapeFill = fill
-			if !fill.set {
-				fill = p.backdrop() // nothing of its own: what the box sits on shows through
-			}
-			outerBox, outerCell, outerTable := p.box, p.cell, p.tbl
-			p.box, p.cell, p.tbl = fill, nil, nil
+			outerCell := p.cell
+			p.cell = nil
 			p.container(func(b gofastcore.Block) { p.after = append(p.after, b) })
-			p.box, p.cell, p.tbl = outerBox, outerCell, outerTable
-			fill = color{}
+			p.cell = outerCell
 		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
 			p.chart(name)
 		case s.Is(ns.Diagram, "relIds"):
 			p.diagram()
 		}
 	}
-	if hasBox && shapes <= 1 && !autofit && (width >= 0 && width < gofastcore.HiddenTinySize || height >= 0 && height < gofastcore.HiddenTinySize) {
+	if unseen {
 		for i := boxes; i < len(p.after); i++ {
-			if b := &p.after[i]; b.Kind != gofastcore.KindImage {
-				hideWhole(b, gofastcore.HiddenClipped)
-			}
+			hideWhole(&p.after[i], gofastcore.DisplayHidden)
 		}
-	}
-	if !shapeFill.set {
-		shapeFill = fill
-	}
-	if anchored && shapes <= 1 && len(p.r.floats) < maxFloats {
-		p.float(anchor, boxes, hasBox, shapeFill, target, external, width, height)
 	}
 	if target == "" || p.r.opts.Images == gofastcore.ImagesNone {
 		if target != "" {
@@ -1485,23 +1316,33 @@ func (p *parser) drawing() {
 	}
 	if external {
 		// A picture that is not in the file: named, not fetched.
-		p.after = append(p.after, gofastcore.Block{
+		b := gofastcore.Block{
 			Kind: gofastcore.KindImage, Text: alt, Image: &gofastcore.Image{},
 			Attrs: map[string]string{"href": target},
-		})
+		}
+		if unseen {
+			b.Display = gofastcore.DisplayHidden
+		}
+		p.after = append(p.after, b)
 		return
 	}
-	p.after = append(p.after, p.r.imageBlock(target, alt))
+	b := p.r.imageBlock(target, alt)
+	if unseen {
+		b.Display |= gofastcore.DisplayHidden
+	}
+	p.after = append(p.after, b)
 }
 
-// emuAttr reads a length attribute given in EMU and returns it in points.
-func emuAttr(s *xmlscan.Scanner, name string) (float64, bool) {
-	v, ok := s.Attr(xmlscan.NoSpace, name)
-	if !ok {
-		return 0, false
+// vmlHidden reports whether the style attribute of a legacy drawing shape
+// says it is not shown (visibility:hidden).
+func vmlHidden(style []byte) bool {
+	for _, decl := range strings.Split(string(style), ";") {
+		name, value, ok := strings.Cut(decl, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(name), "visibility") && strings.EqualFold(strings.TrimSpace(value), "hidden") {
+			return true
+		}
 	}
-	n, ok := atoi(v)
-	return float64(n) / 12700, ok
+	return false
 }
 
 // cellProps reads w:tcPr.
@@ -1522,10 +1363,6 @@ func (p *parser) cellProps() {
 			if v, ok := s.Attr(ns.Word, "val"); ok && string(v) == "restart" {
 				p.cell.vMerge = 1
 			}
-		case s.Is(ns.Word, "shd"):
-			p.cell.shade = readShade(s, p.r.theme)
-		case s.Is(ns.Word, "cnfStyle"):
-			p.cell.cnf = readCnf(s)
 		default:
 			s.Skip()
 		}
@@ -1540,16 +1377,15 @@ type tableCell struct {
 	text   string
 	span   int
 	vMerge int8
-	hidden gofastcore.Hidden
+	hidden gofastcore.Display
 }
 
 // table reads w:tbl into a table block.
 func (p *parser) table(emit func(gofastcore.Block)) {
 	s := &p.s
 	p.tables++
-	savedCell, savedRow, savedTable := p.cell, p.row, p.tbl
-	state := tableState{}
-	p.tbl, p.cell = &state, nil
+	savedCell, savedRow := p.cell, p.row
+	p.cell = nil
 	var rows [][]tableCell
 	var before []int
 	headerRows, counting := 0, true
@@ -1568,48 +1404,14 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 			s.Skip()
 			continue
 		}
-		if s.Is(ns.Word, "tblPr") {
-			// What decides the shading behind the table's cells.
-			inner := s.Depth()
-			for s.Next() != xmlscan.EOF && s.Depth() >= inner {
-				if s.Kind() != xmlscan.Start || s.Depth() != inner+1 {
-					continue
-				}
-				switch {
-				case s.Is(ns.Word, "tblStyle"):
-					if v, ok := s.Attr(ns.Word, "val"); ok {
-						if p.r.styles == nil {
-							// No styles part: the built-in styles are still known.
-							p.r.styles = &styles{byID: map[string]*style{}, chars: map[string]*charStyle{}, tables: map[string]*tableStyle{}}
-						}
-						state.style = p.r.styles.table(string(v), p.r.theme)
-					}
-				case s.Is(ns.Word, "tblLook"):
-					state.look = readLook(s)
-				case s.Is(ns.Word, "shd"):
-					state.shade = readShade(s, p.r.theme)
-				default:
-					s.Skip()
-				}
-			}
-			continue
-		}
 		if !s.Is(ns.Word, "tr") {
 			s.Skip()
 			continue
 		}
-		state.row = len(rows)
 		row, props := p.tableRow()
 		if props.deleted {
 			p.r.deleted++
 			continue
-		}
-		if props.clipped {
-			for i := range row {
-				if row[i].text != "" {
-					row[i].hidden |= gofastcore.HiddenClipped
-				}
-			}
 		}
 		if counting && props.header {
 			headerRows++
@@ -1619,7 +1421,7 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 		rows = append(rows, row)
 		before = append(before, props.gridBefore)
 	}
-	p.cell, p.row, p.tbl = savedCell, savedRow, savedTable
+	p.cell, p.row = savedCell, savedRow
 	p.tables--
 
 	// Lay the cells out on a grid.
@@ -1655,7 +1457,7 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 				at := len(line)
 				line = append(line, strings.ReplaceAll(c.text, "\n", " ")...)
 				if c.hidden != 0 {
-					spans = append(spans, gofastcore.Span{Start: at, End: len(line), Hidden: c.hidden})
+					spans = append(spans, gofastcore.Span{Start: at, End: len(line), Display: c.hidden})
 				}
 			}
 			from, to := 0, len(line)
@@ -1668,7 +1470,7 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 			if from < to {
 				p.produced++
 				b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(line[from:to])}
-				b.Spans, b.Hidden = settle(spans, from, to, line)
+				b.Spans, b.Display = settle(spans, from, to, line)
 				emit(b)
 			}
 		}
@@ -1687,9 +1489,9 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 		headerRows = min(headerRows, fit)
 	}
 	t := &gofastcore.Table{HeaderRows: min(headerRows, len(rows)), Rows: make([][]string, len(rows))}
-	var hidden gofastcore.Hidden
+	var hidden gofastcore.Display
 	open := make([]int, cols)   // per column: index in t.Merges of the vertical merge running through it, plus one
-	marked := make([]int, cols) // per column: index in t.Hidden of the entry of that merge's first cell, plus one
+	marked := make([]int, cols) // per column: index in t.Display of the entry of that merge's first cell, plus one
 	for r, row := range rows {
 		t.Rows[r] = make([]string, cols)
 		col := before[r]
@@ -1712,10 +1514,10 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 						// The text has joined the merge's first cell, and
 						// so does what is said of it.
 						if marked[col] == 0 {
-							t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: m.Row, Col: m.Col, RowSpan: 1, ColSpan: 1})
-							marked[col] = len(t.Hidden)
+							t.Display = append(t.Display, gofastcore.DisplayCells{Row: m.Row, Col: m.Col, RowSpan: 1, ColSpan: 1})
+							marked[col] = len(t.Display)
 						}
-						t.Hidden[marked[col]-1].Hidden |= c.hidden
+						t.Display[marked[col]-1].Display |= c.hidden
 						hidden |= c.hidden
 					}
 				}
@@ -1725,8 +1527,8 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 					open[k], marked[k] = 0, 0
 				}
 				if c.hidden != 0 && c.text != "" {
-					t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: r, Col: col, RowSpan: 1, ColSpan: 1, Hidden: c.hidden})
-					marked[col] = len(t.Hidden)
+					t.Display = append(t.Display, gofastcore.DisplayCells{Row: r, Col: col, RowSpan: 1, ColSpan: 1, Display: c.hidden})
+					marked[col] = len(t.Display)
 					hidden |= c.hidden
 				}
 				if c.vMerge == 1 || c.span > 1 {
@@ -1757,7 +1559,7 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 		t.Merges = nil
 	}
 	p.produced++
-	emit(gofastcore.Block{Kind: gofastcore.KindTable, Table: t, Hidden: hidden})
+	emit(gofastcore.Block{Kind: gofastcore.KindTable, Table: t, Display: hidden})
 }
 
 // tableRow reads w:tr.
@@ -1765,9 +1567,6 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 	s := &p.s
 	var row []tableCell
 	var props rowProps
-	if p.tbl != nil {
-		p.tbl.col, p.tbl.rowCnf = 0, 0
-	}
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -1801,20 +1600,6 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 				case s.Is(ns.Word, "gridBefore"):
 					if v, ok := intAttr(s, "val"); ok {
 						props.gridBefore = min(v, 1024)
-						if p.tbl != nil {
-							p.tbl.col = props.gridBefore
-						}
-					}
-				case s.Is(ns.Word, "cnfStyle"):
-					if p.tbl != nil {
-						p.tbl.rowCnf = readCnf(s)
-					}
-				case s.Is(ns.Word, "trHeight"):
-					// A row of an exact height shows no more than fits in
-					// it. Heights are in twentieths of a point.
-					rule, _ := s.Attr(ns.Word, "hRule")
-					if v, ok := intAttr(s, "val"); ok && string(rule) == "exact" && float64(v)/20 < gofastcore.HiddenTinySize {
-						props.clipped = true
 					}
 				default:
 					s.Skip()
@@ -1833,52 +1618,14 @@ func (p *parser) tableRow() ([]tableCell, rowProps) {
 				}
 				cell.text = append(cell.text, text...)
 				cell.hasBlock = true
-				// A cell is text without parts, so it is flagged as a
-				// whole when any of its text is hidden.
-				cell.hidden |= b.Hidden
+				// A cell is text without parts, so it carries a reason as
+				// a whole when any of its text does.
+				cell.hidden |= b.Display
 			})
 			p.cell = nil
-			if p.tbl != nil {
-				p.tbl.col += cell.span
-			}
 			row = append(row, tableCell{text: string(cell.text), span: cell.span, vMerge: cell.vMerge, hidden: cell.hidden})
 		default:
 			s.Skip()
 		}
 	}
-}
-
-// picture turns the relationship of a fill's picture into its part's
-// name, as this part sees it.
-func (p *parser) picture(f dml.Fill) dml.Fill {
-	if f.Blip == "" {
-		return f
-	}
-	if rel, ok := p.rels[f.Blip]; ok && !rel.External {
-		f.Blip = rel.Target
-	} else {
-		f.Blip = ""
-	}
-	return f
-}
-
-// pageFill reads the v:fill of the page's background: a gradient from the
-// page colour to color2, or a picture, stretched or tiled, whose colours
-// are those of the page either way.
-func (p *parser) pageFill(s *xmlscan.Scanner, first color) []theme.Color {
-	typ, _ := s.Attr(xmlscan.NoSpace, "type")
-	if id, ok := s.Attr(ns.Rel, "id"); ok && string(typ) != "gradient" && string(typ) != "gradientRadial" && string(typ) != "pattern" {
-		return p.r.deepColors(p.picture(dml.Fill{Paint: dml.PaintOther, Blip: string(id)}))
-	}
-	if string(typ) != "gradient" && string(typ) != "gradientRadial" {
-		return nil
-	}
-	second := white
-	if v, ok := s.Attr(xmlscan.NoSpace, "color2"); ok {
-		second = vmlColor(v)
-	}
-	if !first.set || first.auto || first.unknown || !second.set || second.unknown {
-		return nil
-	}
-	return []theme.Color{{R: first.r, G: first.g, B: first.b}, {R: second.r, G: second.g, B: second.b}}
 }

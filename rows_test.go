@@ -29,11 +29,11 @@ func cellsOf(t testing.TB, parts ...gofastcore.Part) map[cellAt]string {
 				continue // a chart's data is not cells of the sheet
 			}
 			origin := parseA1(t, b.Loc.Range)
-			hidden := map[cellAt]gofastcore.Hidden{}
-			for _, h := range b.Table.Hidden {
+			hidden := map[cellAt]gofastcore.Display{}
+			for _, h := range b.Table.Display {
 				for r := h.Row; r < h.Row+h.RowSpan; r++ {
 					for c := h.Col; c < h.Col+h.ColSpan; c++ {
-						hidden[cellAt{r, c}] |= h.Hidden
+						hidden[cellAt{r, c}] |= h.Display
 					}
 				}
 			}
@@ -46,7 +46,7 @@ func cellsOf(t testing.TB, parts ...gofastcore.Part) map[cellAt]string {
 					if _, dup := out[at]; dup {
 						t.Errorf("cell %v is in two tables", at)
 					}
-					reasons := b.HiddenWhole() | hidden[cellAt{r, c}]
+					reasons := b.DisplayWhole() | hidden[cellAt{r, c}]
 					out[at] = text + " [" + reasons.String() + "]"
 				}
 			}
@@ -116,13 +116,12 @@ func TestRowsGiveTheCellsOfTheSheet(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if part.Kind != gofastcore.PartSheet || part.Number != number || part.Name != whole.Name || part.Hidden != whole.Hidden || part.Blocks == nil {
-					t.Errorf("sheet %d: a band is %s %d %q hidden=%s", number, part.Kind, part.Number, part.Name, part.Hidden)
+				if part.Kind != gofastcore.PartSheet || part.Number != number || part.Name != whole.Name || part.Display != whole.Display || part.Blocks == nil {
+					t.Errorf("sheet %d: a band is %s %d %q hidden=%s", number, part.Kind, part.Number, part.Name, part.Display)
 				}
 				// A band is a part like any other: a document of it is
 				// valid.
 				doc := gofastcore.New("xlsx")
-				doc.HiddenChecked = f.HiddenChecked()
 				doc.Parts = []gofastcore.Part{part}
 				if err := doc.Validate(); err != nil {
 					t.Errorf("sheet %d, bands of %d: %v", number, band, err)

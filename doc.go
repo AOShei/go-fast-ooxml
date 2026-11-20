@@ -7,9 +7,11 @@
 // A Word document is one part; a workbook has a part for each sheet and a
 // presentation one for each slide. Headings, list items with their labels,
 // tables with merged cells, pictures, notes and comments are read as what
-// the file declares them to be. Text that a reader of the document cannot
-// see is extracted like any other and flagged with the reason; see
-// gofastcore.Hidden and the README.
+// the file declares them to be. Everything the file holds is extracted;
+// where the file declares text not shown (hidden formatting, a hidden
+// sheet, row, column, slide or shape) or drawn with no ink, the block says
+// so (gofastcore.Display). Nothing is judged from appearance; see the
+// README.
 //
 // Extract and ExtractFile return a whole document. Open returns a File,
 // which reads a part when it is asked for, so that a caller which handles

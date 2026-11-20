@@ -10,8 +10,9 @@ import (
 
 // CompareOptions selects what CompareBlocks holds a document to.
 type CompareOptions struct {
-	// Hidden compares the hidden-text flags of blocks, spans and parts.
-	Hidden bool
+	// Display compares what the file declares about display, on blocks,
+	// spans, table regions and parts.
+	Display bool
 	// Furniture compares running headers and footers; without it they are
 	// left out on both sides.
 	Furniture bool
@@ -35,8 +36,8 @@ func CompareBlocks(t testing.TB, got, want *gofastcore.Document, opts CompareOpt
 		if g.Kind != w.Kind || g.Number != w.Number || g.Name != w.Name {
 			t.Errorf("part %d is %s %d %q, want %s %d %q", i, g.Kind, g.Number, g.Name, w.Kind, w.Number, w.Name)
 		}
-		if opts.Hidden && g.Hidden != w.Hidden {
-			t.Errorf("part %d: hidden %q, want %q", w.Number, g.Hidden, w.Hidden)
+		if opts.Display && g.Display != w.Display {
+			t.Errorf("part %d: display %q, want %q", w.Number, g.Display, w.Display)
 		}
 		gl, wl := describeAll(g.Blocks, w.Blocks, opts, false), describeAll(w.Blocks, w.Blocks, opts, true)
 		for j := 0; j < len(gl) || j < len(wl); j++ {
@@ -91,11 +92,11 @@ func describeAll(blocks, reference []gofastcore.Block, opts CompareOptions, isRe
 		if withMarker {
 			fmt.Fprintf(&sb, " marker=%q", b.Marker)
 		}
-		if opts.Hidden && b.Hidden != 0 {
-			fmt.Fprintf(&sb, " hidden=%s", b.Hidden)
+		if opts.Display && b.Display != 0 {
+			fmt.Fprintf(&sb, " display=%s", b.Display)
 			for _, s := range b.Spans {
-				if s.Hidden != 0 {
-					fmt.Fprintf(&sb, " [%d:%d %s]", s.Start, s.End, s.Hidden)
+				if s.Display != 0 {
+					fmt.Fprintf(&sb, " [%d:%d %s]", s.Start, s.End, s.Display)
 				}
 			}
 		}
@@ -110,8 +111,8 @@ func describeAll(blocks, reference []gofastcore.Block, opts CompareOptions, isRe
 			if len(t.Merges) > 0 {
 				fmt.Fprintf(&sb, " merges=%v", t.Merges)
 			}
-			if opts.Hidden && len(t.Hidden) > 0 {
-				fmt.Fprintf(&sb, " hidden_cells=%v", t.Hidden)
+			if opts.Display && len(t.Display) > 0 {
+				fmt.Fprintf(&sb, " display_cells=%v", t.Display)
 			}
 		}
 		out = append(out, sb.String())

@@ -10,8 +10,8 @@
 //
 // The cache is what the chart was drawn from when it was saved; the
 // workbook it was taken from may say something else now, and is not
-// consulted. A series the chart's filter leaves out is not drawn, and its
-// table is flagged as not visible.
+// consulted. A series the chart's filter leaves out is declared not
+// drawn, and its table is marked hidden.
 package chart
 
 import (
@@ -68,8 +68,8 @@ type Chart struct {
 // column of values for each series.
 type Table struct {
 	Rows [][]string
-	// Hidden: the series are filtered out of the chart and not drawn.
-	Hidden bool
+	// Filtered: the file declares the series filtered out of the chart.
+	Filtered bool
 }
 
 // dim is the data of one dimension of a series: its categories (several
@@ -371,7 +371,7 @@ func table(group []*series, hidden bool, cut *bool) Table {
 		}
 		rows = append(rows, row)
 	}
-	return Table{Rows: rows, Hidden: hidden}
+	return Table{Rows: rows, Filtered: hidden}
 }
 
 // Blocks returns the chart as blocks: a caption with its title, if it has
@@ -447,8 +447,8 @@ func (c *Chart) Blocks(budget *gofastcore.TextBudget, name string) (blocks []gof
 		for key, v := range attrs {
 			b.Attrs[key] = v
 		}
-		if t.Hidden {
-			b.Hidden = gofastcore.HiddenInvisible
+		if t.Filtered {
+			b.Display = gofastcore.DisplayHidden
 		}
 		blocks = append(blocks, b)
 		if cut {

@@ -334,16 +334,6 @@ const (
 type Fill struct {
 	Paint Paint
 	Color Color // for PaintSolid
-
-	// For PaintOther, what is known of it: the colours of a gradient's
-	// stops, or a picture (the relationship of its image, which the
-	// reader turns into the part's name), with the share of the picture
-	// cut off each side (left, top, right, bottom) and whether it is
-	// tiled rather than stretched.
-	Stops []Color
-	Blip  string
-	Crop  [4]float64
-	Tile  bool
 }
 
 // ReadFill reads the current element if it is one of the fill elements
@@ -363,104 +353,13 @@ func ReadFill(s *xmlscan.Scanner) (f Fill, ok bool) {
 	case "noFill":
 		f.Paint = PaintNone
 		s.Skip()
-	case "gradFill":
-		f.Paint = PaintOther
-		f.Stops = readStops(s)
-	case "blipFill":
-		f.Paint = PaintOther
-		f.Blip, f.Crop, f.Tile = ReadBlipFill(s)
-	case "pattFill", "grpFill":
+	case "gradFill", "blipFill", "pattFill", "grpFill":
 		f.Paint = PaintOther
 		s.Skip()
 	default:
 		return f, false
 	}
 	return f, true
-}
-
-// maxStops bounds the stops of a gradient that are kept.
-const maxStops = 16
-
-// readStops reads the colours of a:gradFill's stops.
-func readStops(s *xmlscan.Scanner) []Color {
-	var stops []Color
-	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() == xmlscan.Start && s.Is(ns.Draw, "gs") {
-			if c := ReadColor(s); len(stops) < maxStops {
-				stops = append(stops, c)
-			}
-		}
-	}
-	return stops
-}
-
-// ReadBlipFill reads a blip fill (a:blipFill, p:blipFill) whose start tag
-// is current: the relationship of its picture, what is cut off it, and
-// whether it is tiled.
-func ReadBlipFill(s *xmlscan.Scanner) (blip string, crop [4]float64, tile bool) {
-	depth := s.Depth()
-	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start {
-			continue
-		}
-		switch {
-		case s.Is(ns.Draw, "blip"):
-			if id, ok := s.Attr(ns.Rel, "embed"); ok && blip == "" {
-				blip = string(id)
-			}
-		case s.Is(ns.Draw, "srcRect"):
-			for i, side := range []string{"l", "t", "r", "b"} {
-				if v, ok := percentAttr(s, side); ok {
-					crop[i] = float64(v) / 100000
-				}
-			}
-		case s.Is(ns.Draw, "tile"):
-			tile = true
-		}
-	}
-	return blip, crop, tile
-}
-
-// Colors resolves the stops of a gradient. ok is false unless every stop
-// is a known colour at full opacity.
-func (p *Palette) Colors(stops []Color) ([]theme.Color, bool) {
-	if len(stops) == 0 {
-		return nil, false
-	}
-	out := make([]theme.Color, len(stops))
-	for i, c := range stops {
-		rgb, alpha, ok := p.Resolve(c, nil)
-		if !ok || alpha < 1 {
-			return nil, false
-		}
-		out[i] = rgb
-	}
-	return out, true
-}
-
-// StyleFill returns the fill a shape gets from a reference to one of the
-// theme's fill styles (a:fillRef, p:bgRef): index is the reference's
-// number and c its colour.
-func (p *Palette) StyleFill(index int, c Color) Fill {
-	plain, none := p.Theme.PlainFill(index)
-	switch {
-	case none:
-		return Fill{Paint: PaintNone}
-	case plain && c.IsSet():
-		return Fill{Paint: PaintSolid, Color: c}
-	}
-	return Fill{Paint: PaintOther}
-}
-
-// Opaque works out the colour of a fill that hides what is behind it:
-// one plain colour at full opacity. ok is false for any other fill.
-func (p *Palette) Opaque(f Fill, ph *theme.Color) (rgb theme.Color, ok bool) {
-	if f.Paint != PaintSolid {
-		return rgb, false
-	}
-	rgb, alpha, ok := p.Resolve(f.Color, ph)
-	return rgb, ok && alpha >= 1
 }
 
 // intAttr reads an attribute that is a whole number.

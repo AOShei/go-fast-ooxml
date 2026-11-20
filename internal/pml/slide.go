@@ -11,7 +11,6 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -43,7 +42,7 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 	room := gofastcore.TextBudgetFrom(ctx)
 	pg.text.Budget, pg.text.Taken = room, 0
 
-	removed, unmapped, skipped, sawImage := 0, 0, 0, false
+	removed, unmapped, sawImage := 0, 0, false
 	cut := ""
 	switch {
 	case ref.target == "" || !p.pkg.Has(ref.target):
@@ -100,14 +99,14 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		}
 		blocks := pg.arrange()
 		if pg.hidden {
-			part.Hidden = gofastcore.HiddenInvisible
+			part.Display = gofastcore.DisplayHidden
 		}
 		part.Name = pg.title
 		res.Unread, res.Programs = pg.unread, pg.programs
 		// The workbooks the slide's charts embed are files the slide
 		// embeds.
 		res.Rels = append(rels[:len(rels):len(rels)], pg.charts...)
-		removed, skipped, sawImage, cut = pg.text.Removed, pg.skipped, pg.sawImage, pg.cut
+		removed, sawImage, cut = pg.text.Removed, pg.sawImage, pg.cut
 		pg.text.Removed, pg.cells = 0, 0 // counted; the cells stay taken
 		unmapped, pg.text.Unmapped = pg.text.Unmapped, 0
 		if err := pg.failure; err != nil {
@@ -219,17 +218,13 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 			part.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")
 		}
 	}
-	if skipped > 0 {
-		part.Warn(gofastcore.SeverityWarning, warn.HiddenUnchecked,
-			strconv.Itoa(skipped)+" shapes were not compared with what lies under or over them: the slide has more overlapping shapes than are checked")
-	}
 	if removed > 0 {
 		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(removed))
 	}
 	if unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(unmapped))
 	}
-	part.MarkHidden()
+	part.Finish()
 	return res
 }
 
@@ -277,8 +272,7 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	for _, name := range pg.damaged {
 		p.note(name, errors.New("damaged"))
 	}
-	l.cmap, l.show, l.bg, l.phs, l.loose = colors, pg.showMaster, pg.bg, pg.phs, pg.loose
-	l.paint = append([]painted(nil), pg.paint...)
+	l.cmap, l.show, l.phs = colors, pg.showMaster, pg.phs
 	// Its own text, from the top down.
 	l.static = append([]gofastcore.Block(nil), pg.blocks...)
 	sort.SliceStable(l.static, func(i, j int) bool {
@@ -304,17 +298,10 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 		}
 	}
 	l.static = kept
-	// These blocks are copied to every slide that shows them, and the
-	// copies share their spans. Invisible characters are marked here,
-	// once, so that nothing is added to a block several slides hold.
+	// These blocks are copied to every slide that shows them.
 	l.staticBytes = 0
 	for i := range l.static {
-		b := &l.static[i]
-		l.staticBytes += blockBytes(b)
-		if found := gofastcore.InvisibleChars(b.Text); found != nil {
-			b.Spans = append(b.Spans[:len(b.Spans):len(b.Spans)], found...)
-			b.Hidden |= gofastcore.HiddenChars
-		}
+		l.staticBytes += blockBytes(&l.static[i])
 	}
 	if l.master != nil && len(l.master.static) > 0 && len(l.static) > 0 {
 		above := map[said]bool{}
@@ -344,7 +331,7 @@ func (pg *page) comments(name string, out []gofastcore.Block) []gofastcore.Block
 	authors := p.authorNames()
 	t := &pg.text
 	t.Palette, t.Chain, t.Base = &pg.pal, nil, dml.RunProps{}
-	t.Lit, t.Later, t.Styles, t.Link, t.SlideNumber = false, false, false, nil, ""
+	t.Styles, t.Link, t.SlideNumber = false, nil, ""
 
 	block := func(text, author, date []byte) gofastcore.Block {
 		b := gofastcore.Block{Kind: gofastcore.KindNote, Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteComment}}
@@ -524,13 +511,6 @@ func (pg *page) addPaper(blocks []gofastcore.Block, which int, own [2]bool, room
 		pg.full = true
 	default:
 		blocks = appendRepeated(blocks, paper)
-		var longs stored.Longs
-		for i, what := range [2]string{"a header", "a footer"} {
-			if n := p.paperLong[which][i]; n > 0 && !own[i] {
-				longs.Add(what+" that the master does not show", "", n)
-			}
-		}
-		longs.Warn(part)
 	}
 	return blocks
 }
@@ -538,8 +518,7 @@ func (pg *page) addPaper(blocks []gofastcore.Block, which int, own [2]bool, room
 // readPaper reads the notes master (which 0) or the handout master (1)
 // once: its header and footer, and text of its own. The frames its pages
 // fill in, the date and the page number are not read. A header or footer
-// the master says not to show is routine, and flagged only if it is out
-// of proportion (stored.MaxFurnitureWords).
+// the master switches off (p:hf) is declared hidden.
 func (p *presentation) readPaper(which int) (blocks []gofastcore.Block, from []int8, bytes int) {
 	p.paperOnce[which].Do(func() {
 		name := p.masters[which]
@@ -575,32 +554,18 @@ func (p *presentation) readPaper(which int) (blocks []gofastcore.Block, from []i
 			from[i] = -1
 		}
 		for i := range 2 {
-			words := 0
 			for j := 0; j+1 < len(pg.hfBlock[i]); j += 2 {
 				for k := pg.hfBlock[i][j]; k < pg.hfBlock[i][j+1] && k < len(blocks); k++ {
 					from[k] = int8(i)
-					words += stored.Words(blocks[k].Text)
-				}
-			}
-			if pg.hf[i] || words <= stored.MaxFurnitureWords {
-				continue
-			}
-			p.paperLong[which][i] = words
-			for k := range blocks {
-				if from[k] == int8(i) {
-					blocks[k].Hidden |= gofastcore.HiddenInvisible
+					if !pg.hf[i] {
+						blocks[k].Display |= gofastcore.DisplayHidden
+					}
 				}
 			}
 		}
 		bytes := 0
 		for i := range blocks {
-			b := &blocks[i]
-			bytes += blockBytes(b)
-			// Marked once here: the blocks are shared by every slide.
-			if found := gofastcore.InvisibleChars(b.Text); found != nil {
-				b.Spans = append(b.Spans[:len(b.Spans):len(b.Spans)], found...)
-				b.Hidden |= gofastcore.HiddenChars
-			}
+			bytes += blockBytes(&blocks[i])
 		}
 		p.paper[which], p.paperFrom[which], p.paperBytes[which] = blocks, from, bytes
 	})

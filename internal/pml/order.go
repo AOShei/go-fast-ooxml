@@ -1,112 +1,11 @@
 package pml
 
 import (
-	"errors"
-	"slices"
 	"sort"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
-	"github.com/AOShei/go-fast-ooxml/internal/media"
-	"github.com/AOShei/go-fast-ooxml/internal/opc"
 )
-
-// cover is an area that hides what was drawn under it.
-type cover struct {
-	box     dml.Rect
-	picture string // not empty: a picture, which hides only if it has no transparency
-}
-
-// occlude marks the text of every shape that lies wholly under a later
-// shape that hides it: a rectangle filled with one opaque colour, or a
-// picture with no transparency. Shapes are drawn in the order they are
-// stored, so later means on top. A shape that an animation acts on is not
-// counted as hiding anything: it is not there for the whole of the show.
-func (pg *page) occlude() {
-	var covers []cover
-	for i := len(pg.shapes) - 1; i >= 0; i-- {
-		sh := &pg.shapes[i]
-		if sh.text {
-			for k := 0; k < len(covers); k++ {
-				if pg.effort--; pg.effort < 0 {
-					pg.skipped++
-					break
-				}
-				c := &covers[k]
-				if !c.box.Contains(sh.box) {
-					continue
-				}
-				if c.picture != "" {
-					if !pg.p.opaquePicture(c.picture) {
-						covers = append(covers[:k], covers[k+1:]...)
-						k--
-						continue
-					}
-					c.picture = ""
-				}
-				for j := sh.first; j < sh.end; j++ {
-					if pg.blocks[j].Kind != gofastcore.KindImage {
-						pg.blocks[j].Hidden |= gofastcore.HiddenOccluded
-					}
-				}
-				break
-			}
-		}
-		if !sh.boxed || !(sh.cover || sh.picture != "") || pg.moves(sh) {
-			continue
-		}
-		// One that lies inside a cover already known adds nothing: what it
-		// hides, that one hides.
-		inside := false
-		for k := range covers {
-			if pg.effort--; pg.effort < 0 {
-				break
-			}
-			if covers[k].picture == "" && covers[k].box.Contains(sh.box) {
-				inside = true
-				break
-			}
-		}
-		if !inside {
-			covers = append(covers, cover{box: sh.box, picture: sh.picture})
-		}
-	}
-}
-
-// moves reports whether an animation acts on the shape or on a group it
-// is in.
-func (pg *page) moves(sh *shape) bool {
-	if pg.allAnimated {
-		return true
-	}
-	for _, id := range sh.ids {
-		if _, found := slices.BinarySearch(pg.animated, id); found && id != 0 {
-			return true
-		}
-	}
-	return false
-}
-
-// opaquePicture reports whether the picture in the named part is known
-// to have no transparency: a JPEG, or a PNG with neither an alpha channel
-// nor a transparent colour. Of any other picture it is not known, and
-// the answer is no.
-func (p *presentation) opaquePicture(name string) bool {
-	p.mu.Lock()
-	opaque, ok := p.opaque[name]
-	p.mu.Unlock()
-	if ok {
-		return opaque
-	}
-	opaque, err := media.Opaque(p.pkg, name)
-	if errors.Is(err, opc.ErrBudget) {
-		p.exceeded.Store(true)
-	}
-	p.mu.Lock()
-	p.opaque[name] = opaque
-	p.mu.Unlock()
-	return opaque
-}
 
 // item is something to be put in reading order: a shape, or a top-level
 // shape or group with everything in it.
@@ -171,7 +70,6 @@ func inOrder(items []item) {
 // thing, at the place of the group, and so is whatever a top-level shape
 // holds.
 func (pg *page) arrange() []gofastcore.Block {
-	pg.occlude()
 	if len(pg.blocks) == 0 {
 		return nil
 	}

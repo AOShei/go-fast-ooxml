@@ -25,16 +25,6 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
-// HiddenChecked is the set of hidden-text reasons this reader checks
-// completely: hidden sheets, rows and columns and values a format blanks
-// (invisible), fonts under two points (tiny), text in the colour of its
-// cell (low_contrast), and invisible characters. Where conditional
-// formatting gives a colour, the rules are decided from the stored values
-// and the cell is judged with the colours of those that match; where a
-// rule is a formula and it makes a difference whether it matches, the
-// cell is not judged, and a warning on the sheet counts it.
-const HiddenChecked = gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars
-
 // Config holds the limits that are this format's own.
 type Config struct {
 	// MaxCells bounds the cells kept from a workbook, all sheets
@@ -213,7 +203,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		}
 		switch {
 		case ns.IsRel(rel.Type, ns.RelStyles):
-			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, wb.theme, opts.DeepHidden) })
+			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s) })
 		case ns.IsRel(rel.Type, ns.RelSharedStrings):
 			load(rel.Target, func(s *xmlscan.Scanner) {
 				var full bool
@@ -243,9 +233,6 @@ func (b *Book) Stored() int { return b.storedIndex() }
 
 // Noun names the parts of a workbook.
 func (b *Book) Noun() string { return "sheets" }
-
-// HiddenChecked returns the reasons this reader checks completely.
-func (b *Book) HiddenChecked() gofastcore.Hidden { return HiddenChecked }
 
 // Begin starts a pass over the workbook: the limits count from here.
 func (b *Book) Begin() {
@@ -277,7 +264,7 @@ func (b *Book) Read(ctx context.Context, index int) *unit.Result {
 		// it is empty.
 		res := &unit.Result{Part: gofastcore.Part{Kind: gofastcore.PartSheet, Number: 1}}
 		res.Part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the workbook lists no sheets")
-		res.Part.MarkHidden()
+		res.Part.Finish()
 		return res
 	}
 	return b.wb.sheet(ctx, index, b.refs[index], b.budget).result()
@@ -366,7 +353,7 @@ func (wb *workbook) start(ctx context.Context, index int, ref sheetRef, budget b
 	part := &sh.part
 	part.Kind, part.Number, part.Name = gofastcore.PartSheet, index+1, ref.name
 	if ref.hidden {
-		part.Hidden = gofastcore.HiddenInvisible
+		part.Display = gofastcore.DisplayHidden
 	}
 	switch {
 	case ref.target == "" || !wb.pkg.Has(ref.target):
@@ -442,7 +429,7 @@ func (sh *sheet) finish(sawImage bool) {
 	if sh.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))
 	}
-	part.MarkHidden()
+	part.Finish()
 }
 
 // content reads a worksheet and everything that hangs on it into the
@@ -460,7 +447,6 @@ func (sh *sheet) content() (sawImage bool) {
 	sh.s = xmlscan.Scanner{} // its window is no longer needed
 
 	declared := sh.declared()
-	sh.applyTableStyles(declared)
 	blocks := sh.tablesOf(declared)
 	blocks = append(blocks, sh.comments()...)
 	blocks = append(blocks, sh.choices()...)
@@ -500,7 +486,6 @@ func (sh *sheet) chartContent() (sawImage bool) {
 func (sh *sheet) tablesOf(declared []declaredTable) []placed {
 	sh.order()
 	sh.sortDetails()
-	sh.applyConditional(declared)
 	return sh.regions(declared)
 }
 

@@ -33,8 +33,8 @@ import (
 // however large the file is.
 //
 // The parts are the same as those in the document that Extract returns,
-// each complete: its warnings are on it and its hidden text is flagged
-// (Part.MarkHidden has been called).
+// each complete: its warnings are on it, and what the file declares about
+// the display of its text is set (Part.Finish has been called).
 //
 // A File is safe for concurrent use. A limit of Options.Limits counts
 // over one pass: one call of Document, Part or Children, or one run
@@ -51,7 +51,6 @@ type File struct {
 	meta     gofastcore.Metadata
 	opened   []gofastcore.Warning // warnings about the document known when it was opened
 	within   int64                // for a file embedded in a document: the bytes that document has left to decompress; 0 otherwise
-	checked  gofastcore.Hidden
 	parts    int
 	stored   int // the index of the stored part, or -1
 	noun     string
@@ -179,7 +178,7 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 		return nil, err
 	}
 	f.sess, f.clean = sess, !sess.src.Limited()
-	f.parts, f.noun, f.checked = sess.src.Len(), sess.src.Noun(), sess.src.HiddenChecked()
+	f.parts, f.noun = sess.src.Len(), sess.src.Noun()
 	f.stored = sess.src.Stored()
 	if book, ok := sess.src.(*sml.Book); ok {
 		for i, sh := range book.Sheets() {
@@ -226,9 +225,6 @@ func (f *File) open(first bool) (*session, error) {
 		}
 		if meta.Removed > 0 {
 			warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", meta.Removed))
-		}
-		if hiddenInMetadata(&f.meta) {
-			warn(gofastcore.SeverityWarning, gofastcore.WarnTextHidden, "document properties contain invisible characters")
 		}
 		if rec := pkg.Recovered(); rec != nil {
 			message := fmt.Sprintf("the archive's directory cannot be read: the file is cut short or damaged. %d members were found by their own headers", rec.Members)
@@ -297,12 +293,6 @@ func (f *File) NumParts() int { return f.parts }
 // Sheets lists the sheets of a workbook in order, without reading them.
 // It is empty for other formats.
 func (f *File) Sheets() []Sheet { return append([]Sheet(nil), f.sheets...) }
-
-// HiddenChecked returns the reasons for hidden text that are checked
-// completely for this file's format, as in
-// gofastcore.Document.HiddenChecked. It is known when the file is opened
-// and does not change.
-func (f *File) HiddenChecked() gofastcore.Hidden { return f.checked }
 
 // acquire returns a reading to make a pass with: the one in use if no
 // limit has cut it short, otherwise a new one, since what a reading
@@ -568,7 +558,7 @@ func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
 		return nil, err
 	}
 	doc := gofastcore.New(f.source.Format)
-	doc.Source, doc.Metadata, doc.HiddenChecked = f.source, f.meta, f.checked
+	doc.Source, doc.Metadata = f.source, f.meta
 	doc.Warnings = append(doc.Warnings, f.opened...)
 	if asked > len(selected) {
 		doc.Warnings = append(doc.Warnings, f.capped(asked, len(selected)))
@@ -673,8 +663,8 @@ func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
 // band of rows at a time. number is the sheet's part number, from 1, and
 // band the number of rows that have cells to a band. Each band is
 // yielded as a part with the sheet's kind, number and name, holding the
-// tables its cells make, with hidden text flagged as in the sheet read
-// whole.
+// tables its cells make, with what the file declares about the display
+// of cells as in the sheet read whole.
 //
 // It is for sheets too long to hold: what is held at a time is one band,
 // whatever the length of the sheet, and the limits on cells and text do

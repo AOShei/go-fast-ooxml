@@ -8,8 +8,8 @@ files, what it leaves to the caller, and how to report a problem.
 
 Use GitHub's private reporting for this repository (the **Security** tab,
 **Report a vulnerability**). Please do not open a public issue for something
-that lets a file crash the library, exhaust memory, read outside the input,
-or get text past the hidden-text checks they claim to cover. A file that
+that lets a file crash the library, exhaust memory, or read outside the
+input. A file that
 reproduces the problem is the most useful thing to send.
 
 Any of the following is a bug to report, whatever the file:
@@ -18,8 +18,8 @@ Any of the following is a bug to report, whatever the file:
 - memory or time beyond what the limits below allow;
 - a result that is neither a valid document nor one of the shared errors;
 - output that differs with the number of workers;
-- text flagged as visible that a reader of the document cannot see, where
-  the README says the check covers that case.
+- text the file declares hidden or drawn with no ink that comes out without
+  that reason, where the README lists the declaration for the format.
 
 ## What a file cannot do
 
@@ -51,8 +51,7 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Depth of embedded documents | 4 | `Options.Limits.MaxDepth` | Listed, not opened |
 | Nesting of XML elements | 512 | fixed | The part is cut off |
 | Code of a VBA project, decompressed | what is left of the text and decompression budgets | | The module is cut off; what it decompresses to is charged to the decompression budget too |
-| Pictures decoded for `DeepHidden` | 40 million pixels, 64 MiB of file | fixed | Not decoded; text over them is not judged |
-| Conditional formatting rules that give a colour, per sheet | 64; 1 million values read for them | fixed | The cells of further rules are not judged, and counted by `ooxml.hidden_unchecked` |
+| Data after the end of the archive | 1 MiB read, and only what follows within the archive's last 64 KiB is found | fixed | The rest is not read; `input.trailing_data` says how many bytes there are |
 
 A zero in a limit means its default and a negative number means none.
 
@@ -98,26 +97,27 @@ strangers they allow more than most services want to spend:
   costs, up to `MaxSpinCount`: about a hundredth of a second at what Office
   writes, about a tenth at the default limit.
 
-## Hidden text
+## What a file declares about display
 
 Documents are fed to language models, and text a human reviewer cannot see
-is the usual way to smuggle instructions into one. The library does not
-block or remove such text. It extracts it, flags it with the reason
-(`Block.Hidden`, spans, table cells), raises a `text.hidden` warning on the
-part, and lets the caller leave it out (`RenderOptions.ExcludeHidden`).
+is one way to smuggle instructions into one. This library does not judge
+that: it extracts everything, and where the file itself declares text not
+shown (hidden formatting, a hidden sheet, row, column, slide or shape) or
+drawn with no ink, the block says so (`Block.Display`, spans, table
+regions). The caller can leave such text out (`RenderOptions.ExcludeDisplay`).
 
-`Document.HiddenChecked` lists the reasons that are checked completely for
-the format. The README's *Hidden text* section lists, per format, exactly
-what is flagged and, as important, what is not: text over a picture or a
-gradient, what an animation does, conditional formatting, page layout in
-Word and Excel, fonts with blank glyphs. A flag states a fact; where the
-fact cannot be established nothing is flagged, so **the absence of a flag
-is not a statement that all text is visible**.
+Nothing is judged from appearance: not colour against the background, not
+size, not position, not what covers what. **A block with no reason says
+nothing about whether a reader can see it, or whether it is harmful.**
+Threat detection is outside this library; the README's *What the file
+declares* section lists, per format, exactly what is reported. Characters
+that display as nothing are kept in the text as they are, for whatever
+checks the caller runs.
 
 Content that is never on a page but is extracted by design (properties,
-comments, speaker's notes, alternative text) has its own place in the model
-and is not flagged as hidden. A consumer that feeds a model decides what to
-do with each.
+comments, speaker's notes, alternative text, what the file stores, data
+after the end of the archive) has its own place in the model. A consumer
+that feeds a model decides what to do with each.
 
 ## What is not promised
 

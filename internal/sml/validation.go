@@ -85,8 +85,8 @@ func (sh *sheet) appendRanges(dst []rect, sqref []byte) []rect {
 // first cell it is for. A list written out in the file ("a,b,c") gives its
 // values, one per line; one taken from cells or worked out by a formula
 // gives the formula, since those values are in the text where the cells
-// are. A list whose arrow is hidden, or whose cells are all hidden, is
-// never seen and is flagged so.
+// are. A list whose arrow the file hides, or whose cells are all in
+// hidden rows or columns, is declared hidden.
 func (sh *sheet) choices() []placed {
 	var out []placed
 	var cols []span
@@ -121,7 +121,7 @@ func (sh *sheet) choices() []placed {
 		b := gofastcore.Block{Kind: gofastcore.KindNote, Text: string(text), Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteChoices}}
 		b.Loc.Range = where.String()
 		if !v.arrow || sh.allHidden(v.ranges, cols) {
-			b.Hidden = gofastcore.HiddenInvisible
+			b.Display = gofastcore.DisplayHidden
 		}
 		first := v.ranges[0]
 		for _, r := range v.ranges[1:] {

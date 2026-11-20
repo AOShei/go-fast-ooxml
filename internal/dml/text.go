@@ -13,7 +13,6 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
-	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
@@ -27,7 +26,6 @@ type RunProps struct {
 	Said    gofastcore.Style // those the properties speak of, on or off
 	Ink     Fill             // what the letters are filled with
 	Outline Paint            // PaintOther: the letters have a drawn outline
-	Behind  Color            // a highlight behind the run
 	// Font is the symbol font of the run's letters (a:latin), Sym that of
 	// its symbols (a:sym), each meant only if its Said flag is set.
 	Font, Sym         symbol.Font
@@ -46,9 +44,6 @@ func (r *RunProps) inherit(from *RunProps) {
 	}
 	if r.Outline == PaintUnset {
 		r.Outline = from.Outline
-	}
-	if !r.Behind.IsSet() {
-		r.Behind = from.Behind
 	}
 	if !r.FontSaid {
 		r.Font, r.FontSaid = from.Font, from.FontSaid
@@ -233,9 +228,6 @@ func readRunProps(s *xmlscan.Scanner, rp *RunProps, to *link) {
 				s.Skip()
 			}
 			continue
-		case s.Is(ns.Draw, "highlight"):
-			rp.Behind = ReadColor(s)
-			continue
 		case s.Is(ns.Draw, "latin"):
 			// A theme font ("+mn-lt") is never a symbol font.
 			v, _ := s.Attr(xmlscan.NoSpace, "typeface")
@@ -265,14 +257,14 @@ func StartsProgram(action []byte) bool {
 
 // Para is one paragraph of a text body that has text.
 type Para struct {
-	Start, End int               // its text, trimmed, in Text.Buf
-	Spans      []gofastcore.Span // formatting, links and hidden ranges
-	Hidden     gofastcore.Hidden // every reason part of it is hidden
-	Level      int               // from 0
-	Listed     bool              // it has a bullet or a number
-	Ordered    bool              // a number
-	Marker     string            // the bullet or number as shown
-	Size       float64           // the size its first text is shown at, in points
+	Start, End int                // its text, trimmed, in Text.Buf
+	Spans      []gofastcore.Span  // formatting, links, and ranges the file declares not shown
+	Display    gofastcore.Display // every reason the file declares for part of it
+	Level      int                // from 0
+	Listed     bool               // it has a bullet or a number
+	Ordered    bool               // a number
+	Marker     string             // the bullet or number as shown
+	Size       float64            // the size its first text is shown at, in points
 }
 
 // defaultSize is the size of text that nothing gives a size, in
@@ -303,17 +295,6 @@ type Text struct {
 	// says anything.
 	Chain []*ListStyle
 	Base  RunProps
-	// Behind is what the text is seen against, if Lit says it is known.
-	// Where it is not one colour, Under may hold the colours it is made
-	// of (the stops of a gradient, the cells of a picture), which text is
-	// judged against when Lit is false.
-	Behind theme.Color
-	Lit    bool
-	Under  []theme.Color
-	// Later puts off judging text against what is behind it: the colours
-	// the text is written in are listed in Inks for the caller to judge.
-	// A table cell needs this, since its fill follows its text.
-	Later bool
 	// Styles asks for spans of formatting and links, and Link turns the
 	// relationship of a link into its address.
 	Styles bool
@@ -321,14 +302,9 @@ type Text struct {
 	// SlideNumber, if not empty, is what a slide-number field shows.
 	SlideNumber string
 
-	Buf   []byte        // the text of the paragraphs
-	Paras []Para        // the paragraphs that have text
-	Inks  []theme.Color // with Later: the colours of the text
-	Plain bool          // with Later: some text has no colour of its own
-
+	Buf   []byte  // the text of the paragraphs
+	Paras []Para  // the paragraphs that have text
 	Scale float64 // the share of its size the text is shown at (autofit)
-	Clip  bool    // text that does not fit in the shape is cut off
-	Inset float64 // top and bottom margins inside the shape, in points
 
 	Removed  int // control characters removed, over all bodies
 	Unmapped int // codes of symbol fonts with no character, over all bodies
@@ -348,14 +324,11 @@ type Text struct {
 	first  [maxLevels]int32
 }
 
-// maxInks bounds the colours listed for the caller.
-const maxInks = 16
-
 // Read reads the text body whose Start token is current (p:txBody,
 // xdr:txBody, a:txBody) and consumes it.
 func (t *Text) Read(s *xmlscan.Scanner) {
-	t.Buf, t.Paras, t.Inks, t.spans = t.Buf[:0], t.Paras[:0], t.Inks[:0], t.spans[:0]
-	t.Scale, t.Clip, t.Inset, t.Plain = 1, false, 7.2, false
+	t.Buf, t.Paras, t.spans = t.Buf[:0], t.Paras[:0], t.spans[:0]
+	t.Scale = 1
 	t.own = nil
 	t.have = [maxLevels]bool{}
 	t.scheme = [maxLevels]string{}
@@ -387,17 +360,6 @@ func (t *Text) Own() *ListStyle { return t.own }
 
 // bodyProps reads what a:bodyPr says about fitting the text.
 func (t *Text) bodyProps(s *xmlscan.Scanner) {
-	if v, ok := s.Attr(xmlscan.NoSpace, "vertOverflow"); ok {
-		t.Clip = string(v) == "clip" || string(v) == "ellipsis"
-	}
-	top, bottom := int64(45720), int64(45720)
-	if n, ok := intAttr(s, "tIns"); ok {
-		top = n
-	}
-	if n, ok := intAttr(s, "bIns"); ok {
-		bottom = n
-	}
-	t.Inset = float64(max(top, 0)+max(bottom, 0)) / EMU
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
@@ -527,7 +489,7 @@ func (t *Text) para(s *xmlscan.Scanner) {
 	}
 	t.Taken += int64(t.Cost + to - from)
 	p := Para{Start: start + from, End: start + to, Level: level, Size: size}
-	p.Spans, p.Hidden = hidden.Settle(t.spans[spanStart:], from, to, raw)
+	p.Spans, p.Display = hidden.Settle(t.spans[spanStart:], from, to, raw)
 	t.spans = t.spans[:spanStart]
 	t.bullet(&p, &pp)
 	t.Paras = append(t.Paras, p)
@@ -661,55 +623,22 @@ func (t *Text) run(s *xmlscan.Scanner, paraStart, level int, slideNumber bool) f
 	}
 	rp.inherit(t.level(level))
 
-	var reasons gofastcore.Hidden
 	size := rp.Size
 	if size == 0 {
 		size = defaultSize
 	}
 	shown := float64(size) / 100 * t.Scale
-	if shown < gofastcore.HiddenTinySize {
-		reasons |= gofastcore.HiddenTiny
-	}
+	// Text the file declares drawn with no ink: no fill and no outline, or
+	// a fill with no opacity. Its colour is not compared with anything.
+	var reasons gofastcore.Display
 	switch {
 	case rp.Outline == PaintOther:
-		// The letters have an outline, which is seen whatever their fill.
+		// The letters have an outline, drawn whatever their fill.
 	case rp.Ink.Paint == PaintNone:
-		reasons |= gofastcore.HiddenInvisible // neither filled nor outlined
-	case rp.Ink.Paint == PaintUnset:
-		t.Plain = true
+		reasons = gofastcore.DisplayNoInk
 	case rp.Ink.Paint == PaintSolid:
-		ink, alpha, ok := t.Palette.Resolve(rp.Ink.Color, nil)
-		if !ok {
-			break
-		}
-		if alpha <= 0 {
-			reasons |= gofastcore.HiddenTransparent
-			break
-		}
-		behind, lit := t.Behind, t.Lit
-		if rp.Behind.IsSet() {
-			var a float64
-			behind, a, lit = t.Palette.Resolve(rp.Behind, nil)
-			lit = lit && a >= 1
-		} else if t.Later {
-			if alpha >= 1 && len(t.Inks) < maxInks {
-				t.Inks = append(t.Inks, ink)
-			}
-			break
-		}
-		if !lit {
-			if !rp.Behind.IsSet() && LowOnMost(ink, alpha, t.Under) {
-				reasons |= gofastcore.HiddenLowContrast
-			}
-			break
-		}
-		if alpha < 1 {
-			// Partly see-through: what is seen is between the two.
-			blend := func(a, b uint8) uint8 { return uint8(float64(a)*alpha + float64(b)*(1-alpha) + 0.5) }
-			ink = theme.Color{R: blend(ink.R, behind.R), G: blend(ink.G, behind.G), B: blend(ink.B, behind.B)}
-		}
-		if gofastcore.LowContrast(ink.R, ink.G, ink.B, behind.R, behind.G, behind.B) {
-			reasons |= gofastcore.HiddenLowContrast
+		if _, alpha, ok := t.Palette.Resolve(rp.Ink.Color, nil); ok && alpha <= 0 {
+			reasons = gofastcore.DisplayNoInk
 		}
 	}
 
@@ -725,7 +654,7 @@ func (t *Text) run(s *xmlscan.Scanner, paraStart, level int, slideNumber bool) f
 		from, to := start-paraStart, len(t.Buf)-paraStart
 		// The spans held are those of the paragraph being read.
 		if n := len(t.spans); n > 0 {
-			if last := &t.spans[n-1]; last.End == from && last.Style == style && last.Href == href && last.Hidden == reasons {
+			if last := &t.spans[n-1]; last.End == from && last.Style == style && last.Href == href && last.Display == reasons {
 				last.End = to
 				return shown
 			}
@@ -739,32 +668,7 @@ func (t *Text) run(s *xmlscan.Scanner, paraStart, level int, slideNumber bool) f
 			}
 			t.Taken += int64(len(href))
 		}
-		t.spans = append(t.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Hidden: reasons})
+		t.spans = append(t.spans, gofastcore.Span{Start: from, End: to, Style: style, Href: href, Display: reasons})
 	}
 	return shown
-}
-
-// MostShare is the share of what lies under text that text must be lost
-// against to be judged not discernible on something that is not one
-// colour: nearly all of it.
-const MostShare = 0.95
-
-// LowOnMost reports whether text of colour ink, at that opacity, is of low
-// contrast against at least MostShare of the colours under it.
-func LowOnMost(ink theme.Color, alpha float64, under []theme.Color) bool {
-	if len(under) == 0 {
-		return false
-	}
-	low := 0
-	for _, behind := range under {
-		c := ink
-		if alpha < 1 {
-			blend := func(a, b uint8) uint8 { return uint8(float64(a)*alpha + float64(b)*(1-alpha) + 0.5) }
-			c = theme.Color{R: blend(ink.R, behind.R), G: blend(ink.G, behind.G), B: blend(ink.B, behind.B)}
-		}
-		if gofastcore.LowContrast(c.R, c.G, c.B, behind.R, behind.G, behind.B) {
-			low++
-		}
-	}
-	return float64(low) >= MostShare*float64(len(under))
 }

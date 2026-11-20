@@ -130,7 +130,7 @@ func TestExtractProperties(t *testing.T) {
 	if err := doc.Validate(); err != nil {
 		t.Error(err)
 	}
-	if warned(doc, gofastcore.WarnTextHidden) || warned(doc, gofastcore.WarnInputActiveContent) || warned(doc, gofastooxml.WarnPropertiesDamaged) {
+	if warned(doc, gofastcore.WarnInputActiveContent) || warned(doc, gofastooxml.WarnPropertiesDamaged) {
 		t.Errorf("unexpected warnings: %+v", doc.Warnings)
 	}
 
@@ -161,8 +161,9 @@ func TestExtractReportsFactsAboutTheFile(t *testing.T) {
 	if !warned(doc, gofastcore.WarnInputActiveContent) {
 		t.Error("a VBA project was not reported")
 	}
-	// Invisible characters in a property are kept and flagged, not dropped.
-	if doc.Metadata.Title != tagged || !warned(doc, gofastcore.WarnTextHidden) {
+	// Invisible characters in a property are kept as they are, and nothing
+	// is said of them.
+	if doc.Metadata.Title != tagged || len(doc.Warnings) > 0 && doc.Warnings[0].Code == "text.hidden" {
 		t.Errorf("hidden characters in the title: kept=%v, warnings %+v", doc.Metadata.Title == tagged, doc.Warnings)
 	}
 	if doc.Metadata.Subject != "bellhere" || !warned(doc, gofastooxml.WarnControlCharsRemoved) {

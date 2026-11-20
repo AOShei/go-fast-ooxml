@@ -51,38 +51,28 @@ func ExampleExtract() {
 	// a table of 4 rows and 3 columns, 2 merged cells
 }
 
-// Text that a reader of the document cannot see is extracted and flagged.
-// It is in the rendered text unless it is asked to be left out.
-func ExampleExtract_hiddenText() {
+// What the file declares about the display of its text: here a run
+// formatted as hidden. Text in white or in a one-point font has no reason,
+// since colour and size are not judged, and characters that display as
+// nothing are kept as they are.
+func ExampleExtract_display() {
 	doc, err := gofastooxml.ExtractFile(context.Background(), "testdata/fixtures/hidden.docx", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, b := range doc.Parts[0].Blocks {
-		if b.Hidden != 0 {
-			fmt.Println("hidden:", b.Hidden)
+		if b.Display != 0 {
+			fmt.Printf("%s: %q\n", b.Display, b.Text)
 		}
 	}
-	fmt.Println(strings.Contains(doc.Text(), "Hidden by formatting."))
-
-	var visible strings.Builder
-	doc.WriteText(&visible, &gofastcore.RenderOptions{ExcludeHidden: gofastcore.HiddenAny})
-	fmt.Println(visible.String())
+	var shown strings.Builder
+	doc.WriteText(&shown, &gofastcore.RenderOptions{ExcludeDisplay: gofastcore.DisplayAny})
+	fmt.Println(strings.Contains(shown.String(), "Hidden by formatting."))
+	fmt.Println(strings.Contains(doc.Text(), "\U000E0069")) // a Unicode tag character
 	// Output:
-	// hidden: invisible
-	// hidden: low_contrast
-	// hidden: tiny
-	// hidden: invisible_chars
+	// hidden: "Visible sentence one. Hidden by formatting. Visible sentence two."
+	// false
 	// true
-	// Visible sentence one. Visible sentence two.
-	//
-	// Looks clean.
-	//
-	// Light grey text is still visible.
-	//
-	// Six point text is small but legible.
-	//
-	// An ordinary closing paragraph.
 }
 
 // A file opened to be read a part at a time. Each part is complete when
@@ -99,8 +89,8 @@ func ExampleOpen() {
 			log.Fatal(err)
 		}
 		fmt.Printf("%s %d %q: %d blocks", part.Kind, part.Number, part.Name, len(part.Blocks))
-		if part.Hidden != 0 {
-			fmt.Printf(", %s", part.Hidden)
+		if part.Display != 0 {
+			fmt.Printf(", %s", part.Display)
 		}
 		fmt.Println()
 	}
@@ -109,7 +99,7 @@ func ExampleOpen() {
 	// slide 1 "Project Update": 2 blocks
 	// slide 2 "Agenda": 5 blocks
 	// slide 3 "Figures": 3 blocks
-	// slide 4 "": 1 blocks, invisible
+	// slide 4 "": 1 blocks, hidden
 	// slide 5 "": 2 blocks
 }
 
