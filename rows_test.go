@@ -521,7 +521,7 @@ func TestRowsTheSameWithAnyWorkers(t *testing.T) {
 	}
 	if !testing.Short() {
 		filepath.WalkDir(filepath.Join(ooxmltest.Root(t), "testdata", "corpus"), func(path string, d fs.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && strings.EqualFold(filepath.Ext(path), ".xlsx") {
+			if err == nil && !d.IsDir() && (strings.EqualFold(filepath.Ext(path), ".xlsx") || strings.EqualFold(filepath.Ext(path), ".xlsb")) {
 				files = append(files, path)
 			}
 			return nil

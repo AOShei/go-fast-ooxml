@@ -1,7 +1,8 @@
 # go-fast-ooxml
 
-Extracts Word, Excel and PowerPoint files (`.docx`, `.xlsx`, `.pptx` and their
-macro and template variants) into the shared go-fast document model,
+Extracts Word, Excel and PowerPoint files (`.docx`, `.xlsx`, `.pptx`, their
+macro and template variants, and Excel's binary workbooks, `.xlsb`) into
+the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
@@ -11,7 +12,7 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 | Format | State |
 |---|---|
 | Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. Word's Horizontal Line, a shape the file marks as one, is a `thematic_break` in the body (not in a table, text box, header or note); a paragraph that only has a border is not one, and section, page and column breaks are layout and give no block. What the file declares about the display of text is kept (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
-| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. What the file declares about the display of text is kept (see below). Sheets are read in parallel |
+| Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. What the file declares about the display of text is kept (see below). Sheets are read in parallel. A binary workbook (`.xlsb`) gives what the same workbook as `.xlsx` gives, its formulas read back from their compiled form |
 | PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. What the file declares about the display of text is kept (see below). Slides are read in parallel |
 
 ## How fast
@@ -56,7 +57,7 @@ before. The document is the same with any number of workers
 On the 788 real files of the corpus, which include damaged, encrypted and
 hostile ones, this library reads 740 and refuses 48 with a reason (damaged
 archives, files that need a password, other formats); none makes it crash
-or hang. The same holds for 5,783 more
+or hang. The same holds for 5,810 more
 from other projects' test suites ([`bench/README.md`](bench/README.md)).
 
 ## Using it
@@ -356,10 +357,33 @@ such a table, and every cache whose source is gone is in the stored part
 with its fields and its number of records (`TestPivotsAsOpenpyxl`,
 `GOFAST_PIVOTS_SOAK=1` for the soak set).
 
+**Binary workbooks (`.xlsb`).** Excel's binary format is the package of an
+`.xlsx` file whose workbook, sheets, shared strings, styles, comments and
+tables are records ([MS-XLSB](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xlsb/)) in place of XML; its theme, drawings and
+charts are XML as in `.xlsx`. The records are read into what the XML
+gives, so formats, dates, tables, display reasons, limits and reading by
+bands are the same code for both: the same workbook written both ways
+gives the same document (`TestXlsbAsXlsx`). The source's `format` is
+`xlsx`, its `mime` that of `.xlsb`.
+
+Formulas in this format are compiled: tokens in reverse Polish order,
+functions by number. They are turned back into the text Excel shows:
+cells' formulas (with `Options.Cells`), defined names, drop-down lists and
+the code of macro sheets. A formula that cannot be read back, because it
+refers to another workbook, to a table's columns by name, or calls a
+function this library does not know, is left out and counted in
+`ooxml.unread_content` ("binary formulas not read back"): wrong text would
+be worse than none. Over the binary workbooks of the soak set, every cell
+pyxlsb reads holds the same here (905 cells, `TestXlsbAgainstPyxlsb`), and
+every formula read back is the one LibreOffice writes when it saves the
+workbook as `.xlsx` (324 formulas, `TestXlsbFormulasAgainstLibreOffice`).
+
 **Not read:** dialog sheets (counted in `ooxml.unread_content`), and the
 formulas of a pivot table's calculated items. Macro sheets and VBA
 projects are reported as `input.active_content`, and their code is read
-as text, never run.
+as text, never run. In a binary workbook, the definitions of pivot tables
+and their caches: a pivot table's cells are read as cells, without the
+pivot table's name and role.
 
 ## PowerPoint presentations
 
@@ -572,7 +596,8 @@ and shapes; attribute values of custom XML data.
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget; finding the members of an archive that has lost its directory |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |
-| `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes |
+| `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook read into the same |
+| `internal/xlsb` | The records of a binary workbook (`.xlsb`): splitting a part into records, reading their fields, and turning a compiled formula back into its text |
 | `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
 | `internal/crypt` | The two password encryption schemes of Office: reading the encryption information, verifying a password, decrypting the package as it is read |
 | `internal/numfmt` | Number formats: what a cell displays for the value it holds |
@@ -588,7 +613,7 @@ and shapes; attribute values of custom XML data.
 | `testdata/api.txt` | The exported declarations of the package; a test fails when they change |
 | `testdata/numfmt` | What LibreOffice displays for 6,048 pairs of a number format and a value: the table the number-format engine is held to |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 788 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |
-| `testdata/soak.py` | Fetches the soak set: 5,783 Office files from the test suites of twelve other projects, at pinned commits. Not in the repository |
+| `testdata/soak.py` | Fetches the soak set: 5,810 Office files from the test suites of thirteen other projects, at pinned commits. Not in the repository |
 | `bench` | Measurements: the comparison with the tools in use today, the soak run, the benchmarks; see `bench/README.md` |
 | `SECURITY.md`, `CHANGELOG.md` | What is promised about untrusted files, and how to report a problem; what changes between versions |
 
@@ -603,7 +628,7 @@ downloaded corpus skip themselves when those are absent. To run everything,
 see `bench/README.md` and `python3 testdata/fetch.py`.
 
 ```sh
-python3 testdata/soak.py && go test -run TestSoak -v .   # 6,571 files, under a minute
+python3 testdata/soak.py && go test -run TestSoak -v .   # 6,598 files, under a minute
 go test -run 'Budgets' -v -speed .                       # allocation budgets and the speed targets
 ```
 

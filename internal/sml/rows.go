@@ -92,15 +92,12 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 			if pass == passRows {
 				sh.band, sh.emit = max(band, 1), func() bool { return hand(false) }
 			}
-			c, err := b.wb.pkg.ScanChunks(sh.name, &sh.s, scanOptions, opc.Spare(b.wb.opts.Workers))
-			if err != nil {
+			opened, err := sh.readOwn(true)
+			sh.s = xmlscan.Scanner{}
+			if !opened {
 				sh.failed(err)
 				break
 			}
-			sh.read()
-			c.Close()
-			err = sh.s.Err()
-			sh.s = xmlscan.Scanner{}
 			if pass == passAround && !errors.Is(err, opc.ErrBudget) {
 				// A part that breaks off is met again where it breaks
 				// off when its rows are read, and reported then: the

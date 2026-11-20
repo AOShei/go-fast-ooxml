@@ -58,6 +58,7 @@ var soakPasswords = map[string]string{
 	"encryptSHA1.xlsx":                    "password",
 	"encryptSHA512.xlsx":                  "password",
 	"protected_normal_case.docx":          "password",
+	"protected_passtika.xlsb":             "tika",
 	"protected_upper_case.docx":           "password",
 	"testEXCEL_protected_passtika.xlsx":   "tika",
 	"testEXCEL_protected_passtika_2.xlsx": "tika",
@@ -160,7 +161,7 @@ func TestSoak(t *testing.T) {
 	}
 	root := filepath.Join(ooxmltest.Root(t), "testdata", "corpus")
 	extensions := map[string]bool{}
-	for _, e := range []string{"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm"} {
+	for _, e := range []string{"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm"} {
 		extensions["."+e] = true
 	}
 	var paths []string

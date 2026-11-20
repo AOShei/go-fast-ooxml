@@ -30,6 +30,10 @@ type declaredTable struct {
 func (sh *sheet) declared() []declaredTable {
 	var out []declaredTable
 	for _, target := range sh.tables {
+		if binary(sh.wb.pkg, target) {
+			out = sh.binDeclared(target, out)
+			continue
+		}
 		sh.load(target, func(s *xmlscan.Scanner) {
 			for s.Next() != xmlscan.EOF {
 				if s.Kind() != xmlscan.Start {
@@ -90,7 +94,9 @@ const maxPivots = 1 << 10
 func (sh *sheet) pivots(out []declaredTable) []declaredTable {
 	n := 0
 	for _, rel := range sh.list {
-		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) || n >= maxPivots {
+		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) || n >= maxPivots || binary(sh.wb.pkg, rel.Target) {
+			// A pivot table of a binary workbook is not read: its cells
+			// are, as cells.
 			continue
 		}
 		n++
@@ -154,11 +160,16 @@ const (
 func (sh *sheet) comments() []placed {
 	var out []placed
 	threaded := map[int64]bool{}
+	plain := false // the comments being read are records, whose text is not escaped
 	add := func(row, col int32, raw []byte, author, date string) {
 		if len(out) >= maxComments {
 			return
 		}
-		text, removed := cellText(sh.out[:0], raw)
+		clean := cellText
+		if plain {
+			clean = plainText
+		}
+		text, removed := clean(sh.out[:0], raw)
 		sh.out = text
 		sh.removed += removed
 		if len(text) == 0 {
@@ -215,6 +226,12 @@ func (sh *sheet) comments() []placed {
 	}
 	for _, rel := range sh.list {
 		if rel.External || !ns.IsRel(rel.Type, ns.RelComments) {
+			continue
+		}
+		if binary(sh.wb.pkg, rel.Target) {
+			plain = true
+			sh.binComments(rel.Target, add, threaded)
+			plain = false
 			continue
 		}
 		sh.load(rel.Target, func(s *xmlscan.Scanner) {

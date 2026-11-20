@@ -1,0 +1,5 @@
+go test fuzz v1
+[]byte("$EEE\x00,\xff&\x00\x00\x00\x00\x03\x1a")
+[]byte("EEEE")
+rune('\x03')
+rune('\x02')

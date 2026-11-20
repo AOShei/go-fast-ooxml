@@ -50,6 +50,8 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Password checks of a document and the files embedded in it, together | 10 times the above | | Further encrypted files are listed, not opened |
 | Depth of embedded documents | 4 | `Options.Limits.MaxDepth` | Listed, not opened |
 | Nesting of XML elements | 512 | fixed | The part is cut off |
+| A record of a binary workbook (`.xlsb`) | 16 MiB, read as its bytes arrive, not all at once from its stated size | fixed | The part is cut off |
+| A formula of a binary workbook turned back into text | 32 KiB of text, 4,096 operands waiting for their operator | fixed | The formula is not read back, and is counted in `ooxml.unread_content` |
 | Code of a VBA project, decompressed | what is left of the text and decompression budgets | | The module is cut off; what it decompresses to is charged to the decompression budget too |
 | Data after the end of the archive | 1 MiB read, and only what follows within the archive's last 64 KiB is found | fixed | The rest is not read; `input.trailing_data` says how many bytes there are |
 
@@ -135,11 +137,11 @@ that feeds a model decides what to do with each.
 ## How this is tested
 
 - Fuzz targets for the XML reader, the archive and the recovery of one
-  cut short, each format's main part, number formats, the compound-file
-  container and the encryption information; all run in CI on every pull
-  request.
-- A soak run over 6,571 files: the corpus and the Office files in the test
-  suites of LibreOffice, Apache Tika, pandoc and nine other projects,
+  cut short, each format's main part, the records and formulas of binary
+  workbooks, number formats, the compound-file container and the
+  encryption information; all run in CI on every pull request.
+- A soak run over 6,598 files: the corpus and the Office files in the test
+  suites of LibreOffice, Apache Tika, pandoc and ten other projects,
   among them their collections of crash cases and fuzzer findings. Every
   file gives a valid document or a shared error, the same for any number
   of workers and a part at a time (`bench/soak.json`).

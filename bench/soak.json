@@ -1,11 +1,11 @@
 {
- "files": 6571,
- "bytes": 354519666,
- "read": 6521,
+ "files": 6598,
+ "bytes": 354823273,
+ "read": 6547,
  "formats": {
   "docx": 3328,
   "pptx": 1273,
-  "xlsx": 1920
+  "xlsx": 1946
  },
  "refused": {
   "archive cut off before its directory": 4,
@@ -15,36 +15,36 @@
   "empty file": 1,
   "encrypted otherwise than with a password": 1,
   "legacy binary format": 1,
-  "needs a password": 24,
+  "needs a password": 25,
   "not an archive, malformed": 8
  },
  "documents_with_warning": {
-  "input.active_content": 61,
+  "input.active_content": 63,
   "input.ambiguous": 6,
-  "input.external_reference": 193,
+  "input.external_reference": 194,
   "input.repaired": 33,
   "input.trailing_data": 5,
   "limit.exceeded": 2,
   "ooxml.control_characters_removed": 7,
   "ooxml.decrypted": 5,
-  "ooxml.formula_no_value": 60,
+  "ooxml.formula_no_value": 28,
   "ooxml.part_damaged": 34,
   "ooxml.properties_damaged": 4,
   "ooxml.property_truncated": 1,
   "ooxml.unread_content": 26,
-  "part.failed": 37,
+  "part.failed": 39,
   "part.image_only": 244,
-  "part.no_text": 960,
+  "part.no_text": 965,
   "structure.heading_level_clamped": 18,
   "text.tracked_changes": 129,
   "text.unmapped_glyphs": 3
  },
  "documents_with_display": {
-  "hidden": 269,
+  "hidden": 270,
   "no_ink": 6
  },
  "embedded_documents": 835,
- "opened_with_their_password": 13,
+ "opened_with_their_password": 14,
  "truncated_archives": [
   "poi/spreadsheet/clusterfuzz-testcase-minimized-XLSX2CSVFuzzer-5636439151607808.xlsx",
   "poi/spreadsheet/clusterfuzz-testcase-minimized-XLSX2CSVFuzzer-6594557414080512.xlsx",

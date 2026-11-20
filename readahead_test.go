@@ -93,7 +93,7 @@ func TestLargePartsTheSameWithAnyWorkers(t *testing.T) {
 	checked := 0
 	filepath.WalkDir(filepath.Join(ooxmltest.Root(t), "testdata", "corpus"), func(path string, d fs.DirEntry, err error) error {
 		switch strings.ToLower(filepath.Ext(path)) {
-		case ".docx", ".docm", ".xlsx", ".xlsm":
+		case ".docx", ".docm", ".xlsx", ".xlsm", ".xlsb":
 		default:
 			return nil
 		}
@@ -112,7 +112,7 @@ func TestLargePartsTheSameWithAnyWorkers(t *testing.T) {
 	t.Logf("%d corpus files with a part read ahead", checked)
 }
 
-var largePart = regexp.MustCompile(`^(word/document\d*|xl/worksheets/[^/]+)\.xml$`)
+var largePart = regexp.MustCompile(`^(word/document\d*|xl/worksheets/[^/]+)\.(xml|bin)$`)
 
 // largest gives the size, as the archive gives it, of the largest Word
 // body or sheet in a package.
