@@ -9,9 +9,9 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
 
-// Text a reader of a slide cannot see is extracted and flagged with the
-// reason. Each test below is one reason, with the cases that must be
-// flagged beside the ones that look alike and must not be.
+// Text a slide declares not shown, or drawn with no ink, is extracted
+// with that reason. Each test below is one reason, with the cases that
+// declare it beside the ones that look alike and do not.
 
 const (
 	white = "FFFFFF"

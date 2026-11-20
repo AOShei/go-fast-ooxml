@@ -62,7 +62,7 @@ func parseA1(t testing.TB, ref string) cellAt {
 func (c cellAt) String() string { return colName(c.col) + strconv.Itoa(c.row+1) }
 
 // sheetCells lays the tables of a sheet back out on the sheet: the text
-// of every cell by its place, and the cells flagged as not displayed.
+// of every cell by its place, and the cells declared hidden.
 func sheetCells(t testing.TB, part *gofastcore.Part) (cells map[cellAt]string, unseen map[cellAt]bool) {
 	t.Helper()
 	cells, unseen = map[cellAt]string{}, map[cellAt]bool{}
@@ -262,7 +262,7 @@ func TestExcelCorpus(t *testing.T) {
 				case !typedOK && isoLike.MatchString(ours):
 					classes["dates not checked: openpyxl cannot read the file"]++
 				case theirs == "" && unseen[at]:
-					classes["displayed as nothing; the value is kept here and flagged as hidden"]++
+					classes["displayed as nothing; the value is kept here and declared hidden"]++
 					agree++
 				case strings.ContainsAny(ours+theirs, "E") && sameNumber(ours, theirs):
 					classes["the same number in another notation"]++

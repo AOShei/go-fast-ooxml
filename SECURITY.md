@@ -30,7 +30,7 @@ Any of the following is a bug to report, whatever the file:
 | **Use XML against the reader** | The library has its own XML reader. Document type declarations are refused, so there are no entities to expand and nothing external to include. Nesting is bounded at 512 elements |
 | **Crash the caller** | No panic on any input: every index, length and count taken from a file is checked, and every list a file can lengthen has a bound |
 | **Write what it likes into the output** | Text is valid UTF-8 with control characters removed. Names taken from the file (parts, sheets, authors, error messages) are cleaned and cut to a length before they appear in a warning or a field |
-| **Hide text from a reviewer unnoticed** | Within what the checks cover; see below |
+| **Lose what it declares about display** | Text a file declares hidden or drawn with no ink, in the ways the README lists, keeps that reason. Nothing is judged from appearance, so text can be out of sight with no reason; see below |
 | **Be read two ways unnoticed** | An archive that names a member twice, or whose directory cannot be read so that its members are found by their own headers, says so (`input.ambiguous`, `input.repaired`) |
 
 ## Limits

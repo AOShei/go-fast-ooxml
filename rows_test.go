@@ -151,7 +151,7 @@ func TestRowsGiveTheCellsOfTheSheet(t *testing.T) {
 			}
 		}
 	}
-	// The hidden flags are there to compare: this sheet has them.
+	// The display reasons are there to compare: this sheet has them.
 	flags := 0
 	for _, text := range cellsOf(t, func() gofastcore.Part { p, _ := f.Part(ctx, 1); return p }()) {
 		if !strings.HasSuffix(text, "[]") {
@@ -159,7 +159,7 @@ func TestRowsGiveTheCellsOfTheSheet(t *testing.T) {
 		}
 	}
 	if flags < 100 {
-		t.Errorf("only %d cells of the sheet are flagged; the test wants many", flags)
+		t.Errorf("only %d cells of the sheet have a reason; the test wants many", flags)
 	}
 }
 

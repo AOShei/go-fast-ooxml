@@ -211,7 +211,7 @@ func TestExcelCellDetails(t *testing.T) {
 }
 
 // What a workbook stores and shows on no sheet, its defined names, is in
-// a stored part after the sheets, flagged as hidden. It comes with the
+// a stored part after the sheets, with no display reason. It comes with the
 // whole document only, and is not a sheet to read rows of.
 func TestExcelStoredPart(t *testing.T) {
 	pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "A", Data: xlRow(1, xlStr("A1", "a"))}, ooxmltest.Sheet{Name: "B", Data: xlRow(1, xlStr("A1", "b"))})
@@ -335,7 +335,7 @@ func TestExcelDropDownListsAsOpenpyxl(t *testing.T) {
 				case b.Text != want:
 					differ = append(differ, fmt.Sprintf("%s %s!%s: %q, openpyxl %q", names[i], sheet.Sheet, key, b.Text, l.Formula))
 				case (b.Display&gofastcore.DisplayHidden != 0) != l.Hidden && l.Hidden:
-					differ = append(differ, fmt.Sprintf("%s %s!%s: arrow hidden, not flagged", names[i], sheet.Sheet, key))
+					differ = append(differ, fmt.Sprintf("%s %s!%s: arrow hidden, no reason", names[i], sheet.Sheet, key))
 				default:
 					agree++
 				}

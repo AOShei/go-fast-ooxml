@@ -180,7 +180,7 @@ func TestPivotsAsOpenpyxl(t *testing.T) {
 // A pivot table is the cells it fills, as one table with its name and
 // role pivot. A cache whose source is a sheet of the workbook is not
 // read again; one whose source is a connection is, in the stored part,
-// flagged: its records, with values by number taken from the field's
+// as a pivot cache: its records, with values by number taken from the field's
 // shared items, or, with no records kept, the values of each field.
 func TestPivotTablesAndCaches(t *testing.T) {
 	const relBase = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"

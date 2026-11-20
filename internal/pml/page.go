@@ -610,8 +610,8 @@ func (pg *page) shapeStyle(sh *props) {
 	}
 }
 
-// place works out where the shape is, whether it can be seen at all, and
-// what its text is seen against.
+// place works out where the shape is, the placeholder it takes after,
+// and whether the file declares it hidden.
 func (pg *page) place(sh *props, g *group) {
 	if sh.placed {
 		return

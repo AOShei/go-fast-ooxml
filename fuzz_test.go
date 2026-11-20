@@ -71,8 +71,8 @@ func FuzzDocx(f *testing.F) {
 	} {
 		f.Add(wrap(body), styles, numbering, []byte(ooxmltest.Para("note")))
 	}
-	// Character formatting, what lies behind text, links: the paths that
-	// decide what is flagged as hidden.
+	// Character formatting, table styles, links: the paths that read what
+	// the file declares about display.
 	formatted := []byte(`<w:styles` + ooxmltest.WordNS + `>` + hiddenStyles +
 		`<w:style w:type="table" w:styleId="Grid"><w:basedOn w:val="Grid"/><w:tblPr><w:tblStyleRowBandSize w:val="2"/></w:tblPr><w:tcPr><w:shd w:val="pct25" w:color="000000" w:fill="FFFFFF"/></w:tcPr>` +
 		`<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="1F3864"/></w:tcPr></w:tblStylePr></w:style></w:styles>`)

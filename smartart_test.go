@@ -129,9 +129,9 @@ func TestWordAndExcelSmartArt(t *testing.T) {
 // The SmartArt of the corpus's presentations against LibreOffice, which
 // imports a diagram from the drawing Office made of it, or lays the model
 // out itself where there is none. On each slide: the items this library
-// gives as seen are text LibreOffice shows there; those it flags as drawn
-// nowhere are not; and the diagram text LibreOffice shows is all among
-// this library's items.
+// gives with no reason are text LibreOffice shows there; those in a shape
+// the drawing declares hidden are not; and the diagram text LibreOffice
+// shows is all among this library's items.
 func TestSmartArtAsLibreOffice(t *testing.T) {
 	if testing.Short() {
 		t.Skip("reads the corpus")
@@ -184,7 +184,7 @@ func TestSmartArtAsLibreOffice(t *testing.T) {
 		}
 		for k := range pageCount(doc) {
 			if doc.Parts[k].Display != 0 {
-				continue // a hidden slide: everything on it is flagged
+				continue // a hidden slide: everything on it is declared hidden
 			}
 			loText := map[string]bool{}
 			for _, p := range lo[k].All {
@@ -222,7 +222,7 @@ func TestSmartArtAsLibreOffice(t *testing.T) {
 					if !loText[text] {
 						unseenAbsent++
 					} else {
-						notes = append(notes, fmt.Sprintf("%s slide %d: flagged as not drawn, LibreOffice shows %q", names[i], k+1, text))
+						notes = append(notes, fmt.Sprintf("%s slide %d: declared hidden, LibreOffice shows %q", names[i], k+1, text))
 					}
 					continue
 				}
@@ -249,15 +249,15 @@ func TestSmartArtAsLibreOffice(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d files: of %d items given as seen, LibreOffice shows %d; of %d flagged as not drawn, it shows %d; of %d diagram paragraphs it shows, %d are items",
+	t.Logf("%d files: of %d items with no reason, LibreOffice shows %d; of %d declared hidden, it shows %d; of %d diagram paragraphs it shows, %d are items",
 		len(contents), shown, shownSeen, unseen, unseen-unseenAbsent, theirs, theirsFound)
 	sort.Strings(notes)
 	// LibreOffice lays out some diagrams that have no drawing of their own
 	// differently, or not at all: that their items are not all shown is
-	// not counted. What is: text flagged as drawn nowhere that it shows,
+	// not counted. What is: text declared hidden that it shows,
 	// and diagram text it shows that is not an item.
 	if unseen-unseenAbsent > 0 {
-		t.Errorf("%d items flagged as not drawn are shown by LibreOffice", unseen-unseenAbsent)
+		t.Errorf("%d items declared hidden are shown by LibreOffice", unseen-unseenAbsent)
 	}
 	if theirs > 0 && float64(theirsFound) < 0.97*float64(theirs) {
 		t.Errorf("of %d diagram paragraphs LibreOffice shows, only %d are items", theirs, theirsFound)

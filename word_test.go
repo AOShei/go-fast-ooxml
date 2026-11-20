@@ -26,8 +26,8 @@ func TestWordFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Every invariant, and every block including its hidden-text
-			// flags and the ranges they cover.
+			// Every invariant, and every block including its display
+			// reasons and the ranges they cover.
 			ooxmltest.CheckDocument(t, doc)
 			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Display: true})
 		})

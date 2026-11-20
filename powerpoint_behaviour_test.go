@@ -900,8 +900,8 @@ func TestPowerPointPicturesOnLayoutsAndMasters(t *testing.T) {
 // The notes master's header and footer, and its own text, are on every
 // slide that has notes, as furniture; the handout master's, once, with
 // the first slide. The frames the pages fill in, the date and the page
-// number are not read, and a header or footer the master says not to
-// show is flagged.
+// number are not read, and a header or footer the master switches off
+// is declared hidden.
 func TestPowerPointNotesAndHandoutMasters(t *testing.T) {
 	build := func(footer string) *ooxmltest.Package {
 		slides := []ooxmltest.Slide{
