@@ -591,6 +591,7 @@ var mainKinds = map[string]kind{
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml":      {Xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.template"},
 	"application/vnd.ms-excel.sheet.macroEnabled.main+xml":                               {Xlsx, "application/vnd.ms-excel.sheet.macroEnabled.12"},
 	"application/vnd.ms-excel.template.macroEnabled.main+xml":                            {Xlsx, "application/vnd.ms-excel.template.macroEnabled.12"},
+	"application/vnd.ms-excel.sheet.binary.macroEnabled.main":                            {Xlsx, "application/vnd.ms-excel.sheet.binary.macroEnabled.12"},
 	"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml": {Pptx, "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
 	"application/vnd.openxmlformats-officedocument.presentationml.slideshow.main+xml":    {Pptx, "application/vnd.openxmlformats-officedocument.presentationml.slideshow"},
 	"application/vnd.openxmlformats-officedocument.presentationml.template.main+xml":     {Pptx, "application/vnd.openxmlformats-officedocument.presentationml.template"},
@@ -607,6 +608,7 @@ var conventional = []struct {
 }{
 	{"word/document.xml", mainKinds["application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"]},
 	{"xl/workbook.xml", mainKinds["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"]},
+	{"xl/workbook.bin", mainKinds["application/vnd.ms-excel.sheet.binary.macroEnabled.main"]},
 	{"ppt/presentation.xml", mainKinds["application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"]},
 }
 

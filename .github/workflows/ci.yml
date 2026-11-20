@@ -61,6 +61,9 @@ jobs:
           go test -run '^$' -fuzz '^FuzzXML$' -fuzztime 30s ./internal/xmlscan
           go test -run '^$' -fuzz '^FuzzNumFmt$' -fuzztime 20s ./internal/numfmt
           go test -run '^$' -fuzz '^FuzzXlsx$' -fuzztime 30s .
+          go test -run '^$' -fuzz '^FuzzXlsb$' -fuzztime 30s .
+          go test -run '^$' -fuzz '^FuzzRecords$' -fuzztime 20s ./internal/xlsb
+          go test -run '^$' -fuzz '^FuzzFormula$' -fuzztime 20s ./internal/xlsb
           go test -run '^$' -fuzz '^FuzzPptx$' -fuzztime 30s .
           go test -run '^$' -fuzz '^FuzzCFB$' -fuzztime 20s ./internal/cfb
           go test -run '^$' -fuzz '^FuzzRecover$' -fuzztime 20s ./internal/opc

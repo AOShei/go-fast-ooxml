@@ -49,6 +49,7 @@ type sheet struct {
 	list []opc.Rel
 
 	s          xmlscan.Scanner
+	bin        bool // the sheet's part is records (binary.go), not XML
 	cells      []cell
 	unsorted   bool
 	lastRow    int32
@@ -78,15 +79,17 @@ type sheet struct {
 	details         []detail // in the order of the cells, once sortDetails has run
 	detailsUnsorted bool
 	shared          map[int]sharedFormula
-	linkAt          map[pos]string // links of single cells and small ranges
-	links           []link         // links of large ranges
-	isDate          bool           // the value just read was shown as a date
-	fbuf            []byte         // for reading a formula
-	symbols         []byte         // for translating text in a symbol font
-	split           int            // regions too sparse to be a grid
-	unread          map[string]int // content of kinds that are not read
-	damaged         []string       // parts that could not be read to their end
-	cut             string         // why reading stopped early, if it did
+	formulasAt      map[pos]binFormula // the shared formulas of a binary sheet, by their first cell
+	pend            *pendingFormula    // a binary sheet's cell waiting for its shared formula
+	linkAt          map[pos]string     // links of single cells and small ranges
+	links           []link             // links of large ranges
+	isDate          bool               // the value just read was shown as a date
+	fbuf            []byte             // for reading a formula
+	symbols         []byte             // for translating text in a symbol font
+	split           int                // regions too sparse to be a grid
+	unread          map[string]int     // content of kinds that are not read
+	damaged         []string           // parts that could not be read to their end
+	cut             string             // why reading stopped early, if it did
 
 	// Reading a band of rows at a time (see Rows).
 	pass   int                // which of the two passes over the part this is
@@ -420,7 +423,9 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 			continue
 		}
 		if !value || len(raw) == 0 {
-			if formula {
+			// A formula of text whose result is the empty string has a
+			// result; any other with none is stored without one.
+			if formula && !(value && typ == 't') {
 				sh.noValue++
 			}
 			continue
@@ -478,7 +483,7 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 		sh.out = out
 		return sh.text.put(bytes.TrimSpace(out)), blank(result)
 	case 'i', 't', 'e', 'd':
-		out, removed := cellText(sh.out[:0], raw)
+		out, removed := sh.textOf(sh.out[:0], raw)
 		sh.removed += removed
 		if style.symbol != symbol.None && (typ == 'i' || typ == 't') && len(out) > 0 {
 			out = append(out[:0], sh.symbolText(style.symbol, out)...)
@@ -507,7 +512,7 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 	v, err := strconv.ParseFloat(string(raw), 64)
 	if err != nil {
 		// Not a number, whatever the cell says: its text.
-		out, removed := cellText(sh.out[:0], raw)
+		out, removed := sh.textOf(sh.out[:0], raw)
 		sh.removed += removed
 		sh.out = out
 		return sh.text.put(out), 0

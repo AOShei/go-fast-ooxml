@@ -136,6 +136,9 @@ func (b *Book) readStored(ctx context.Context) *unit.Result {
 // ("A1\t=ECHO(FALSE)"), as Excel shows them when it shows formulas, up to
 // about room bytes. damaged says the part could not be read to its end.
 func (b *Book) macroCode(target string, room int64) (string, bool) {
+	if binary(b.wb.pkg, target) {
+		return b.binMacroCode(target, room)
+	}
 	var sb strings.Builder
 	damaged := false
 	var s xmlscan.Scanner

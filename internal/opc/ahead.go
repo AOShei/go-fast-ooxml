@@ -36,10 +36,21 @@ func Spare(workers int) bool {
 // Which way a part is read depends on the part, not on ahead, so what it
 // gives does not depend on the workers.
 func (p *Package) ScanPart(name string, s *xmlscan.Scanner, opts *xmlscan.Options, ahead bool) (io.Closer, error) {
-	if p.Size(name) < AheadAt {
-		return p.Scan(name, s, opts)
+	rc, err := p.OpenPart(name, ahead)
+	if err != nil {
+		return nil, err
 	}
-	return p.ScanChunks(name, s, opts, ahead)
+	s.Reset(rc, opts)
+	return rc, nil
+}
+
+// OpenPart is Open for a part that may be large, read as ScanPart reads
+// it: in chunks from AheadAt, and ahead if ahead is set.
+func (p *Package) OpenPart(name string, ahead bool) (io.ReadCloser, error) {
+	if p.Size(name) < AheadAt {
+		return p.Open(name)
+	}
+	return p.Chunks(name, ahead)
 }
 
 // ScanChunks is Scan for a part read in chunks of a fixed size, the
@@ -52,6 +63,16 @@ func (p *Package) ScanPart(name string, s *xmlscan.Scanner, opts *xmlscan.Option
 // limit cuts it, do not depend on whether it was read ahead. Not where
 // it is read through Scan: Scan charges each read as it comes.
 func (p *Package) ScanChunks(name string, s *xmlscan.Scanner, opts *xmlscan.Options, ahead bool) (io.Closer, error) {
+	c, err := p.Chunks(name, ahead)
+	if err != nil {
+		return nil, err
+	}
+	s.Reset(c, opts)
+	return c, nil
+}
+
+// Chunks is Open for a part read in chunks, as ScanChunks reads it.
+func (p *Package) Chunks(name string, ahead bool) (io.ReadCloser, error) {
 	rc, err := p.openRaw(name)
 	if err != nil {
 		return nil, err
@@ -67,7 +88,6 @@ func (p *Package) ScanChunks(name string, s *xmlscan.Scanner, opts *xmlscan.Opti
 	} else {
 		c.buf = make([]byte, chunkSize)
 	}
-	s.Reset(c, opts)
 	return c, nil
 }
 

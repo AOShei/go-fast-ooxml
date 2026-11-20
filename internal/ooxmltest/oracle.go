@@ -104,6 +104,19 @@ func soffice(t testing.TB, data []byte, ext, filter string) string {
 	return dir
 }
 
+// LibreOfficeXlsx returns an Excel binary workbook (.xlsb) as LibreOffice
+// saves it as .xlsx: the same workbook read by another program, which
+// this library's reading of the .xlsx is then set against.
+func LibreOfficeXlsx(t testing.TB, xlsb []byte) []byte {
+	t.Helper()
+	dir := soffice(t, xlsb, "xlsb", "xlsx:Calc MS Excel 2007 XML")
+	data, err := os.ReadFile(filepath.Join(dir, "input.xlsx"))
+	if err != nil {
+		t.Fatalf("LibreOffice wrote no .xlsx: %v", err)
+	}
+	return data
+}
+
 // LibreOfficeText returns the text of a Word file as LibreOffice exports
 // it. The export writes computed list numbering, which makes it the oracle
 // for list markers.

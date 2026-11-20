@@ -513,8 +513,31 @@ def olevba_modules(path):
 
 # Adapters that are test oracles only: they do not extract text, so they are
 # not part of the baseline measurements.
+def pyxlsb_cells(path):
+    """Every cell pyxlsb reads from an Excel binary workbook, sheet by
+    sheet: its row and column from 0 and its value, as JSON. pyxlsb gives
+    values as stored, unformatted: text, a number, a truth value."""
+    import json
+    from pyxlsb import open_workbook
+
+    out = []
+    with open_workbook(path) as wb:
+        for name in wb.sheets:
+            cells = []
+            with wb.get_sheet(name) as ws:
+                for row in ws.rows(sparse=True):
+                    for c in row:
+                        if c.v is None or c.v == "":
+                            continue
+                        v = c.v if isinstance(c.v, (str, bool)) else float(c.v)
+                        cells.append([c.r, c.c, v])
+            out.append({"sheet": name, "cells": cells})
+    return json.dumps(out)
+
+
 ORACLES = {
     "openpyxl-cells": ("openpyxl", openpyxl_cells, {"xlsx"}),
+    "pyxlsb-cells": ("pyxlsb", pyxlsb_cells, {"xlsb"}),
     "openpyxl-formulas": ("openpyxl", openpyxl_formulas, {"xlsx"}),
     "openpyxl-validations": ("openpyxl", openpyxl_validations, {"xlsx"}),
     "python-pptx-slides": ("python-pptx", python_pptx_slides, {"pptx"}),

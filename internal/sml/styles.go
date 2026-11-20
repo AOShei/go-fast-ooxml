@@ -45,7 +45,6 @@ const (
 func readStyles(s *xmlscan.Scanner) *styleSheet {
 	codes := map[int]string{}
 	var fonts []symbol.Font
-	type xf struct{ format, font int }
 	var xfs []xf
 	for s.Next() != xmlscan.EOF {
 		if s.Kind() != xmlscan.Start || s.Depth() != 2 {
@@ -101,6 +100,15 @@ func readStyles(s *xmlscan.Scanner) *styleSheet {
 		}
 	}
 
+	return buildStyles(codes, fonts, xfs)
+}
+
+// xf is a cell format: the numbers of its number format and font.
+type xf struct{ format, font int }
+
+// buildStyles makes the styles of a workbook from its number formats by
+// number, its fonts, and its cell formats.
+func buildStyles(codes map[int]string, fonts []symbol.Font, xfs []xf) *styleSheet {
 	formats := map[int]*numfmt.Format{}
 	st := &styleSheet{styles: make([]cellStyle, len(xfs))}
 	for i, x := range xfs {

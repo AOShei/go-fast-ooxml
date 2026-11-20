@@ -22,6 +22,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
+	"github.com/AOShei/go-fast-ooxml/internal/xlsb"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -45,6 +46,7 @@ type workbook struct {
 	theme    *theme.Scheme
 	date1904 bool
 	persons  map[string]string // authors of threaded comments, by id
+	formulas *xlsb.Book        // what the formulas of a binary workbook refer to; nil for XML
 
 	cells atomic.Int64 // cells that may still be kept
 
@@ -77,6 +79,7 @@ type Book struct {
 	external    int      // links to other workbooks and files
 	removed     int      // control characters removed from shared strings
 	stringsFull bool     // the shared strings were cut off at their limit
+	unreadNames int      // defined names of a binary workbook whose formulas could not be read back
 
 	// What the workbook stores and shows on no sheet (stored.go).
 	names       []definedName
@@ -123,6 +126,13 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		c.Close()
 		note(name, s.Err())
 	}
+	// loadBin reads a part of a binary workbook, as load an XML one.
+	loadBin := func(name string, read func(*xlsb.Reader)) {
+		if b.budget || !pkg.Has(name) {
+			return
+		}
+		note(name, records(pkg, name, read))
+	}
 
 	rels, err := pkg.Rels(main)
 	note(opc.RelsName(main), err)
@@ -131,41 +141,11 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		byID[rel.ID] = rel
 	}
 	b.extra = stored.Find(pkg, rels)
-	load(main, func(s *xmlscan.Scanner) {
-		for s.Next() != xmlscan.EOF {
-			if s.Kind() != xmlscan.Start || s.Space() != ns.Sheet {
-				continue
-			}
-			switch {
-			case s.Depth() == 2 && s.Is(ns.Sheet, "workbookPr"):
-				if v, ok := s.Attr(xmlscan.NoSpace, "date1904"); ok {
-					wb.date1904 = isTrue(v)
-				}
-			case s.Depth() == 3 && s.Is(ns.Sheet, "sheet") && len(b.refs) < maxSheets:
-				var ref sheetRef
-				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
-					ref.name, _ = clean.String(v, clean.Prose)
-				}
-				if v, ok := s.Attr(xmlscan.NoSpace, "state"); ok {
-					ref.hidden = string(v) == "hidden" || string(v) == "veryHidden"
-				}
-				if id, ok := s.Attr(ns.Rel, "id"); ok {
-					if rel, found := byID[string(id)]; found && !rel.External {
-						ref.target = rel.Target
-						if i := strings.LastIndexByte(rel.Type, '/'); i >= 0 {
-							ref.kind = rel.Type[i+1:]
-						}
-					}
-				}
-				b.refs = append(b.refs, ref)
-				b.macroSheets = b.macroSheets || ref.kind == ns.RelMacrosheet || ref.kind == ns.RelIntlMacrosheet
-			case s.Depth() == 2 && s.Is(ns.Sheet, "definedNames"):
-				b.readNames(s)
-			case s.Depth() == 2 && s.Is(ns.Sheet, "pivotCaches"):
-				b.readCaches(s, byID)
-			}
-		}
-	})
+	if binary(pkg, main) {
+		loadBin(main, func(r *xlsb.Reader) { b.binaryNames(b.readBinaryBook(r, byID)) })
+	} else {
+		b.readBook(main, byID, load)
+	}
 	// A name local to a sheet has the sheet's name in front.
 	for _, l := range b.localNames {
 		if l.sheet >= 0 && l.sheet < len(b.refs) {
@@ -201,22 +181,68 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		if rel.External || !wanted {
 			continue
 		}
+		bin := binary(pkg, rel.Target)
 		switch {
+		case ns.IsRel(rel.Type, ns.RelStyles) && bin:
+			loadBin(rel.Target, func(r *xlsb.Reader) { wb.styles = readBinaryStyles(r) })
 		case ns.IsRel(rel.Type, ns.RelStyles):
 			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s) })
 		case ns.IsRel(rel.Type, ns.RelSharedStrings):
-			load(rel.Target, func(s *xmlscan.Scanner) {
-				var full bool
-				var n int
-				wb.strings, n, full = readStrings(s)
-				b.removed += n
-				b.stringsFull = b.stringsFull || full
-			})
+			var full bool
+			var n int
+			if bin {
+				loadBin(rel.Target, func(r *xlsb.Reader) { wb.strings, n, full = readBinaryStrings(r) })
+			} else {
+				load(rel.Target, func(s *xmlscan.Scanner) { wb.strings, n, full = readStrings(s) })
+			}
+			b.removed += n
+			b.stringsFull = b.stringsFull || full
 		}
 	}
 	b.after = pkg.Budget()
 	b.Begin()
 	return b
+}
+
+// readBook reads the workbook part of an XML workbook: the dates' epoch,
+// the sheets, the defined names and the pivot caches.
+func (b *Book) readBook(main string, byID map[string]opc.Rel, load func(string, func(*xmlscan.Scanner))) {
+	wb := b.wb
+	load(main, func(s *xmlscan.Scanner) {
+		for s.Next() != xmlscan.EOF {
+			if s.Kind() != xmlscan.Start || s.Space() != ns.Sheet {
+				continue
+			}
+			switch {
+			case s.Depth() == 2 && s.Is(ns.Sheet, "workbookPr"):
+				if v, ok := s.Attr(xmlscan.NoSpace, "date1904"); ok {
+					wb.date1904 = isTrue(v)
+				}
+			case s.Depth() == 3 && s.Is(ns.Sheet, "sheet") && len(b.refs) < maxSheets:
+				var ref sheetRef
+				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+					ref.name, _ = clean.String(v, clean.Prose)
+				}
+				if v, ok := s.Attr(xmlscan.NoSpace, "state"); ok {
+					ref.hidden = string(v) == "hidden" || string(v) == "veryHidden"
+				}
+				if id, ok := s.Attr(ns.Rel, "id"); ok {
+					if rel, found := byID[string(id)]; found && !rel.External {
+						ref.target = rel.Target
+						if i := strings.LastIndexByte(rel.Type, '/'); i >= 0 {
+							ref.kind = rel.Type[i+1:]
+						}
+					}
+				}
+				b.refs = append(b.refs, ref)
+				b.macroSheets = b.macroSheets || ref.kind == ns.RelMacrosheet || ref.kind == ns.RelIntlMacrosheet
+			case s.Depth() == 2 && s.Is(ns.Sheet, "definedNames"):
+				b.readNames(s)
+			case s.Depth() == 2 && s.Is(ns.Sheet, "pivotCaches"):
+				b.readCaches(s, byID)
+			}
+		}
+	})
 }
 
 // Len returns the number of parts: one for each sheet, and one for a
@@ -289,6 +315,9 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the shared strings are cut off at 4 GiB; cells that use later ones are empty")
 	}
 	unread := map[string]int{}
+	if b.unreadNames > 0 {
+		unread[unreadFormula] += b.unreadNames
+	}
 	damaged := append([]string(nil), b.damaged...)
 	macros := false
 	for _, t := range tallies {
@@ -348,6 +377,7 @@ func (wb *workbook) sheet(ctx context.Context, index int, ref sheetRef, budget b
 // missing, a chart, a dialog, or one the limit was reached before.
 func (wb *workbook) start(ctx context.Context, index int, ref sheetRef, budget bool) (sh *sheet, readable bool) {
 	sh = &sheet{wb: wb, ctx: ctx, name: ref.target, budget: budget, unread: map[string]int{}}
+	sh.bin = ref.target != "" && binary(wb.pkg, ref.target)
 	sh.room = gofastcore.TextBudgetFrom(ctx)
 	sh.shapes.Budget, sh.shapes.Cost = sh.room, gofastcore.BlockCost
 	part := &sh.part
@@ -436,15 +466,12 @@ func (sh *sheet) finish(sawImage bool) {
 // part's blocks. It reports whether the sheet has pictures that were not
 // asked for.
 func (sh *sheet) content() (sawImage bool) {
-	c, err := sh.wb.pkg.ScanPart(sh.name, &sh.s, scanOptions, opc.Spare(sh.wb.opts.Workers))
-	if err != nil {
-		sh.failed(err)
+	opened, err := sh.readOwn(false)
+	sh.failed(err)
+	sh.s = xmlscan.Scanner{} // its window is no longer needed
+	if !opened {
 		return false
 	}
-	sh.read()
-	c.Close()
-	sh.failed(sh.s.Err())
-	sh.s = xmlscan.Scanner{} // its window is no longer needed
 
 	declared := sh.declared()
 	blocks := sh.tablesOf(declared)

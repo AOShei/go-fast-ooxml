@@ -34,7 +34,7 @@ test whose tool is missing skips itself.
 | File | Produced by | Content |
 |---|---|---|
 | `comparison.json`, `comparison.md` | `python bench/compare.py` | This library against the tools in use today, on the large files and the corpus, each measured as a process. The table in the top-level README is written by the same run |
-| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,571 files: how many were read, what the rest were, which warnings and display reasons occur |
+| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,598 files: how many were read, what the rest were, which warnings and display reasons occur |
 | `accuracy.json` | `go test -run TestBaselineAccuracy -update .` | How well each tool recovers the known text of each fixture: precision, recall, F1 and word order, scored by the same code that scores this library |
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
@@ -118,11 +118,12 @@ of its own, which is most of its 63.
 
 ## Soak run
 
-`TestSoak` reads every file of the corpus and of the soak set: 6,571
+`TestSoak` reads every file of the corpus and of the soak set: 6,598
 files, 355 MB. The soak set (`testdata/soak.py`) is the Office files in the
 test suites of LibreOffice, Apache Tika, pandoc, PhpSpreadsheet, PHPWord,
 ClosedXML, Excelize, mammoth.js, python-docx, python-pptx, the Open XML SDK
-and ShapeCrawler, at pinned commits: 5,783 files that those projects keep
+and ShapeCrawler, and Apache POI's binary workbooks (its other files are
+in the corpus), at pinned commits: 5,810 files that those projects keep
 because something once went wrong with them, among them LibreOffice's
 collections of crash cases and fuzzer findings.
 
@@ -364,6 +365,45 @@ Every file of the corpus goes through the command
 need a password, a legacy binary file, files that are not packages,
 archives with too little left of them).
 
+## Binary workbooks
+
+Excel is the only program that writes `.xlsb`, so the tests check the
+reader three ways (2026-11-20):
+
+- **Against the same workbook as XML.** `TestXlsbAsXlsx` and
+  `TestXlsbAsXlsxMore` write each case twice, as `.xlsx` and as `.xlsb`
+  (records made by `internal/ooxmltest/xlsb.go`), and compare the two
+  documents whole, JSON for JSON, with cells' details and spans: values of
+  every kind and record form, number formats, dates from 1900 and 1904,
+  symbol fonts, hidden rows, columns and sheets, merged cells, formulas
+  with shared and array formulas, defined names, references to other
+  sheets, links, drop-down lists, declared tables, comments. The limits
+  on cells and text cut both at the same cell, and reading by bands gives
+  the same bands (`TestXlsbLimitsAndBands`).
+- **Against pyxlsb.** Every cell pyxlsb reads from the 24 binary
+  workbooks of the soak set it can open holds the same text, truth value
+  or stored number here: 905 cells (`TestXlsbAgainstPyxlsb`).
+- **Against LibreOffice.** Each workbook saved as `.xlsx` by LibreOffice
+  and read by this library has the same formula in every cell where both
+  have one: 324 formulas over 26 workbooks
+  (`TestXlsbFormulasAgainstLibreOffice`). The other differences are
+  LibreOffice's own: it lays pivot tables out again ("Total Result" for
+  "Grand Total"), recalculates some errors, and gives a cell holding TRUE
+  the formula `TRUE()`.
+
+Two of Apache POI's files (`Simple.xlsb`, and the same file in Tika's
+suite) write four bytes more than the format has in each entry of their
+sheet list. pyxlsb stops on them and LibreOffice reads three empty sheets
+of other names; here each sheet says that the workbook lists it but does
+not contain it. One formula of the set is not read back: it refers to a
+sheet of another workbook (`bug66682.xlsb`); LibreOffice gives it as
+`#REF!`.
+
+The paired tests showed that the `.xlsx` reader counted a formula whose
+result is empty text as stored without a result
+(`ooxml.formula_no_value`); it has one, and 32 fewer documents of the soak
+set carry the warning.
+
 ## Fuzz campaign
 
 Every fuzz target, run for the release (twelve processes, on the machine
@@ -380,6 +420,14 @@ of `baseline.md` while it was busy with other work):
 | `FuzzEncryptionInfo` | The encryption information of a protected file | 5 min | 63 million | clean |
 | `FuzzNumFmt` | A number format and a value | 5 min | 85 million | clean |
 | `FuzzRecover` | Bytes behind the start of an archive, read by its members' own headers | 6 min | 48 million | clean |
+
+The readers of binary workbooks came after the campaign, and were fuzzed
+when they came (2026-11-20, four processes each): `FuzzXlsb`, the parts of
+a binary workbook, 10 minutes, clean; `FuzzFormula`, a compiled formula
+and its place, 5 minutes and 68 million executions, clean after one
+finding (a count past the end of a formula was allocated before it was
+checked); `FuzzRecords`, a part as records, 5 minutes and 37 million,
+clean. The release campaign runs them with the others.
 
 `FuzzRecover` came with the recovery of archives cut short, after the
 campaign; `FuzzOpen` was then run again with files cut short among its

@@ -22,7 +22,8 @@ of `Block.Hidden` and its reasons. Removed: the reasons `tiny`,
 Invisible characters are kept in the text with no reason. Word field codes
 are all kept, marked `stored`, where only some were kept and rendered; a
 header or footer part no section names, and a SmartArt node the drawing
-leaves out, have no reason.
+leaves out, have no reason. A formula whose result is empty text has a
+result: `ooxml.formula_no_value` no longer counts it.
 
 ### Formats
 
@@ -37,6 +38,14 @@ leaves out, have no reason.
   in ISO 8601, stored results of formulas), declared tables with their
   names, pivot tables, merged cells, comments, drop-down lists, text in shapes with its
   links, pictures, embedded files. Sheets are read in parallel.
+- **Excel binary workbooks** (`.xlsb`): read into what the same workbook
+  as `.xlsx` gives, with the same formats, tables, display reasons and
+  limits, and a band of rows at a time. Formulas, which this format
+  stores compiled, are turned back into the text Excel shows: those of
+  cells, defined names, drop-down lists and macro sheets. One that refers
+  to another workbook or to a table's columns by name, or calls a function
+  not known, is left out and counted in `ooxml.unread_content`. Pivot
+  tables are read as their cells.
 - **PowerPoint** (`.pptx`, `.pptm`, `.ppsx`, `.ppsm`, `.potx`, `.potm`):
   every slide as a part, with titles, body text with bullets and numbers,
   tables, pictures, speaker's notes, comments, the text and pictures of
@@ -122,6 +131,5 @@ leaves out, have no reason.
 
 ### Not in this release
 
-- The binary workbook format
-  (`.xlsb`), and the legacy binary formats (`.doc`, `.xls`, `.ppt`).
+- The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files encrypted for a certificate or protected by rights management.

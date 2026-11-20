@@ -22,9 +22,11 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEST = os.path.join(ROOT, "corpus", "soak")
 
-EXTENSIONS = ("docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm")
+EXTENSIONS = ("docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm")
 
-# (directory, repository, commit, licence)
+# (directory, repository, commit, licence[, extensions]). A source with
+# extensions of its own gives only files with those: Apache POI's other
+# Office files are in the corpus already (fetch.py), its .xlsb files not.
 SOURCES = [
     ("libreoffice", "https://github.com/LibreOffice/core.git", "970e4f2194616485e9585b370f965cb61a34e096", "MPL-2.0"),
     ("pandoc", "https://github.com/jgm/pandoc.git", "f5d266050e4e149c7c9a699cfbe45aff64bb9f7c", "GPL-2.0-or-later"),
@@ -38,6 +40,7 @@ SOURCES = [
     ("closedxml", "https://github.com/ClosedXML/ClosedXML.git", "057f5976c788d97e8eac86d1a528bd5411d9386e", "MIT"),
     ("open-xml-sdk", "https://github.com/OfficeDev/Open-XML-SDK.git", "431ab05cf160248cc3885a4a766026d4f8243792", "MIT"),
     ("shapecrawler", "https://github.com/ShapeCrawler/ShapeCrawler.git", "2ab474918ac89e7bbb8d7c649aca708d298171e2", "MIT"),
+    ("poi", "https://github.com/apache/poi.git", "f66927954a29cf1f5b86614fdf1816e6321c8aea", "Apache-2.0", ("xlsb",)),
 ]
 
 
@@ -46,7 +49,7 @@ def git(cwd, *args):
     subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "advice.detachedHead=false", *args], cwd=cwd, check=True, env=env)
 
 
-def fetch(name, url, commit):
+def fetch(name, url, commit, extensions=EXTENSIONS):
     """Check out the Office files of one repository at one commit.
 
     The clone holds no file contents until the checkout asks for them, and
@@ -60,7 +63,7 @@ def fetch(name, url, commit):
         git(dest, "config", "remote.origin.promisor", "true")
         git(dest, "config", "remote.origin.partialclonefilter", "blob:none")
         git(dest, "sparse-checkout", "init", "--no-cone")
-    patterns = [f"*.{e}" for e in EXTENSIONS] + [f"*.{e.upper()}" for e in EXTENSIONS]
+    patterns = [f"*.{e}" for e in extensions] + [f"*.{e.upper()}" for e in extensions]
     git(dest, "sparse-checkout", "set", "--no-cone", *patterns)
     git(dest, "fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit)
     git(dest, "checkout", "-q", "--detach", "FETCH_HEAD")
@@ -78,9 +81,9 @@ def present():
 
 def main():
     if "--list" not in sys.argv:
-        for name, url, commit, _ in SOURCES:
+        for name, url, commit, _, *extensions in SOURCES:
             print(f"{name}: {url} at {commit[:12]}", flush=True)
-            fetch(name, url, commit)
+            fetch(name, url, commit, *extensions)
     files = present()
     by = {}
     for f in files:

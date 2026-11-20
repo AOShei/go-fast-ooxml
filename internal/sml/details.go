@@ -214,22 +214,27 @@ func (sh *sheet) readLinks(s *xmlscan.Scanner) {
 		if v, ok := s.Attr(xmlscan.NoSpace, "location"); ok && href == "" && len(v) > 0 {
 			href = "#" + clean.Address(string(v))
 		}
-		if href == "" {
-			continue
-		}
-		if n := int64(at.r1-at.r0+1) * int64(at.c1-at.c0+1); n > linkSpread {
-			sh.links = append(sh.links, link{at, href})
-			continue
-		}
-		if sh.linkAt == nil {
-			sh.linkAt = map[pos]string{}
-		}
-		// A cell given two links has the later: the one a file adds
-		// after another is the one it means.
-		for r := at.r0; r <= at.r1; r++ {
-			for c := at.c0; c <= at.c1; c++ {
-				sh.linkAt[pos{r, c}] = href
-			}
+		sh.addLink(at, href)
+	}
+}
+
+// addLink records that the cells of at link to href.
+func (sh *sheet) addLink(at rect, href string) {
+	if href == "" {
+		return
+	}
+	if n := int64(at.r1-at.r0+1) * int64(at.c1-at.c0+1); n > linkSpread {
+		sh.links = append(sh.links, link{at, href})
+		return
+	}
+	if sh.linkAt == nil {
+		sh.linkAt = map[pos]string{}
+	}
+	// A cell given two links has the later: the one a file adds after
+	// another is the one it means.
+	for r := at.r0; r <= at.r1; r++ {
+		for c := at.c0; c <= at.c1; c++ {
+			sh.linkAt[pos{r, c}] = href
 		}
 	}
 }
