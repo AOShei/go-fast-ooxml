@@ -211,6 +211,13 @@ func ItemID(pkg *opc.Package, name string) string {
 // and values of custom XML are of one word, and 99 in 100 of under 35.
 const MaxWords = 30
 
+// MaxFurnitureWords is how many words a header or footer that no page
+// shows may hold before it is out of proportion. Headers and footers hold
+// more than the short values MaxWords is for: a letterhead's addresses, a
+// disclaimer. Over the corpus and the soak set, half of Word's that have
+// text have 3 words, 99 in 100 under 70, and the longest 185.
+const MaxFurnitureWords = 200
+
 // Words returns the number of words in text.
 func Words(text string) int { return len(strings.Fields(text)) }
 
