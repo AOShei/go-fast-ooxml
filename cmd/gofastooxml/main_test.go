@@ -161,6 +161,41 @@ func TestMarkdownAndText(t *testing.T) {
 	}
 }
 
+// The render flags every go-fast command shares: -stored brings in what
+// the file stores and shows nowhere, here a field's code; -children,
+// on unless turned off, the documents a file embeds, each after a line
+// naming it; -exclude-display= with no value leaves nothing out.
+func TestSharedRenderFlags(t *testing.T) {
+	inner := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Inner", Data: `<row r="1"><c r="A1" t="inlineStr"><is><t>inner cell</t></is></c></row>`}).Bytes()
+	docx := ooxmltest.Docx(`<w:p><w:r><w:t xml:space="preserve">Page </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:t>3</w:t></w:r></w:fldSimple></w:p>`)
+	docx.Rel("word/document.xml", ooxmltest.RelPackage, "embeddings/book.xlsx")
+	docx.AddBytes("word/embeddings/book.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", inner)
+	path := filepath.Join(t.TempDir(), "fields.docx")
+	if err := os.WriteFile(path, docx.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plain, _, status := command(t, "-quiet", "-format", "text", path)
+	if status != 0 || !strings.Contains(plain, "Page 3") || strings.Contains(plain, "PAGE") {
+		t.Errorf("by default: status %d, %q", status, plain)
+	}
+	if !strings.Contains(plain, "[child 1: book.xlsx]") || !strings.Contains(plain, "inner cell") {
+		t.Errorf("the embedded workbook is not rendered by default: %q", plain)
+	}
+	if stored, _, _ := command(t, "-quiet", "-format", "text", "-stored", path); !strings.Contains(stored, "PAGE") {
+		t.Errorf("with -stored: %q", stored)
+	}
+	if alone, _, _ := command(t, "-quiet", "-format", "markdown", "-children=false", path); strings.Contains(alone, "inner cell") || strings.Contains(alone, "child 1") {
+		t.Errorf("with -children=false: %q", alone)
+	}
+	if all, _, _ := command(t, "-quiet", "-format", "text", "-exclude-display=", fixture(t, "basic-pptx.pptx")); !strings.Contains(all, "Backup slide content") {
+		t.Errorf("with -exclude-display=: %q", all)
+	}
+	// An unknown reason is refused, and the error names the reasons there are.
+	if _, stderr, status := command(t, "-exclude-display=unknown", path); status != 2 || !strings.Contains(stderr, "the reasons are hidden, no_ink\n") {
+		t.Errorf("-exclude-display=unknown: status %d, %q", status, stderr)
+	}
+}
+
 func TestOptions(t *testing.T) {
 	// Parts by number.
 	stdout, _, status := command(t, "-quiet", "-parts", "2-3", fixture(t, "basic-pptx.pptx"))

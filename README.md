@@ -163,8 +163,9 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 | `-parts 3`, `-parts 2-5` | Only those parts: sheets or slides by number |
 | `-images meta\|data\|none` | Pictures: a block for each, with its place, size and alternative text (the default); their bytes too; or not at all |
 | `-spans` | Bold, italic and the like, and links, as spans |
-| `-exclude-display`, `-exclude-display=hidden` | In Markdown and text, leave out text the file declares not shown or drawn with no ink: all of it, or what has the reasons named (`hidden`, `no_ink`). JSON always has everything |
-| `-furniture`, `-part-markers` | In Markdown and text: include running headers and footers; mark where each part begins |
+| `-exclude-display`, `-exclude-display=hidden` | In Markdown and text, leave out text the file declares not shown or drawn with no ink: all of it (also `=true`, `=all`), or what has the reasons named (`hidden`, `no_ink`, joined by `,` or `+`); `=false` or `=` leaves nothing out. JSON always has everything |
+| `-furniture`, `-stored`, `-part-markers` | In Markdown and text: include running headers and footers; include what the file stores and shows nowhere (macro code, field codes and the rest); put a line before each part saying which it is |
+| `-children` | In Markdown and text, the documents a file embeds, each after a line naming it (`[child 1: book.xlsx]`); on by default, `-children=false` leaves them out |
 | `-workers n` | Sheets or slides read at a time |
 | `-max-cells n`, `-max-decoded-bytes n`, `-max-text-bytes n` | The limits; `-1` for none |
 | `-password p` | The password of an encrypted file, and of encrypted files embedded in it |
