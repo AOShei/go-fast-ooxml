@@ -9,22 +9,31 @@
 // versions and LibreOffice write ("agile": AES in CBC mode, a hash
 // algorithm the file names, the parameters as XML).
 //
-// The password is verified before anything is decrypted: both schemes
-// store a value that only the right password decrypts to match. The
-// package is decrypted as it is read, a piece at a time, so a large file
-// is never held in memory whole.
+// The agile scheme can also encrypt the package's key for certificates,
+// as well as for the password: whoever holds the private key of one of
+// them opens the file without the password. This package reads that too,
+// with RSA keys.
+//
+// The password, or the private key, is verified before anything is
+// decrypted: the file stores a value that only the right one decrypts to
+// match. The package is decrypted as it is read, a piece at a time, so a
+// large file is never held in memory whole.
 package crypt
 
 import (
 	"context"
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/md5"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/subtle"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -42,9 +51,12 @@ import (
 var (
 	// ErrPassword: the password does not open the file.
 	ErrPassword = errors.New("crypt: the password does not open the file")
+	// ErrNoKey: none of the private keys is for a certificate the file
+	// is encrypted for.
+	ErrNoKey = errors.New("crypt: no private key given opens the file")
 	// ErrUnsupported: the file is encrypted in a way this package does
-	// not read: with a certificate, a cipher other than AES, an
-	// encryption provider outside the file.
+	// not read: a cipher other than AES, an encryption provider outside
+	// the file.
 	ErrUnsupported = errors.New("crypt: unsupported encryption")
 	// ErrMalformed: the encryption information contradicts itself.
 	ErrMalformed = errors.New("crypt: malformed encryption information")
@@ -82,6 +94,18 @@ type Info struct {
 	verifierIn, verifierIs []byte // encrypted: a random value, and its hash
 	keyValue               []byte // encrypted: the key of the package
 	hmacKey, hmacValue     []byte // encrypted: the key and the value of the integrity check
+	password               bool   // the key is encrypted for a password
+
+	// Agile: the certificates the key of the package is encrypted for.
+	recipients []recipient
+}
+
+// recipient is a certificate the key of the package is encrypted for
+// ([MS-OFFCRYPTO] 2.3.4.10, CertificateKeyEncryptor).
+type recipient struct {
+	cert     []byte // the certificate, DER
+	keyValue []byte // the key of the package, encrypted with the certificate's public key
+	verifier []byte // HMAC of cert, keyed with the key of the package
 }
 
 // maxInfo bounds the size of an EncryptionInfo stream. Office writes a
@@ -237,9 +261,20 @@ func parseAgile(xml []byte) (*Info, error) {
 		case "dataIntegrity":
 			in.hmacKey, in.hmacValue = attr64(s, "encryptedHmacKey", &bad), attr64(s, "encryptedHmacValue", &bad)
 		case "encryptedKey":
-			// The key encrypted with the password. A key encrypted for a
-			// certificate has other attributes and is passed over.
-			if _, password := s.AttrAny("spinCount"); !password || sawKey {
+			// The key encrypted with the password, or for a certificate,
+			// which has other attributes.
+			_, password := s.AttrAny("spinCount")
+			if _, cert := s.AttrAny("X509Certificate"); cert && !password {
+				// One that cannot be read is passed over, as one whose
+				// verifier does not match must be.
+				var skip error
+				r := recipient{cert: attr64n(s, "X509Certificate", &skip, maxCert), keyValue: attr64(s, "encryptedKeyValue", &skip), verifier: attr64(s, "certVerifier", &skip)}
+				if skip == nil && len(r.cert) > 0 && len(r.keyValue) > 0 && len(r.verifier) > 0 {
+					in.recipients = append(in.recipients, r)
+				}
+				continue
+			}
+			if !password || sawKey {
 				continue
 			}
 			read(&in.key)
@@ -262,9 +297,18 @@ func parseAgile(xml []byte) (*Info, error) {
 		return nil, fmt.Errorf("%w: %v", ErrMalformed, s.Err())
 	case !sawData:
 		return nil, fmt.Errorf("%w: no keyData", ErrMalformed)
-	case !sawKey:
-		return nil, fmt.Errorf("%w: no key encrypted with a password (the file may be encrypted for a certificate)", ErrUnsupported)
+	case !sawKey && len(in.recipients) == 0:
+		return nil, fmt.Errorf("%w: the key is encrypted neither for a password nor for a certificate", ErrUnsupported)
 	}
+	if len(in.hmacKey)%aes.BlockSize != 0 || len(in.hmacValue)%aes.BlockSize != 0 || len(in.hmacKey) > 0 && (len(in.hmacKey) < in.data.hashSize || len(in.hmacValue) < in.data.hashSize) {
+		in.hmacKey, in.hmacValue = nil, nil // not usable; the check is not made
+	}
+	if !sawKey {
+		// The specification has every file carry a key encrypted for a
+		// password; this one has only certificates.
+		return in, nil
+	}
+	in.password = true
 	for name, v := range map[string][]byte{"encryptedVerifierHashInput": in.verifierIn, "encryptedVerifierHashValue": in.verifierIs, "encryptedKeyValue": in.keyValue} {
 		if len(v) == 0 || len(v)%aes.BlockSize != 0 {
 			return nil, fmt.Errorf("%w: %s of %d bytes", ErrMalformed, name, len(v))
@@ -273,20 +317,30 @@ func parseAgile(xml []byte) (*Info, error) {
 	if len(in.verifierIs) < in.key.hashSize || len(in.keyValue) < in.data.keyBytes || len(in.verifierIn) < len(in.key.salt) {
 		return nil, fmt.Errorf("%w: the encrypted values are shorter than what they hold", ErrMalformed)
 	}
-	if len(in.hmacKey)%aes.BlockSize != 0 || len(in.hmacValue)%aes.BlockSize != 0 || len(in.hmacKey) > 0 && (len(in.hmacKey) < in.data.hashSize || len(in.hmacValue) < in.data.hashSize) {
-		in.hmacKey, in.hmacValue = nil, nil // not usable; the check is not made
-	}
 	return in, nil
 }
 
 // attr64 reads an attribute that is base64.
 func attr64(s *xmlscan.Scanner, name string, bad *error) []byte {
+	return attr64n(s, name, bad, 1<<12)
+}
+
+// maxCert bounds the size of a certificate in the encryption information.
+// One is a kilobyte or two; a long chain of extensions makes it more.
+const maxCert = 1 << 16
+
+// attr64n reads an attribute that is base64, of at most limit bytes.
+func attr64n(s *xmlscan.Scanner, name string, bad *error, limit int) []byte {
 	v, ok := s.AttrAny(name)
 	if !ok {
 		return nil
 	}
+	if base64.StdEncoding.DecodedLen(len(v)) > limit+3 {
+		*bad = fmt.Errorf("%w: %s is not base64 of a sensible length", ErrMalformed, name)
+		return nil
+	}
 	out, err := base64.StdEncoding.DecodeString(string(v))
-	if err != nil || len(out) > 1<<12 {
+	if err != nil || len(out) > limit {
 		*bad = fmt.Errorf("%w: %s is not base64 of a sensible length", ErrMalformed, name)
 		return nil
 	}
@@ -304,6 +358,27 @@ func (in *Info) SpinCount() int {
 		return 50000
 	}
 	return in.spin
+}
+
+// Password reports whether a password opens the file: always, but for an
+// agile file that has its key encrypted only for certificates.
+func (in *Info) Password() bool { return !in.agile || in.password }
+
+// Certificates returns the number of certificates the key of the package
+// is encrypted for.
+func (in *Info) Certificates() int { return len(in.recipients) }
+
+// Subjects returns the subjects of the certificates the key of the
+// package is encrypted for, as they name themselves, in the file's order;
+// "" for one that cannot be read as a certificate.
+func (in *Info) Subjects() []string {
+	out := make([]string, len(in.recipients))
+	for i, r := range in.recipients {
+		if c, err := x509.ParseCertificate(r.cert); err == nil {
+			out[i] = c.Subject.String()
+		}
+	}
+	return out
 }
 
 // String describes the encryption: "agile, AES-256, SHA512".
@@ -382,6 +457,9 @@ func cbc(key, iv, src []byte) ([]byte, error) {
 // if the file asks for more than maxSpin rounds of hashing (zero for no
 // limit), or the context's.
 func (in *Info) Key(ctx context.Context, password string, maxSpin int) ([]byte, error) {
+	if !in.Password() {
+		return nil, fmt.Errorf("%w: the key is encrypted only for certificates", ErrPassword)
+	}
 	if maxSpin > 0 && in.SpinCount() > maxSpin {
 		return nil, fmt.Errorf("%w: %d rounds, limit %d", ErrSpinCount, in.SpinCount(), maxSpin)
 	}
@@ -420,6 +498,74 @@ func (in *Info) Key(ctx context.Context, password string, maxSpin int) ([]byte, 
 		return nil, err
 	}
 	return key[:in.data.keyBytes], nil
+}
+
+// maxDecrypts bounds the decryptions with private keys one file may ask
+// for. Each costs a millisecond or more, and a key held in hardware or
+// another process may cost much more; a file names few certificates.
+const maxDecrypts = 64
+
+// CertificateKey derives the key of the package with one of the private
+// keys, and verifies it. A key is tried on a certificate whose public key
+// is its own; on any certificate of its size, if the certificate cannot
+// be read. subject is that of the certificate the key opened. The error
+// is ErrNoKey if none of the keys opens the file.
+func (in *Info) CertificateKey(keys []crypto.Decrypter) (key []byte, subject string, err error) {
+	tried := 0
+	seen := map[string]bool{}
+	for _, r := range in.recipients {
+		if seen[string(r.keyValue)] {
+			continue
+		}
+		seen[string(r.keyValue)] = true
+		var certKey *rsa.PublicKey
+		subject = ""
+		if c, err := x509.ParseCertificate(r.cert); err == nil {
+			pub, ok := c.PublicKey.(*rsa.PublicKey)
+			if !ok {
+				continue // only RSA encrypts a key in the scheme
+			}
+			certKey, subject = pub, c.Subject.String()
+		}
+		for _, k := range keys {
+			if k == nil {
+				continue
+			}
+			pub, ok := k.Public().(*rsa.PublicKey)
+			if !ok || pub.Size() != len(r.keyValue) || certKey != nil && !certKey.Equal(pub) {
+				continue
+			}
+			// The scheme does not say how the key is padded for RSA.
+			// PKCS #1 v1.5 is what Office's cryptographic interface
+			// gives by default; OAEP is tried when that padding is not
+			// there. The verifier decides either way.
+			for _, opts := range []crypto.DecrypterOpts{&rsa.PKCS1v15DecryptOptions{}, &rsa.OAEPOptions{Hash: crypto.SHA1}} {
+				if tried == maxDecrypts {
+					return nil, "", fmt.Errorf("%w: %d decryptions tried, the most allowed", ErrNoKey, maxDecrypts)
+				}
+				tried++
+				plain, err := k.Decrypt(rand.Reader, r.keyValue, opts)
+				if err != nil {
+					continue
+				}
+				if len(plain) == in.data.keyBytes && in.certVerified(r, plain) {
+					return plain, subject, nil
+				}
+				break // the padding was there: the key is not this file's
+			}
+		}
+	}
+	return nil, "", ErrNoKey
+}
+
+// certVerified reports whether the certificate's verifier is the HMAC of
+// the certificate keyed with key, as it is when key is the key of the
+// package.
+func (in *Info) certVerified(r recipient, key []byte) bool {
+	mac := hmac.New(in.data.newHash, key)
+	mac.Write(r.cert)
+	sum := mac.Sum(nil)
+	return len(r.verifier) >= len(sum) && hmac.Equal(sum, r.verifier[:len(sum)])
 }
 
 func (in *Info) standardKey(ctx context.Context, password string) ([]byte, error) {

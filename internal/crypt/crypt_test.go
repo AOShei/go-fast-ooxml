@@ -3,6 +3,7 @@ package crypt_test
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -308,6 +309,9 @@ func FuzzEncryptionInfo(f *testing.F) {
 	f.Add(agile)
 	f.Add(standard)
 	f.Add([]byte{4, 0, 4, 0, 0x40, 0, 0, 0})
+	alice := people()["Alice"]
+	cert, _ := ooxmltest.EncryptStreams(content(5000, 1), "p", ooxmltest.Encryption{SpinCount: 3, Certificates: []ooxmltest.Recipient{{Cert: alice.cert}, {Cert: people()["Bob"].cert, OAEP: true}}})
+	f.Add(cert)
 	f.Fuzz(func(t *testing.T, info []byte) {
 		in, err := crypt.Parse(bytes.NewReader(info), int64(len(info)))
 		if err != nil {
@@ -317,6 +321,15 @@ func FuzzEncryptionInfo(f *testing.F) {
 			return
 		}
 		_ = in.String()
+		_ = in.Subjects()
+		// A private key is tried, then a password.
+		if key, _, err := in.CertificateKey([]crypto.Decrypter{alice.key}); err == nil {
+			if pkg, err := in.Open(bytes.NewReader(encrypted), int64(len(encrypted)), key); err == nil {
+				pkg.ReadAt(make([]byte, 100), 0)
+			}
+		} else if !errors.Is(err, crypt.ErrNoKey) {
+			t.Fatalf("an error of no known kind: %v", err)
+		}
 		// A password is tried, within a bound on what that may cost.
 		key, err := in.Key(context.Background(), "p", 200)
 		if err != nil {

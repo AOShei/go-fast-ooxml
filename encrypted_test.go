@@ -427,13 +427,21 @@ func TestEncryptedFilesThatCannotBeOpened(t *testing.T) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
 		}
 	}
-	// An encrypted file cut at every length, and with bytes changed
-	// anywhere: an error of a known kind or a valid document, promptly.
+	// An encrypted file cut at every length: an error of a known kind,
+	// or, where what is cut is only the unused end of the last sector, the
+	// document the whole file gives, never another.
 	data := ooxmltest.Encrypt(plain, "p", ooxmltest.Encryption{SpinCount: 10})
+	whole, err := extract(t, data, &gofastcore.Options{Password: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := withoutDecrypted(t, whole)
 	for n := 0; n < len(data); n += 101 {
 		doc, err := extract(t, data[:n], &gofastcore.Options{Password: "p"})
-		if err == nil || doc != nil {
-			t.Errorf("cut at %d of %d bytes: read", n, len(data))
+		if err == nil {
+			if got, _ := withoutDecrypted(t, doc); n < len(data)-512 || got != want {
+				t.Errorf("cut at %d of %d bytes: read as another document", n, len(data))
+			}
 			continue
 		}
 		if !errors.Is(err, gofastcore.ErrMalformed) && !errors.Is(err, gofastcore.ErrUnsupported) {

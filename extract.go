@@ -93,11 +93,12 @@ const (
 	// table of one row instead.
 	WarnRegionSplit = warn.RegionSplit
 
-	// The codes below are raised when a password-protected file is opened.
+	// The codes below are raised when an encrypted file is opened.
 
 	// WarnDecrypted: the file was encrypted and has been decrypted, with
-	// the password given or with the password Excel uses when none is
-	// set. The message names the scheme.
+	// a private key given, the password given or the password Excel uses
+	// when none is set. The message names the scheme, and the
+	// certificates the key is encrypted for, if any.
 	WarnDecrypted = "ooxml.decrypted"
 	// WarnIntegrityMismatch: the encrypted file carries a keyed hash of
 	// itself, and the file is not what that hash was made of: it was
@@ -168,9 +169,13 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 //     identify.
 //   - ErrUnsupported: a zip archive or package that is not a Word, Excel
 //     or PowerPoint file; a legacy binary Office file; a file encrypted
-//     in a way other than with a password.
+//     in a way other than with a password or for a certificate.
 //   - ErrPasswordRequired, ErrWrongPassword: the file is encrypted, and
 //     Options.Password is empty or does not open it.
+//   - ErrKeyRequired: the file's key is also encrypted for certificates,
+//     and no key in Options.Keys is the private key of one of them. The
+//     error wraps it beside ErrPasswordRequired or ErrWrongPassword when
+//     a password would open the file too.
 //   - ErrLimitExceeded: the input is larger than Limits.MaxInputBytes, or
 //     a limit was reached before anything could be read.
 //   - ErrNoPartsSelected: Options.Parts selects none of the document's

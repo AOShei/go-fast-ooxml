@@ -18,6 +18,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -45,7 +49,7 @@ func main() {
 // The extensions of the files this command picks out of a directory.
 var extensions = map[string]bool{
 	".docx": true, ".docm": true, ".dotx": true, ".dotm": true,
-	".xlsx": true, ".xlsm": true, ".xltx": true, ".xltm": true,
+	".xlsx": true, ".xlsm": true, ".xltx": true, ".xltm": true, ".xlsb": true,
 	".pptx": true, ".pptm": true, ".ppsx": true, ".ppsm": true, ".potx": true, ".potm": true,
 }
 
@@ -120,6 +124,94 @@ func (f *storedFlag) Set(v string) error {
 	return nil
 }
 
+// keysFlag is -key: each use reads the private keys in a file.
+type keysFlag struct {
+	keys  []crypto.Decrypter
+	files []string
+}
+
+func (k *keysFlag) String() string { return strings.Join(k.files, ",") }
+
+func (k *keysFlag) Set(path string) error {
+	found, err := readKeys(path)
+	if err != nil {
+		return err
+	}
+	k.keys = append(k.keys, found...)
+	k.files = append(k.files, path)
+	return nil
+}
+
+// maxKeyFile bounds the size of a key file. An RSA key of 16,384 bits is
+// about 12 KB in PEM.
+const maxKeyFile = 1 << 20
+
+// readKeys reads the RSA private keys in a file: PEM, with any number of
+// keys and other blocks (certificates are passed over), or one key in
+// DER. Keys are PKCS #1 or PKCS #8. What the file holds is never put in
+// an error.
+func readKeys(path string) ([]crypto.Decrypter, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxKeyFile+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxKeyFile {
+		return nil, fmt.Errorf("%s: more than %d bytes, too large for a key file", path, maxKeyFile)
+	}
+	var keys []crypto.Decrypter
+	rest, pemFile := data, false
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		pemFile = true
+		var key any
+		switch block.Type {
+		case "RSA PRIVATE KEY":
+			key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		case "PRIVATE KEY":
+			key, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+		case "ENCRYPTED PRIVATE KEY":
+			return nil, fmt.Errorf("%s: the private key is encrypted, which this command does not read", path)
+		default:
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: a %s block that is not a readable key", path, block.Type)
+		}
+		rsaKey, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("%s: a %s that is not an RSA key; only RSA keys open Office files encrypted for a certificate", path, strings.ToLower(block.Type))
+		}
+		keys = append(keys, rsaKey)
+	}
+	if !pemFile {
+		key, err := x509.ParsePKCS8PrivateKey(data)
+		if err != nil {
+			key, err = x509.ParsePKCS1PrivateKey(data)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: neither PEM nor a private key in DER (PKCS #1 or #8)", path)
+		}
+		rsaKey, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("%s: not an RSA key; only RSA keys open Office files encrypted for a certificate", path)
+		}
+		keys = append(keys, rsaKey)
+	}
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("%s: no private key in it", path)
+	}
+	return keys, nil
+}
+
 // run is the command: it reads args and writes documents to stdout and
 // messages to stderr, and returns the exit status.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -146,6 +238,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	)
 	var exclude displayFlag
 	var stored storedFlag
+	var keys keysFlag
+	flags.Var(&keys, "key", "file of a private key (RSA; PEM or DER, PKCS #1 or #8) for a file encrypted for its certificate, and for encrypted files embedded in it; may be given more than once")
 	flags.Var(&stored, "stored", "in Markdown and text, include stored data (data the file keeps but shows nowhere): all of it, or with =kinds only those kinds (such as field_code, macro, custom_xml)")
 	flags.Var(&exclude, "exclude-display", "in Markdown and text, leave out what the file declares not displayed: all of it, or with =reasons only those reasons (hidden, no_ink); JSON always has everything")
 	flags.Usage = func() {
@@ -174,7 +268,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if *format != "json" && *format != "markdown" && *format != "text" {
 		return fail("unknown format %q: json, markdown or text", *format)
 	}
-	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password}
+	opts := gofastcore.Options{Workers: *workers, Spans: *spans, Password: *password, Keys: keys.keys}
 	opts.Limits.MaxDecodedBytes, opts.Limits.MaxTextBytes = *maxBytes, *maxText
 	switch *images {
 	case "none":
