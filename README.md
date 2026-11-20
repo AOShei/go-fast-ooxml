@@ -431,7 +431,8 @@ its level the node's depth. Office also keeps the drawing it made of the
 diagram; where the file has it, each item has the place of the shape it
 is drawn in (on a slide), and what the drawing declares is kept: a shape
 marked hidden, text drawn with no ink. A node the layout draws nowhere is
-in the file and on no slide; nothing is said of it. A drawing that is
+in the file and on no slide, but nothing in the file switches it off: it
+is an item with no reason, like any other. A drawing that is
 empty, or draws none of the model, is out of date and is not used.
 Text on the connectors between nodes (an arrow's label) is an item
 between the nodes it joins. Against LibreOffice, which imports the
@@ -447,9 +448,11 @@ A file can keep text that nobody who opens it sees. All of it is read as
 data, never run or followed, and bounded by the limits. What belongs to
 the file as a whole is in a last part of kind `stored`, which comes with
 the whole document, not with a range of parts; each block says what it
-is in `stored`. The renderers leave the stored part out unless
-`RenderOptions.Stored` is set, and a consumer can keep it from a model, or
-review it, by its kind.
+is in `stored`. Word's field codes stay where their fields are, in the
+body or a header or footer, marked `stored` all the same. The renderers
+leave out the stored part, and every block marked `stored` wherever it is,
+unless `RenderOptions.Stored` is set; a consumer can keep stored data from
+a model, or review it, by its kind.
 
 Being stored says where the text comes from. It sets no display reason:
 the file declares nothing about the display of such data, and its length
@@ -462,22 +465,22 @@ is not judged.
 | `document_variable` | Word's document variables, `name: value` |
 | `defined_name` | Excel's defined names |
 | `pivot_cache` | The records of an Excel pivot cache whose source is gone, as a table, and the formulas of calculated fields (`Margin: =Sales*0.1`) |
+| `field_code` | Every code of a Word field: a `note` of type `field` after the paragraph its field ends in (see below) |
 | `after_end` | Data appended after the end of the zip archive, where Office stops reading: its text, if it is text (UTF-8), up to 1 MiB. The stored part also carries `input.trailing_data`, which says how many bytes follow the end, whatever they are |
 
 **Field codes** in Word are the instructions of fields, whose results are
-the text. Most are structure: a page number, a cross-reference, a table of
-contents, a date, a merge field, a document property, a calculation.
-What they show is the text, and their
-codes are not kept. A code that holds text of its own, shown nowhere, is a
-`note` block of type `field` after the paragraph its field ends in: an
-index entry (`XE "…"`), the branches of `IF`, the
-text of `SET`, `ASK` or `FILLIN`, a citation tool's data (`ADDIN`), a
-field this library does not know, and a structural field whose code holds
-more than such a field needs (over 30 words of quoted text). These notes
-have no display reason. A field in another's code is written into that code in braces, as Word
-shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its result, which
-nothing shows, is not text. An equation field (`EQ`) and a macro button
-(`MACROBUTTON`) show their codes' text.
+the text: a page number (`PAGE`), a cross-reference, a table of contents,
+a merge field, an index entry (`XE "…"`), the branches of `IF`, a citation
+tool's data (`ADDIN`). The result is text where the field is. The code is
+never shown, and every code is kept, whatever the field: a `note` block of
+type `field` after the paragraph its field ends in, marked `stored`
+`field_code`, so that rendered text has the results and not the codes
+unless `RenderOptions.Stored` is set. A code has no display reason of its
+own; one in a header or footer the document switches off takes the
+header's or footer's. A field in another's code is written into that code
+in braces, as Word shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its
+result, which nothing shows, is not text. An equation field (`EQ`) and a
+macro button (`MACROBUTTON`) show their codes' text.
 
 ## Equations
 
@@ -514,7 +517,7 @@ What is reported, by format:
 
 | Format | `hidden` | `no_ink` |
 |---|---|---|
-| Word | Hidden text (`w:vanish`, `w:specVanish`), on the run or through its character style, its paragraph's style or the document defaults; hidden text and a hidden paragraph style cancel, as in Word. A footnote, text box or picture anchored in hidden text. A drawing whose `wp:docPr` is `hidden`, a legacy shape whose style says `visibility:hidden`. A header or footer that no page shows by the document's own settings: one no section names, a first-page one where no section has a different first page, an even-page one where the document does not have different odd and even pages | A Word 2010 text fill (`w14:textFill`) of nothing, or fully transparent |
+| Word | Hidden text (`w:vanish`, `w:specVanish`), on the run or through its character style, its paragraph's style or the document defaults; hidden text and a hidden paragraph style cancel, as in Word. A footnote, text box or picture anchored in hidden text. A drawing whose `wp:docPr` is `hidden`, a legacy shape whose style says `visibility:hidden`. A header or footer the document's own settings switch off: a first-page one where no section has a different first page, an even-page one where the document does not have different odd and even pages. (A header or footer part that no section names is used by nothing, and has no reason.) | A Word 2010 text fill (`w14:textFill`) of nothing, or fully transparent |
 | Excel | A hidden or very hidden sheet: the part and all its blocks. Hidden rows and columns, filtered rows among them. A value its number format displays as nothing (`;;;`), other than zero. A shape or picture marked hidden; the hidden stand-in Excel writes for a form control kept in the legacy drawing is not one. A drop-down list whose arrow is hidden or whose cells are all hidden. The series a chart's filter leaves out | Shape text with no fill, or a fill of zero opacity |
 | PowerPoint | A hidden slide (`show="0"`): the part and all its blocks, its notes included. A shape or group marked hidden. Text in a table cell that a merged cell covers. A notes or handout header or footer the master switches off (`p:hf`). The series a chart's filter leaves out | Text with no fill and no outline, or a fill of zero opacity, through the run, its level, the placeholders it takes after, the master's styles and the presentation's defaults |
 

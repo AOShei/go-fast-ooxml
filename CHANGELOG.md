@@ -19,7 +19,10 @@ of `Block.Hidden` and its reasons. Removed: the reasons `tiny`,
 `ooxml.hidden_unchecked` and `ooxml.unshown_text_long`;
 `File.HiddenChecked`, `Options.DeepHidden` and the command's
 `-deep-hidden`; the command's `-exclude-hidden` is `-exclude-display`.
-Invisible characters are kept in the text with no reason.
+Invisible characters are kept in the text with no reason. Word field codes
+are all kept, marked `stored`, where only some were kept and rendered; a
+header or footer part no section names, and a SmartArt node the drawing
+leaves out, have no reason.
 
 ### Formats
 
@@ -59,9 +62,9 @@ Invisible characters are kept in the text with no reason.
   macro sheets, the formulas of pivot caches' calculated fields, and data
   appended after the end of the zip archive (`after_end`, with
   `input.trailing_data`).
-- Word's field codes that hold text of their own (index entries, the
-  branches of IF, a citation tool's data) as `note` blocks of type `field` after their
-  paragraph.
+- Every code of a Word field, as a `note` block of type `field` after its
+  paragraph, marked `stored` `field_code`: in place, and left out of
+  rendered text unless `RenderOptions.Stored` is set.
 - Equations in Word and PowerPoint written in UnicodeMath, with their
   structure; a Word display equation as a `formula` block.
 - Excel's drop-down lists as `note` blocks of type `choices` at their
@@ -93,7 +96,7 @@ Invisible characters are kept in the text with no reason.
 - Everything a file holds is extracted. Where the file declares text not
   shown or drawn with no ink, the block says so (`Display`: `hidden`,
   `no_ink`): hidden formatting; hidden sheets, rows, columns, slides and
-  shapes; headers and footers no page shows by the document's settings; a
+  shapes; headers and footers the document's settings switch off; a
   number format that shows nothing; text with no fill or a fill of no
   opacity. Nothing is judged from appearance (colour, size, position, what
   covers what), and a block with no reason says nothing about whether a

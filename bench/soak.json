@@ -33,14 +33,14 @@
   "ooxml.property_truncated": 1,
   "ooxml.unread_content": 26,
   "part.failed": 37,
-  "part.image_only": 245,
-  "part.no_text": 965,
+  "part.image_only": 244,
+  "part.no_text": 960,
   "structure.heading_level_clamped": 18,
   "text.tracked_changes": 129,
   "text.unmapped_glyphs": 3
  },
  "documents_with_display": {
-  "hidden": 261,
+  "hidden": 269,
   "no_ink": 6
  },
  "embedded_documents": 835,

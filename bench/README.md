@@ -167,7 +167,7 @@ suite.
 Among the documents read, 36 have a part that failed (a sheet the
 workbook lists and does not contain, XML that breaks off, a member cut
 short) and 28 have a damaged part that is not the main one; each
-says so in its warnings. 261 documents have text the file declares hidden,
+says so in its warnings. 269 documents have text the file declares hidden,
 and 6 text drawn with no ink.
 
 The run found one defect: asking for spans changed how consecutive
@@ -420,7 +420,7 @@ before it:
 
 | | Files before | Files now | Blocks now |
 |---|---|---|---|
-| Word, `hidden` | 27 (`invisible`) | 104 | 325 |
+| Word, `hidden` | 27 (`invisible`) | 112 | 366 |
 | Word, `no_ink` | 2 (`transparent`) | 2 | 2 |
 | Word, reasons removed: `low_contrast`, `tiny`, `off_page`, `clipped` | 24, 3, 2, 1 | | |
 | Excel, `hidden` | 119 (`invisible`) | 97 | 534 |
@@ -429,9 +429,16 @@ before it:
 | PowerPoint, `no_ink` | 3 (`transparent`) | 4 | 6 |
 | PowerPoint, reasons removed: `low_contrast`, `off_page`, `occluded` | 13, 5, 2 | | |
 
-Word's `hidden` rose because a header or footer that no page shows, by the
-document's own settings, is declared hidden again: before, it was marked
-only when it held more than 200 words, a rule that is gone. Excel's fell because the hidden
+Word's `hidden` rose because a header or footer the document's own
+settings switch off (a first-page one with no different first page, an
+even-page one without different odd and even pages) is declared hidden
+again: before, it was marked only when it held more than 200 words, a rule
+that is gone. A header or footer part that no section names is used by
+nothing and has no reason. Every field code is now kept, as stored data:
+2,867 codes in 517 Word files, where 249 in 62 files were kept before; a
+code in a header or footer that is switched off takes its reason. Notes
+are 96 of the 366 hidden blocks, and 24 of the 112 files have hidden notes
+and nothing else hidden. Excel's fell because the hidden
 stand-in Excel writes for each form control (the control itself is in the
 legacy drawing, and shown) is no longer taken for a hidden shape: about 20
 workbooks of buttons and check boxes. Text with no fill in PowerPoint was

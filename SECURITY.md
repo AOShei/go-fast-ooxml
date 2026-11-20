@@ -25,7 +25,7 @@ Any of the following is a bug to report, whatever the file:
 
 | | |
 |---|---|
-| **Run anything** | Macros are never run, formulas never evaluated, fields never updated. Their presence is reported (`input.active_content`); the code of VBA projects and macro sheets, and the codes of fields, are read as text, into the stored part or notes |
+| **Run anything** | Macros are never run, formulas never evaluated, fields never updated. Their presence is reported (`input.active_content`); the code of VBA projects and macro sheets, and the codes of fields, are read as text and marked as stored data |
 | **Reach anything** | No file other than the input is opened and no network connection is made. Links to other files, remote templates and linked pictures are reported (`input.external_reference`), never followed. The packages that read file content do not import `os`, `net` or `os/exec`, and a test fails if one starts to |
 | **Use XML against the reader** | The library has its own XML reader. Document type declarations are refused, so there are no entities to expand and nothing external to include. Nesting is bounded at 512 elements |
 | **Crash the caller** | No panic on any input: every index, length and count taken from a file is checked, and every list a file can lengthen has a bound |

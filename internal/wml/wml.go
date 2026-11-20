@@ -52,15 +52,17 @@ type note struct {
 	date   string
 }
 
-// furnitureRef is a header or footer named by a section.
+// furnitureRef is a header or footer part, as a section names it or, with
+// named false, as the document's relationships list it.
 type furnitureRef struct {
 	name   string
 	header bool
-	// shown says some section displays it: it is the section's ordinary
-	// header, or its first-page header and the section has a different
-	// first page. even marks an even-page header, which is shown only if
-	// the document has different odd and even pages.
-	shown, even bool
+	// named says a section names it. shown says some section displays it:
+	// it is the section's ordinary header, or its first-page header and
+	// the section has a different first page. even marks an even-page
+	// header, which is shown only if the document has different odd and
+	// even pages.
+	named, shown, even bool
 }
 
 // reader holds what is shared while one Word document is read.
@@ -97,7 +99,6 @@ type reader struct {
 	children      map[string]bool              // embedded parts already handed on
 
 	inserted, deleted int  // tracked changes seen
-	fields            int  // codes of fields kept as notes
 	removed           int  // control characters removed
 	unmapped          int  // symbol-font characters with no known Unicode equivalent
 	flattened         int  // tables written as text
@@ -205,9 +206,9 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		}
 	}
 
-	// A header or footer part that no section names is in the file but
-	// never on a page. It is read all the same, and declared hidden
-	// (readFurniture).
+	// A header or footer part that no section names is in the file and
+	// used by nothing. It is read all the same, with no reason: nothing in
+	// the file switches it off.
 	for _, rel := range rels {
 		header := ns.IsRel(rel.Type, ns.RelHeader)
 		if rel.External || !header && !ns.IsRel(rel.Type, ns.RelFooter) {
@@ -215,17 +216,24 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		}
 		r.furniture = append(r.furniture, furnitureRef{name: rel.Target, header: header})
 	}
-	// A part is shown if any section shows it.
-	shown := map[string]bool{}
+	// A part is switched off if sections name it and none shows it: a
+	// first-page one where no section has a different first page, an
+	// even-page one where the document does not have different odd and
+	// even pages.
+	named, shown := map[string]bool{}, map[string]bool{}
 	for _, f := range r.furniture {
+		if f.named {
+			named[f.name] = true
+		}
 		if f.shown && (!f.even || r.evenAndOdd) {
 			shown[f.name] = true
 		}
 	}
+	off := func(name string) bool { return named[name] && !shown[name] }
 	// Running headers go first and footers last, each distinct one once.
 	for _, f := range r.furniture {
 		if f.header {
-			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindHeader, shown[f.name])...)
+			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindHeader, off(f.name))...)
 		}
 	}
 	if len(r.part.Blocks) == 0 {
@@ -235,7 +243,7 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	}
 	for _, f := range r.furniture {
 		if !f.header {
-			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindFooter, shown[f.name])...)
+			r.part.Blocks = append(r.part.Blocks, r.readFurniture(f.name, gofastcore.KindFooter, off(f.name))...)
 		}
 	}
 	// The workbooks the charts embed are files the document embeds.
@@ -348,9 +356,9 @@ func (r *reader) loadWith(name string, s *xmlscan.Scanner, read func()) {
 }
 
 // readFurniture reads a header or footer part into blocks of the given
-// kind: one per paragraph, with a table flattened to text. One that no
-// page shows, by the document's own settings, is declared hidden.
-func (r *reader) readFurniture(name string, kind gofastcore.Kind, shown bool) []gofastcore.Block {
+// kind: one per paragraph, with a table flattened to text. off says the
+// document's own settings switch it off, and its blocks are hidden.
+func (r *reader) readFurniture(name string, kind gofastcore.Kind, off bool) []gofastcore.Block {
 	if r.seenFurniture[name] {
 		return nil
 	}
@@ -389,7 +397,7 @@ func (r *reader) readFurniture(name string, kind gofastcore.Kind, shown bool) []
 			add(b)
 		}
 	})
-	if !shown {
+	if off {
 		for i := range out {
 			hideWhole(&out[i], gofastcore.DisplayHidden)
 		}
