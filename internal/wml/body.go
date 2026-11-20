@@ -75,10 +75,9 @@ func (p *parser) inCode() bool {
 }
 
 // fieldChar reads w:fldChar: a field begins, its code ends, or it ends.
-// The code of a field is never shown; one that holds text of its own is
-// kept as a note after the paragraph its field ends in (fieldNote). A
-// field in the code of another is part of that one's code, written in
-// braces as Word shows it.
+// The code of a field is never shown; it is kept as a note after the
+// paragraph its field ends in (fieldNote). A field in the code of another
+// is part of that one's code, written in braces as Word shows it.
 func (p *parser) fieldChar() {
 	typ, _ := p.s.Attr(ns.Word, "fldCharType")
 	switch string(typ) {
@@ -123,79 +122,19 @@ func (p *parser) fieldChar() {
 	}
 }
 
-// fieldNote keeps the code of a field as a note after the paragraph, if
-// the code holds text of its own. Most fields are structure: a page
-// number, a cross-reference, a table of contents, a merge field. Their
-// codes say what to show, and what they show is the text; they are not
-// kept, unless a code holds more than such a field needs. Other codes are
-// kept: an index entry, the branches of IF, the text of SET, ASK or
-// FILLIN, a citation tool's data. The file declares nothing about the
-// display of a code, and no reason is set.
+// fieldNote keeps the code of a field as a note after the paragraph: every
+// code, whatever field it is, from a page number's to an index entry's or
+// the branches of IF. A code is stored data, never shown, and is marked
+// so (StoredFieldCode), in its place: the renderers leave it out unless
+// asked for stored data. The file declares nothing about its display, and
+// no reason is set.
 func (p *parser) fieldNote(code []byte) {
 	text := p.clean(code, clean.Prose)
 	if text == "" {
 		return
 	}
-	keyword, _, _ := strings.Cut(text, " ")
-	keyword = strings.ToUpper(keyword)
-	structural := structuralFields[keyword] || strings.HasPrefix(keyword, "=") // a calculation is structure too
-	if structural && plainCode(text) {
-		return
-	}
-	p.r.fields++
 	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text,
-		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField}})
-}
-
-// structuralFields are the fields whose codes name what to show (a page
-// number, a bookmark, a style, a property, a column of merged data) and
-// carry no text of their own.
-var structuralFields = map[string]bool{
-	"PAGE": true, "NUMPAGES": true, "SECTIONPAGES": true, "SECTION": true, "PAGEREF": true,
-	"REF": true, "NOTEREF": true, "SEQ": true, "TOC": true, "TOA": true, "INDEX": true,
-	"STYLEREF": true, "DATE": true, "TIME": true, "CREATEDATE": true, "SAVEDATE": true,
-	"PRINTDATE": true, "EDITTIME": true, "FILENAME": true, "FILESIZE": true, "NUMWORDS": true,
-	"NUMCHARS": true, "REVNUM": true, "TEMPLATE": true, "LISTNUM": true, "AUTONUM": true,
-	"AUTONUMLGL": true, "AUTONUMOUT": true, "HYPERLINK": true, "FORMTEXT": true,
-	"FORMCHECKBOX": true, "FORMDROPDOWN": true, "MERGEFIELD": true, "MERGEREC": true,
-	"MERGESEQ": true, "NEXT": true, "BIBLIOGRAPHY": true, "CITATION": true,
-	"DOCPROPERTY": true, "DOCVARIABLE": true, "SYMBOL": true, "INCLUDEPICTURE": true,
-	"INCLUDETEXT": true, "LINK": true, "EMBED": true, "SHAPE": true, "BARCODE": true,
-	"TITLE": true, "SUBJECT": true, "AUTHOR": true, "KEYWORDS": true, "COMMENTS": true,
-	"LASTSAVEDBY": true, "USERNAME": true, "USERINITIALS": true, "USERADDRESS": true,
-	"QUOTE": true, "INFO": true, "DOCPROPERTIES": true, "GREETINGLINE": true, "ADDRESSBLOCK": true,
-}
-
-// Bounds on the code of a structural field that is not kept: its length,
-// and the words in its quoted arguments.
-const (
-	maxPlainCode  = 4 << 10
-	maxPlainWords = 30
-)
-
-// plainCode reports whether a structural field's code is no more than such
-// a field needs: names, switches, a format, a list of styles, but no more
-// than maxPlainWords words of text in its quoted arguments.
-func plainCode(code string) bool {
-	return len(code) <= maxPlainCode && quotedWords(code) <= maxPlainWords
-}
-
-// quotedWords returns the number of words in the quoted strings of a
-// field's code: its text, as against its names and switches.
-func quotedWords(code string) int {
-	n := 0
-	for rest := code; ; {
-		_, after, found := strings.Cut(rest, `"`)
-		if !found {
-			return n
-		}
-		quoted, next, closed := strings.Cut(after, `"`)
-		n += len(strings.Fields(quoted))
-		if !closed {
-			return n
-		}
-		rest = next
-	}
+		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField, gofastcore.AttrStored: gofastcore.StoredFieldCode}})
 }
 
 // alternate tracks one mc:AlternateContent element: a file may hold the
@@ -444,7 +383,7 @@ func (p *parser) section() {
 		if !ok || rel.External {
 			continue
 		}
-		ref := furnitureRef{name: rel.Target, header: header, shown: true}
+		ref := furnitureRef{name: rel.Target, header: header, named: true, shown: true}
 		switch string(typ) {
 		case "even":
 			ref.even = true

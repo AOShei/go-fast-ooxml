@@ -129,10 +129,11 @@ func TestWordHiddenTextDoesNotDisturbVisibleText(t *testing.T) {
 	}
 }
 
-// A header or footer that no page shows, by the document's own settings,
-// is declared hidden: one no section names, a first-page one where no
-// section has a different first page, an even-page one where the document
-// does not have different odd and even pages.
+// A header or footer the document's own settings switch off is declared
+// hidden: a first-page one where no section has a different first page,
+// an even-page one where the document does not have different odd and
+// even pages. One that no section names is in the file and used by
+// nothing; nothing switches it off, and it has no reason.
 func TestWordUnusedHeaders(t *testing.T) {
 	build := func(sectPr string, settings string) *ooxmltest.Package {
 		pkg := ooxmltest.DocxSection(ooxmltest.Para("Body."), sectPr)
@@ -152,7 +153,7 @@ func TestWordUnusedHeaders(t *testing.T) {
 		`header "First-page header" display=hidden`,
 		`header "Even-page header" display=hidden`,
 		`paragraph "Body."`,
-		`footer "A footer no section names" display=hidden`,
+		`footer "A footer no section names"`,
 	)
 	ooxmltest.CheckDocument(t, doc)
 	// With both switched on, all three headers are shown.
@@ -162,7 +163,7 @@ func TestWordUnusedHeaders(t *testing.T) {
 		`header "First-page header"`,
 		`header "Even-page header"`,
 		`paragraph "Body."`,
-		`footer "A footer no section names" display=hidden`,
+		`footer "A footer no section names"`,
 	)
 }
 
@@ -261,7 +262,9 @@ func TestWordInlineFormattingAndLinks(t *testing.T) {
 		`paragraph "A paragraph bold by its style."`,
 		`paragraph "See the site or section 2." ["the " ->https://example.org/page] ["site" bold ->https://example.org/page] ["section 2" ->#_Toc123]`,
 		`paragraph "Or a field link then plain." ["a field link" ->https://example.org/field]`,
+		`note "HYPERLINK \"https://example.org/field\" \\o \"tip\"" stored=field_code type=field`,
 		`paragraph "Or a simple field." ["a simple field" ->#Annex]`,
+		`note "HYPERLINK \\l \"Annex\"" stored=field_code type=field`,
 		`paragraph "Bold and hidden." display=hidden ["Bold and hidden." bold]`,
 	)
 	ooxmltest.CheckDocument(t, doc)
@@ -275,7 +278,9 @@ func TestWordInlineFormattingAndLinks(t *testing.T) {
 		`paragraph "A paragraph bold by its style."`,
 		`paragraph "See the site or section 2."`,
 		`paragraph "Or a field link then plain."`,
+		`note "HYPERLINK \"https://example.org/field\" \\o \"tip\"" stored=field_code type=field`,
 		`paragraph "Or a simple field."`,
+		`note "HYPERLINK \\l \"Annex\"" stored=field_code type=field`,
 		`paragraph "Bold and hidden." display=hidden`,
 	)
 }
