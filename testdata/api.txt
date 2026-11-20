@@ -19,6 +19,7 @@ const (
 	WarnDecrypted	= "ooxml.decrypted"
 	WarnIntegrityMismatch	= "ooxml.integrity_mismatch"
 	WarnHiddenUnchecked	= warn.HiddenUnchecked
+	WarnUnshownTextLong	= warn.UnshownTextLong
 )
 func Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error)
 func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error)

@@ -14,6 +14,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -131,11 +132,13 @@ func (p *parser) fieldChar() {
 // the code holds text that is shown nowhere. Most fields are structure:
 // a page number, a cross-reference, a table of contents, a merge field.
 // Their codes say what to show, and what they show is the text; they are
-// not kept. A field that is not one of those, or whose code holds more
-// than such a field needs, is kept and flagged as hidden: an index entry,
-// the branches of IF, the text of SET, ASK or FILLIN, a citation tool's
-// data. An equation field (EQ) and a macro button (MACROBUTTON) show
-// their codes' text, and their notes are not flagged.
+// not kept. Other codes are kept: an index entry, the branches of IF, the
+// text of SET, ASK or FILLIN, a citation tool's data. Like the other data
+// a file keeps and shows nowhere, they are not flagged for that, which is
+// routine. Flagged as hidden are a structural field whose code holds more
+// than such a field needs, and a code whose text is out of proportion for
+// a field (stored.MaxWords words in its quoted strings), apart from a
+// citation tool's, whose data is long by nature.
 func (p *parser) fieldNote(code []byte) {
 	text := p.clean(code, clean.Prose)
 	if text == "" {
@@ -143,20 +146,38 @@ func (p *parser) fieldNote(code []byte) {
 	}
 	keyword, _, _ := strings.Cut(text, " ")
 	keyword = strings.ToUpper(keyword)
-	// A link's address is no text of the field's: its length is a link's.
-	if keyword == "HYPERLINK" && len(text) <= maxPlainCode+len(fieldLink(code)) && plainCode(strings.Replace(text, fieldLink(code), "", 1)) {
+	structural := structuralFields[keyword] || strings.HasPrefix(keyword, "=") // a calculation is structure too
+	if structural && plainCode(text) {
 		return
 	}
-	if (structuralFields[keyword] || strings.HasPrefix(keyword, "=")) && plainCode(text) {
-		return // a calculation (=SUM(A1,B1)) is structure too
-	}
-	hidden := gofastcore.HiddenInvisible
-	if keyword == "EQ" || keyword == "MACROBUTTON" {
-		hidden = 0 // shown: an equation, the text of a button
+	var hidden gofastcore.Hidden
+	switch n := stored.QuotedWords(text); {
+	case structural:
+		hidden = gofastcore.HiddenInvisible // more than it needs
+		p.r.longs.Add("the code of a "+keyword+" field", "", stored.QuotedWords(text))
+	case n > stored.MaxWords && !citation(text):
+		hidden = gofastcore.HiddenInvisible
+		p.r.longs.Add("the code of a field", keyword, n)
 	}
 	p.r.fields++
 	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: hidden,
 		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField}})
+}
+
+// citation reports whether a field's code is a citation tool's data
+// (Zotero, Mendeley, EndNote, Citavi), which is long by nature.
+func citation(code string) bool {
+	fields := strings.Fields(code)
+	if len(fields) < 2 || !strings.EqualFold(fields[0], "ADDIN") {
+		return false
+	}
+	tool := strings.ToUpper(fields[1])
+	for _, prefix := range []string{"ZOTERO_", "CSL_", "MENDELEY", "EN.", "CITAVI"} {
+		if strings.HasPrefix(tool, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // structuralFields are the fields whose codes name what to show (a page
@@ -178,31 +199,14 @@ var structuralFields = map[string]bool{
 	"QUOTE": true, "INFO": true, "DOCPROPERTIES": true, "GREETINGLINE": true, "ADDRESSBLOCK": true,
 }
 
-// Bounds on the code of a structural field that is not kept: past them it
-// holds more than it needs, which is kept.
-const (
-	maxPlainCode   = 512
-	maxPlainQuoted = 128
-)
+// maxPlainCode bounds the code of a structural field that is not kept.
+const maxPlainCode = 4 << 10
 
 // plainCode reports whether a structural field's code is no more than such
-// a field needs: short, with short quoted arguments (a bookmark, a style,
-// a format, an address).
+// a field needs: names, switches, a format, a list of styles, but no more
+// than stored.MaxWords words of text in its quoted arguments.
 func plainCode(code string) bool {
-	if len(code) > maxPlainCode {
-		return false
-	}
-	for rest := code; ; {
-		_, after, found := strings.Cut(rest, `"`)
-		if !found {
-			return true
-		}
-		quoted, next, closed := strings.Cut(after, `"`)
-		if !closed || len(quoted) > maxPlainQuoted {
-			return !closed && len(after) <= maxPlainQuoted
-		}
-		rest = next
-	}
+	return len(code) <= maxPlainCode && stored.QuotedWords(code) <= stored.MaxWords
 }
 
 // alternate tracks one mc:AlternateContent element: a file may hold the

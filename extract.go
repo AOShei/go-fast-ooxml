@@ -114,6 +114,13 @@ const (
 	// have colours that conditional formatting gives by rules that are
 	// formulas, which are not evaluated.
 	WarnHiddenUnchecked = warn.HiddenUnchecked
+	// WarnUnshownTextLong: text that the file keeps and shows nowhere (a
+	// document variable, a defined name, a value of custom XML, the code
+	// of a field) is far longer than that kind of text usually is: over 30
+	// words where a few are usual. It is flagged invisible; the message
+	// says what and how long. Such text is not flagged for being unshown,
+	// which is routine.
+	WarnUnshownTextLong = warn.UnshownTextLong
 )
 
 // Extractor extracts Word, Excel and PowerPoint files. The zero value is
