@@ -88,6 +88,9 @@ leaves out, have no reason.
   (`Children`), without holding the document. `Children` after `Parts`
   has what the parts left of the text the document may hold, as in
   `Document`.
+- With more than one worker, a Word body or a sheet of 1 MiB or more is
+  decompressed ahead of its reading, as `Rows` does: 1.16 to 1.26 times as
+  fast for such a file, with the same document.
 - The command `gofastooxml`: JSON, written a part at a time as the parts
   are read, Markdown or text, with the render
   flags every go-fast command shares (`-furniture`, `-stored[=kinds]`,

@@ -306,8 +306,12 @@ that pays: making the tables on a goroutine of their own could save at most
 the 5%, and the two passes cannot overlap, since the rows wait on the merged
 cells. Decompressing ahead reaches the ceiling a profile set for it (1.6).
 Reading the rows of one band on several workers while one scans was put at
-2.7 at best; it would need the scanner's state handed between goroutines,
-and is not done.
+2.7 at best, before the first pass was measured, which it would not speed
+up. It was decided against: it would need the scanner's state (positions
+taken from the row or cell before, the cut where a limit falls, the order
+of warnings) handed between goroutines, and a second parser to find where
+rows begin that agrees with the scanner on every damaged file, for a gain
+only on a very large sheet read through `Rows`.
 
 The bands are the same with one worker and with four, within the limits and
 with a limit on decompressed bytes that cuts sheets off, over the 1,863
@@ -316,6 +320,38 @@ For that the sheet is read in chunks of 256 KiB both ways, and the
 decompression budget is charged a chunk at a time as the scanner takes it,
 so that where the limit cuts a sheet does not depend on how far ahead the
 decompressing has got.
+
+**A large part read ahead.** With more than one worker, a Word body or a
+sheet of 1 MiB or more (as the archive gives its size) is decompressed on
+a goroutine of its own, ahead of its reading, in `Extract` and `File` as
+in `Rows`. Measured on 2026-11-20 on the 226 Word and Excel files of the
+corpus whose largest body or sheet is 128 KiB or more, read ahead and not,
+best of ten:
+
+| Largest body or sheet | Files | Read ahead, against not (geometric mean) |
+|---|---|---|
+| 128 to 512 KiB | 144 | 0.95 to 0.98: slower |
+| 512 KiB to 1 MiB | 31 | 1.10 |
+| 1 to 2 MiB | 25 | 1.16 |
+| 2 to 8 MiB | 19 | 1.19 to 1.23 |
+| 8 MiB and more | 7 | 1.26 |
+
+Under 512 KiB the cost of starting the read-ahead is more than it saves,
+hence the line at 1 MiB; its buffers are made only as it needs them. On
+every Word, Excel and PowerPoint file of the corpus and the soak set
+(6,375), one at a time with all workers, the whole run takes 6.77 s where
+it took 7.32 (1.08 times as fast; best of two), and 1.69 s where it took
+1.77 with 24 files read at once, where the large files are the last to
+finish. The documents are the same, byte for byte, in all of these runs.
+
+Which way a part is read depends on its size, not on the workers: a part
+of 1 MiB or more is read in chunks, its budget charged a chunk at a time,
+whether or not ahead. The document is the same with one worker and with
+four (`TestLargePartsTheSameWithAnyWorkers`): on made files whose large
+part is broken partway, under limits on decompressed bytes that cut the
+large part or what comes after it, on text and on parts, and on the 51
+files of the corpus and soak set with a part read ahead, with no limits
+and with 3 MB decompressed.
 
 The cells that `Rows` gives are the cells of the sheet read whole, with the
 same display reasons: checked on the fixtures and on every sixth corpus
