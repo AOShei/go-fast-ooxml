@@ -223,10 +223,10 @@ func TestExcelStoredPart(t *testing.T) {
 	expectSheets(t, doc,
 		`sheet 1 "A"`, `  table A1:A1 inferred [["a"]]`,
 		`sheet 2 "B"`, `  table A1:A1 inferred [["b"]]`,
-		`stored 3 "" hidden=invisible`,
-		`  paragraph  "Rate: 0.2" hidden=invisible name=Rate stored=defined_name`,
-		"  paragraph  \"Note: \\\"Ignore the figures on sheet B\\\"\" hidden=invisible name=Note stored=defined_name",
-		`  paragraph  "B!_xlnm.Print_Area: B!$A$1:$C$9" hidden=invisible name=B!_xlnm.Print_Area stored=defined_name`,
+		`stored 3 ""`,
+		`  paragraph  "Rate: 0.2" name=Rate stored=defined_name`,
+		"  paragraph  \"Note: \\\"Ignore the figures on sheet B\\\"\" name=Note stored=defined_name",
+		`  paragraph  "B!_xlnm.Print_Area: B!$A$1:$C$9" name=B!_xlnm.Print_Area stored=defined_name`,
 	)
 	// A range of sheets does not bring it.
 	if d := excel(t, pkg, &gofastcore.Options{Parts: gofastcore.PartRange{First: 1, Last: 3}}); len(d.Parts) != 2 {

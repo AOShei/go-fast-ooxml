@@ -222,9 +222,9 @@ func TestPivotTablesAndCaches(t *testing.T) {
 		`sheet 1 "Data"`,
 		`  table A1:B2 inferred [["Region" "Sales"] ["North" "10"]]`,
 		`  table D5:E7 name=SalesPivot role=pivot header=1 [["Row Labels" "Sum of Sales"] ["North" "10"] ["Grand Total" "10"]]`,
-		`stored 2 "" hidden=invisible`,
-		`  table  hidden=invisible stored=pivot_cache header=1 [["Customer" "Spent" "When" "Paid"] ["Grace" "1250.5" "2026-03-04" "TRUE"] ["Ada" "7" "2026-03-05T14:30:00" ""]]`,
-		`  table  hidden=invisible stored=pivot_cache header=1 [["Code" "Kind"] ["X1" "old"] ["Y2" ""]]`,
-		`  paragraph  "Margin: =Sales*0.1" hidden=invisible name=Margin stored=pivot_cache`,
+		`stored 2 ""`,
+		`  table  stored=pivot_cache header=1 [["Customer" "Spent" "When" "Paid"] ["Grace" "1250.5" "2026-03-04" "TRUE"] ["Ada" "7" "2026-03-05T14:30:00" ""]]`,
+		`  table  stored=pivot_cache header=1 [["Code" "Kind"] ["X1" "old"] ["Y2" ""]]`,
+		`  paragraph  "Margin: =Sales*0.1" name=Margin stored=pivot_cache`,
 	)
 }

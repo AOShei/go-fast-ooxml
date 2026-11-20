@@ -16,10 +16,11 @@ import (
 // name can stand for a text that appears nowhere else), the formulas of
 // its Excel 4 macro sheets and the code of its VBA project, which are
 // programs, the records of pivot caches whose source is gone and the
-// formulas of calculated fields (pivot.go), and custom XML data. Nobody who opens the
-// workbook sees them, so they are a place to put text for a model; they
+// formulas of calculated fields (pivot.go), and custom XML data. They
 // are read as data, never evaluated, and given in the document's stored
-// part (gofastcore.PartStored), flagged as hidden.
+// part (gofastcore.PartStored). They are not flagged hidden for being
+// stored, which is routine; a name whose text is out of proportion is
+// (stored.MaxWords).
 
 // definedName is one name the workbook defines.
 type definedName struct {
@@ -74,9 +75,19 @@ func (b *Book) storedIndex() int {
 func (b *Book) readStored(ctx context.Context) *unit.Result {
 	p := stored.NewPart(ctx, b.storedIndex()+1)
 	res := &unit.Result{}
+	// A name's or a calculated field's formula is short; one whose text
+	// is a page long is out of proportion, and flagged.
+	formula := func(kind, name, text, what string) gofastcore.Block {
+		blk := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
+			Attrs: map[string]string{gofastcore.AttrStored: what, gofastcore.AttrName: name}}
+		if n := stored.QuotedWords(text); n > stored.MaxWords {
+			blk.Hidden = gofastcore.HiddenInvisible
+			p.Long(kind, name, n)
+		}
+		return blk
+	}
 	for _, n := range b.names {
-		if !p.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: n.name + ": " + n.formula,
-			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredDefinedName, gofastcore.AttrName: n.name}}) {
+		if !p.Add(formula("a defined name", n.name, n.name+": "+n.formula, gofastcore.StoredDefinedName)) {
 			break
 		}
 	}
@@ -119,12 +130,11 @@ func (b *Book) readStored(ctx context.Context) *unit.Result {
 	}
 	// The formulas of calculated fields.
 	for _, f := range b.calculated {
-		if !p.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: f.name + ": =" + f.formula,
-			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredPivotCache, gofastcore.AttrName: f.name}}) {
+		if !p.Add(formula("a calculated field", f.name, f.name+": ="+f.formula, gofastcore.StoredPivotCache)) {
 			break
 		}
 	}
-	b.extra.XML(ctx, b.wb.pkg, p)
+	b.extra.XML(ctx, b.wb.pkg, p, nil)
 	res.Limited = p.Finish()
 	res.Part, res.Damaged = p.Part, p.Damaged
 	return res

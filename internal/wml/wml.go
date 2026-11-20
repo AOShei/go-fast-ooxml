@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
@@ -127,6 +128,7 @@ type reader struct {
 	pages      []pageGeom
 	paragraphs int
 	grids      map[string]*media.Grid // pictures reduced to colours, for DeepHidden
+	longs      stored.Longs           // field codes out of proportion
 }
 
 // Extract reads the Word document whose main part is named main into doc,
@@ -634,6 +636,7 @@ func (r *reader) finish() {
 	if r.clamped > 0 {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, strconv.Itoa(r.clamped)+" headings deeper than level 6")
 	}
+	r.longs.Warn(part)
 	if r.flattened > 0 {
 		part.Warn(gofastcore.SeverityWarning, WarnTableFlattened, strconv.Itoa(r.flattened))
 	}
@@ -655,6 +658,8 @@ type Body struct {
 
 	settings string        // the settings part, if it has document variables
 	extra    stored.Source // the VBA project and custom XML data
+	mu       sync.Mutex
+	bindings map[string]bool // custom XML store items content controls bind to
 }
 
 // Open prepares the Word document whose main part is named main. Only

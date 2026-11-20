@@ -17,7 +17,8 @@ import (
 // copy of cells that are read anyway. When the source is another
 // workbook, a database, or a sheet or name the workbook no longer has,
 // the records are data the file holds and shows nowhere: they are read
-// into the stored part, as a table flagged hidden.
+// into the stored part, as a table. Like a sheet's cells, they are data,
+// and not flagged for their length.
 
 // calcField is a calculated field of a cache: a formula over the other
 // fields, which no cell shows.

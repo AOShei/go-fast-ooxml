@@ -322,7 +322,7 @@ func (d *Deck) Read(ctx context.Context, index int) *unit.Result {
 	if index == d.Stored() {
 		p := stored.NewPart(ctx, index+1)
 		d.extra.Macros(ctx, d.p.pkg, p)
-		d.extra.XML(ctx, d.p.pkg, p)
+		d.extra.XML(ctx, d.p.pkg, p, nil)
 		res := &unit.Result{}
 		res.Limited = p.Finish()
 		res.Part, res.Damaged = p.Part, p.Damaged

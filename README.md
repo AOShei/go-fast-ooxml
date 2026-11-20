@@ -277,7 +277,7 @@ Markdown writes the links of cells; formulas and values are only in the
 document, since a formula can hold text nobody sees on the sheet.
 
 **What a workbook stores and shows on no sheet** is in a last part of
-kind `stored`, flagged as hidden: its defined names (`Rate: 0.2`; a name
+kind `stored`: its defined names (`Rate: 0.2`; a name
 can stand for a text that appears nowhere else), the code of its Excel 4
 macro sheets, one formula to a line, the code of its VBA project, the
 records of pivot caches whose source is gone and the formulas of
@@ -329,8 +329,8 @@ source kept in the workbook. Where the source is a range or table of the
 workbook, the records repeat cells that are read and are not read again.
 Where it is another workbook, a connection to a database, scenarios, or a
 sheet or name the workbook no longer has, the records are data the file
-holds and shows nowhere: they are a table in the stored part, flagged
-`invisible`, with `stored` `pivot_cache`, the names of the cache's fields
+holds and shows nowhere: they are a table in the stored part, with
+`stored` `pivot_cache`, the names of the cache's fields
 as its header row and a row for each record (or, for a cache that keeps no
 records, the values each field takes, a column each). Over the corpus and
 the soak set, every pivot table openpyxl finds whose region has cells is
@@ -445,13 +445,28 @@ may leave text out; that text is given here, unflagged.
 
 ## What a file stores and shows nowhere
 
-A file can keep text that nobody who opens it sees: it is a place to put
-text for a model. All of it is read as data, never run or followed,
-bounded by the limits, and flagged `invisible`, so that a consumer, and
-the renderers asked to leave hidden text out, can keep it from a model.
-What belongs to the file as a whole is in a last part of kind `stored`,
-which comes with the whole document, not with a range of parts; each
-block says what it is in `stored`:
+A file can keep text that nobody who opens it sees. All of it is read as
+data, never run or followed, and bounded by the limits. What belongs to
+the file as a whole is in a last part of kind `stored`, which comes with
+the whole document, not with a range of parts; each block says what it
+is in `stored`. The renderers leave the stored part out unless
+`RenderOptions.Stored` is set, and a consumer can keep it from a model, or
+review it, by its kind.
+
+**It is not flagged hidden for being stored.** The hidden flag is a signal
+of suspicious hiding (text in the colour of its background, a tiny box
+holding a page of text), and nearly every Office file keeps some such
+data: a flag on all of it would be set on clean and poisoned files alike.
+What is flagged is text **out of proportion for its kind**: a document
+variable, a defined name's text, a value of custom XML or the text of a
+field's code of **more than 30 words**, where a few are usual. Over the
+corpus and the soak set, half of these are of one word and 99 in 100 of
+under 35. Such text is flagged `invisible` (a value of custom XML by a
+span over it), and `ooxml.unshown_text_long` says what was found and how
+long it is. The rule is not applied to macro code, which is long by
+nature, nor to the records of pivot caches, which are data like cells,
+nor to a citation tool's field codes; and a value of custom XML that a
+content control shows is on the page.
 
 | `stored` | What |
 |---|---|
@@ -466,19 +481,16 @@ the text. Most are structure: a page number, a cross-reference, a table of
 contents, a date, a merge field, a document property, a calculation.
 What they show is the text, and their
 codes are not kept. A code that holds text of its own, shown nowhere, is a
-`note` block of type `field` after the paragraph its field ends in,
-flagged `invisible`: an index entry (`XE "…"`), the branches of `IF`, the
+`note` block of type `field` after the paragraph its field ends in: an
+index entry (`XE "…"`), the branches of `IF`, the
 text of `SET`, `ASK` or `FILLIN`, a citation tool's data (`ADDIN`), a
-field this library does not know, and a structural field whose code holds
-more than it needs (over 512 bytes, or a quoted argument over 128). A
+field this library does not know. Such a note is flagged `invisible` only
+where it is out of proportion, as above, and so is a structural field
+whose code holds more than it needs (over 30 words of quoted text). A
 field in another's code is written into that code in braces, as Word
 shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its result, which
 nothing shows, is not text. An equation field (`EQ`) and a macro button
-(`MACROBUTTON`) show their codes' text; their notes are not flagged.
-
-The renderers write hidden text unless `RenderOptions.ExcludeHidden` says
-otherwise, so by default Markdown and text include field codes and the
-stored part.
+(`MACROBUTTON`) show their codes' text.
 
 ## Equations
 
@@ -498,6 +510,14 @@ part of a paragraph is hidden the reason is on a span over that part, and in a
 table on the cells concerned. Every part that has flagged text carries a
 `text.hidden` warning, and `RenderOptions.ExcludeHidden` leaves the flagged
 text out of rendered output.
+
+**The flag is a signal of suspicious hiding**, as go-fast-core defines it
+(its README, "What earns a flag"): a means of hiding applied to text that
+would otherwise be seen. Data that files routinely keep and never show
+(properties, comments, field codes, document variables, custom XML,
+defined names, macro code) is not flagged for that alone, only where it is
+out of proportion for its kind (see
+[What a file stores and shows nowhere](#what-a-file-stores-and-shows-nowhere)).
 
 `Document.HiddenChecked` lists the reasons that are checked completely for
 the format. For Word and Excel they are `invisible`, `tiny`, `low_contrast`
@@ -610,8 +630,8 @@ flagged. What this means for a reviewer:
   the values of drop-down lists,
   the series a chart's filter leaves out and the SmartArt nodes a layout
   does not draw (both flagged `invisible`),
-  field codes, flagged as hidden, and what a file stores and shows nowhere
-  (see above), flagged as hidden in the stored part. Each has its own
+  field codes and what a file stores and shows nowhere (see above), each
+  flagged only where out of proportion for its kind. Each has its own
   place in the model (metadata, `image` blocks, `note` blocks, the
   `stored` part), so a consumer can treat it apart. Formulas, with
   `Options.Cells`, are in `Table.Cells`, apart from what cells show.
