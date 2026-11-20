@@ -156,6 +156,12 @@ gofastooxml -format text -exclude-display contract.docx
 gofastooxml ./archive > documents.jsonl      # every Office file under a directory
 ```
 
+JSON is written a part at a time, a sheet or a slide as soon as it is
+read, so the command holds about one part and not the whole document
+(`large.xlsx`: about 240 MiB at its peak rather than 445); the output is
+the same bytes as for the document read whole. Markdown and text are
+written once the document is read.
+
 | Flag | |
 |---|---|
 | `-format json\|markdown\|text` | What to print. JSON is the shared document; with several inputs each document is one line |
