@@ -430,8 +430,8 @@ before it:
 | PowerPoint, reasons removed: `low_contrast`, `off_page`, `occluded` | 13, 5, 2 | | |
 
 Word's `hidden` rose because a header or footer that no page shows, by the
-document's own settings, is declared hidden again: before, it was flagged
-only when it held more than 200 words. Excel's fell because the hidden
+document's own settings, is declared hidden again: before, it was marked
+only when it held more than 200 words, a rule that is gone. Excel's fell because the hidden
 stand-in Excel writes for each form control (the control itself is in the
 legacy drawing, and shown) is no longer taken for a hidden shape: about 20
 workbooks of buttons and check boxes. Text with no fill in PowerPoint was
@@ -441,7 +441,7 @@ Five files have data after the end of their archive, each a single line
 feed, reported with `input.trailing_data`.
 
 Before this, the library judged colour, size, position and overlap. An
-audit of every file so flagged, each rendered with LibreOffice, found no
+audit of every file those checks marked, each rendered with LibreOffice, found no
 malicious content in the corpus and eight kinds of false alarm, all in
 those judgements: the colours of notes pages, a table's own background,
 text boxes over shapes, text over pictures placed behind it, embossed

@@ -17,8 +17,8 @@ import (
 
 // The generated presentations, one written by python-pptx and one saved
 // again by LibreOffice, against their known content: the same slides,
-// and on each the same blocks in the same order with the same hidden
-// flags.
+// and on each the same blocks in the same order with the same display
+// reasons.
 func TestPowerPointFixtures(t *testing.T) {
 	for _, f := range ooxmltest.LoadManifest(t, "fixtures.json") {
 		if f.Format != "pptx" {

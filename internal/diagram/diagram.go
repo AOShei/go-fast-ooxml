@@ -1,7 +1,7 @@
 // Package diagram reads a SmartArt diagram: the text of its data model, in
 // the order and nesting the model declares, and, where the file carries
 // the drawing Office made of it, where each piece of text is drawn and
-// whether it can be seen.
+// what the drawing declares about its display.
 //
 // The data model is what the diagram says: points (the nodes that hold
 // text, and the document that holds them) joined by connections that say
