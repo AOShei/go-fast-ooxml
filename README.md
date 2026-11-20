@@ -10,7 +10,7 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
 | Format | State |
 |---|---|
-| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. What the file declares about the display of text is kept (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
+| Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. Word's Horizontal Line, a shape the file marks as one, is a `thematic_break` in the body (not in a table, text box, header or note); a paragraph that only has a border is not one, and section, page and column breaks are layout and give no block. What the file declares about the display of text is kept (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
 | Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. What the file declares about the display of text is kept (see below). Sheets are read in parallel |
 | PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. What the file declares about the display of text is kept (see below). Slides are read in parallel |
 
@@ -555,12 +555,12 @@ and shapes; attribute values of custom XML data.
 | `cmd/gofastooxml` | The command |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget; finding the members of an archive that has lost its directory |
-| `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting and what lies behind text |
+| `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes |
 | `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
 | `internal/crypt` | The two password encryption schemes of Office: reading the encryption information, verifying a password, decrypting the package as it is read |
 | `internal/numfmt` | Number formats: what a cell displays for the value it holds |
-| `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables and table styles, reading order, what covers what, notes and comments |
+| `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables, reading order, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
 | `internal/chart`, `internal/diagram` | Charts, of both kinds, as tables of their data; SmartArt diagrams, from their data model and the drawing Office made of them. Shared by the three readers |
 | `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours, pictures and embedded files, placing display reasons on blocks and spans, bullets and numerals, warning codes, what reading one part gives |

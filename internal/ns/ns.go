@@ -147,7 +147,6 @@ const (
 	RelNotesSlide     = "notesSlide"
 	RelNotesMaster    = "notesMaster"
 	RelHandoutMaster  = "handoutMaster"
-	RelTableStyles    = "tableStyles"
 	RelCommentAuthors = "commentAuthors"
 	RelAuthors        = "authors"
 )

@@ -65,6 +65,9 @@ leaves out, have no reason.
 - Every code of a Word field, as a `note` block of type `field` after its
   paragraph, marked `stored` `field_code`: in place, and left out of
   rendered text unless `RenderOptions.Stored` is set.
+- Word's Horizontal Line as a `thematic_break` block, in the body. A
+  paragraph that only has a border is not one, and section, page and
+  column breaks give no block.
 - Equations in Word and PowerPoint written in UnicodeMath, with their
   structure; a Word display equation as a `formula` block.
 - Excel's drop-down lists as `note` blocks of type `choices` at their

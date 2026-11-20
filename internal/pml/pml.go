@@ -46,7 +46,6 @@ type presentation struct {
 	masters       [2]string      // the notes master and the handout master, if there are
 	first         int            // the number the first slide shows
 	defaults      *dml.ListStyle // the text style under every other
-	tablePart     string         // the part that defines table styles
 	authorParts   []string       // the parts that name the authors of comments
 
 	maxCells int64
@@ -54,7 +53,7 @@ type presentation struct {
 }
 
 // shared is what is worked out as the slides need it and kept for the
-// slides after: layouts and masters, themes, table styles, pictures. All
+// slides after: layouts and masters, themes, pictures. All
 // of it is a function of the file alone, so which slide asks first makes
 // no difference to the result.
 type shared struct {
@@ -208,8 +207,6 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 			if !ns.IsRel(rel.Type, ns.RelHyperlink) {
 				d.external++
 			}
-		case ns.IsRel(rel.Type, ns.RelTableStyles):
-			p.tablePart = rel.Target
 		case ns.IsRel(rel.Type, ns.RelCommentAuthors, ns.RelAuthors):
 			p.authorParts = append(p.authorParts, rel.Target)
 		case ns.IsRel(rel.Type, ns.RelNotesMaster) && p.masters[0] == "":

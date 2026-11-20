@@ -194,6 +194,7 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	}
 
 	p := r.newParser(main, byID)
+	p.body = true
 	var body []gofastcore.Block
 	if c, err := pkg.Scan(main, &p.s, scanOptions); err != nil {
 		r.noteErr(main, err)
