@@ -82,9 +82,14 @@ leaves out, have no reason.
 - SmartArt in all three formats: the text of each node as list items in
   the model's order and nesting, placed by the drawing Office made of it.
 - `Open`, `OpenBytes`, `OpenReaderAt` and `File`: a part at a time
-  (`Parts`, `Part`), a sheet in bands of rows (`Rows`), embedded files
-  (`Children`), without holding the document.
-- The command `gofastooxml`: JSON, Markdown or text, with the render
+  (`Parts`, `Part`), a sheet in bands of rows (`Rows`, about 1.6 times
+  as fast with more than one worker, which decompresses the sheet ahead of
+  the reading), embedded files
+  (`Children`), without holding the document. `Children` after `Parts`
+  has what the parts left of the text the document may hold, as in
+  `Document`.
+- The command `gofastooxml`: JSON, written a part at a time as the parts
+  are read, Markdown or text, with the render
   flags every go-fast command shares (`-furniture`, `-stored[=kinds]`,
   `-part-markers`, `-exclude-display`, `-children`).
 

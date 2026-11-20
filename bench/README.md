@@ -290,6 +290,33 @@ under a third of the sheet whole, and a part at a time under a third of the
 document whole and less than its text alone. On Linux without the race
 detector `Rows` is also held under 48 MB.
 
+**`Rows` with more than one worker.** Measured on 2026-11-20 on the first
+sheet of `large.xlsx` (half a million cells), best of five rounds of ten:
+
+| | Time |
+|---|---|
+| One worker | 222 ms (224 with the sheet read in chunks, as now) |
+| More than one: decompressing on its own goroutine, ahead of the scanner | 138 ms, 1.62 times as fast |
+
+The sheet's part is read twice: once for what comes after the rows (merged
+cells), which the first band needs, and once for the rows. A profile puts
+39% of the time in decompressing, 38% in the first pass, and 5% in making
+the tables of the bands. Decompressing beside the scanner is the one split
+that pays: making the tables on a goroutine of their own could save at most
+the 5%, and the two passes cannot overlap, since the rows wait on the merged
+cells. Decompressing ahead reaches the ceiling a profile set for it (1.6).
+Reading the rows of one band on several workers while one scans was put at
+2.7 at best; it would need the scanner's state handed between goroutines,
+and is not done.
+
+The bands are the same with one worker and with four, within the limits and
+with a limit on decompressed bytes that cuts sheets off, over the 1,863
+workbooks of the corpus and the soak set (`TestRowsTheSameWithAnyWorkers`).
+For that the sheet is read in chunks of 256 KiB both ways, and the
+decompression budget is charged a chunk at a time as the scanner takes it,
+so that where the limit cuts a sheet does not depend on how far ahead the
+decompressing has got.
+
 The cells that `Rows` gives are the cells of the sheet read whole, with the
 same display reasons: checked on the fixtures and on every sixth corpus
 workbook under 400 KB (`TestRowsOnFixturesAndCorpus`: 74 workbooks, 189

@@ -3,6 +3,7 @@ package sml
 import (
 	"context"
 	"errors"
+	"runtime"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
@@ -92,7 +93,7 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 			if pass == passRows {
 				sh.band, sh.emit = max(band, 1), func() bool { return hand(false) }
 			}
-			c, err := b.wb.pkg.Scan(sh.name, &sh.s, scanOptions)
+			c, err := b.wb.pkg.ScanChunks(sh.name, &sh.s, scanOptions, b.ahead())
 			if err != nil {
 				sh.failed(err)
 				break
@@ -117,4 +118,16 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 		hand(true)
 	}
 	return &sh.result().Tally
+}
+
+// ahead reports whether a sheet read a band at a time is decompressed on
+// a goroutine of its own, ahead of the scanner: when the options allow
+// more than one worker. The bands are the same either way
+// (opc.ScanChunks).
+func (b *Book) ahead() bool {
+	w := b.wb.opts.Workers
+	if w <= 0 {
+		w = runtime.GOMAXPROCS(0)
+	}
+	return w > 1
 }

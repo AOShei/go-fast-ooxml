@@ -60,6 +60,7 @@ type File struct {
 	sess    *session            // the reading in use
 	clean   bool                // no limit has cut it short, so it can be used again
 	tallies map[int]*unit.Tally // what the parts read so far found out, by index
+	took    int64               // the text the latest reading of parts took, which their embedded files cannot have
 }
 
 // session is one opening of the package: its archive, with its
@@ -368,7 +369,17 @@ func (f *File) pass(ctx context.Context, selected []int, window int, yield func(
 		return nil, err
 	}
 	sess.src.Begin()
-	gofastcore.TextBudgetFrom(ctx).Reset()
+	text := gofastcore.TextBudgetFrom(ctx)
+	text.Reset()
+	// What the parts take of the text the document may hold is not there
+	// for the files they embed, which Children reads later on a budget of
+	// its own.
+	start := text.Left()
+	defer func() {
+		f.mu.Lock()
+		f.took = start - text.Left()
+		f.mu.Unlock()
+	}()
 	workers := f.opts.Workers
 	if workers <= 0 {
 		workers = runtime.GOMAXPROCS(0)
@@ -681,6 +692,10 @@ func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
 // file gives twice, which the sheet read whole has once, is in each band
 // it falls in.
 //
+// With more than one worker (Options.Workers) the sheet is decompressed
+// on a goroutine of its own, a few chunks ahead of the reading of its
+// rows; the bands are the same as with one.
+//
 // The iterator yields an error and stops as Parts does; for a file that
 // is not a workbook the error wraps gofastcore.ErrUnsupported.
 func (f *File) Rows(ctx context.Context, number, band int) iter.Seq2[gofastcore.Part, error] {
@@ -736,10 +751,22 @@ func (f *File) Warnings() []gofastcore.Warning {
 // Children extracts the files embedded in the parts read so far (a
 // workbook in a slide, a document in a document) through Options.Child,
 // and returns them as in gofastcore.Document.Children. With no
-// Options.Child each is listed, not extracted.
+// Options.Child each is listed, not extracted. They have what the parts
+// read last left of the text the document may hold (Limits.MaxTextBytes),
+// as in Document.
 func (f *File) Children(ctx context.Context) ([]*gofastcore.Document, error) {
 	ctx, done := f.tree(ctx)
 	defer done()
+	// The text the document may hold is the document's and its embedded
+	// files' together: what the parts took is gone, as when the document
+	// is read whole.
+	f.mu.Lock()
+	took := f.took
+	f.mu.Unlock()
+	text := gofastcore.TextBudgetFrom(ctx)
+	for ; took > 0; took -= 1 << 30 {
+		text.Take(int(min(took, 1<<30)))
+	}
 	sess, indexes, tallies := f.known()
 	sess.src.Begin()
 	out := f.embedded(ctx, sess, tallies)

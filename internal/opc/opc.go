@@ -413,6 +413,15 @@ func (p *Package) Charge(n int64) bool { return p.budget.Add(-n) >= 0 }
 // with ErrBudget, so no part can expand without bound however small it is
 // in the archive.
 func (p *Package) Open(name string) (io.ReadCloser, error) {
+	rc, err := p.openRaw(name)
+	if err != nil {
+		return nil, err
+	}
+	return &budgetReader{rc: rc, p: p}, nil
+}
+
+// openRaw opens a member, decompressing it, without charging the budget.
+func (p *Package) openRaw(name string) (io.ReadCloser, error) {
 	f, ok := p.files[Canonical(name)]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
@@ -424,7 +433,7 @@ func (p *Package) Open(name string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, name, err)
 	}
-	return &budgetReader{rc: rc, p: p}, nil
+	return rc, nil
 }
 
 type budgetReader struct {
@@ -432,10 +441,16 @@ type budgetReader struct {
 	p  *Package
 }
 
+// Read hands on what the budget has room for and no more: where a part
+// is cut by the budget does not depend on how much each read asks for,
+// so a part read through a read-ahead (ScanAhead) is cut where it is
+// when read directly.
 func (b *budgetReader) Read(buf []byte) (int, error) {
 	n, err := b.rc.Read(buf)
-	if n > 0 && b.p.budget.Add(-int64(n)) < 0 {
-		return 0, ErrBudget
+	if n > 0 {
+		if left := b.p.budget.Add(-int64(n)); left < 0 {
+			return max(n+int(max(left, -int64(n))), 0), ErrBudget
+		}
 	}
 	return n, err
 }

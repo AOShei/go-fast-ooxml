@@ -143,7 +143,10 @@ cut there and goes on in the next as a table marked `Continued`, declared
 tables are not looked up, and comments, drop-down lists, shapes and
 pictures are left to `Part`. Bands follow the order of the rows in the
 file; a damaged file that gives its rows out of order has them sorted
-within a band, not across bands.
+within a band, not across bands. With more than one worker
+(`Options.Workers`, all the CPUs by default) the sheet is decompressed on a
+goroutine of its own, ahead of the reading of its rows: about 1.6 times as
+fast, with the same bands.
 
 ## The command
 
@@ -155,6 +158,12 @@ gofastooxml -format markdown deck.pptx       # or markdown, or text
 gofastooxml -format text -exclude-display contract.docx
 gofastooxml ./archive > documents.jsonl      # every Office file under a directory
 ```
+
+JSON is written a part at a time, a sheet or a slide as soon as it is
+read, so the command holds about one part and not the whole document
+(`large.xlsx`: about 240 MiB at its peak rather than 445); the output is
+the same bytes as for the document read whole. Markdown and text are
+written once the document is read.
 
 | Flag | |
 |---|---|

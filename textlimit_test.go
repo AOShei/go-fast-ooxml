@@ -3,6 +3,7 @@ package gofastooxml_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -299,7 +300,7 @@ func TestEmbeddedFilesOfADocumentCutOffByALimit(t *testing.T) {
 		if err != nil || len(whole.Children) != 1 || !strings.Contains(whole.Children[0].Text(), "inside") || called != 1 {
 			t.Fatalf("%s, within the limits: %v, %d children, %d calls", name, err, len(whole.Children), called)
 		}
-		for _, limits := range []gofastcore.Limits{{MaxTextBytes: 50}, {MaxDecodedBytes: 2500}} {
+		for _, limits := range []gofastcore.Limits{{MaxTextBytes: 50}, {MaxTextBytes: 400}, {MaxDecodedBytes: 2500}} {
 			called = 0
 			doc, err := extract(t, data, &gofastcore.Options{Child: child, Limits: limits})
 			if err != nil {
@@ -321,11 +322,65 @@ func TestEmbeddedFilesOfADocumentCutOffByALimit(t *testing.T) {
 			if n := len(doc.Children); n > 1 || n == 0 && limits.MaxTextBytes != 0 {
 				t.Errorf("%s, %+v: %d embedded files listed", name, limits, n)
 			}
+			// Read a part at a time and then asked for, the embedded
+			// files have what the parts left, as in the document read
+			// whole: here nothing.
+			f, err := gofastooxml.OpenBytes(data, &gofastcore.Options{Child: child, Limits: limits})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, err := range f.Parts(context.Background()) {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			children, err := f.Children(context.Background())
+			got, _ := json.Marshal(children)
+			want, _ := json.Marshal(doc.Children)
+			if err != nil || string(got) != string(want) {
+				t.Errorf("%s, %+v: after the parts, children %s, want %s (%v)", name, limits, got, want, err)
+			}
 		}
 	}
 	// And asked directly.
 	if doc, err := gofastooxml.Extract(context.Background(), nil, 100, nil); doc != nil || !errors.Is(err, gofastcore.ErrMalformed) {
 		t.Errorf("nothing to read: %v", err)
+	}
+}
+
+// A file embedded in a slide before the one that meets the limit on text
+// is listed, not read: the parts left nothing for it. The same holds
+// when the slides are read a part at a time and the embedded files asked
+// for after them.
+func TestEmbeddedFilesAfterTheTextIsSpent(t *testing.T) {
+	inner := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Inner", Data: xlRow(1, xlStr("A1", "inside"))}).Bytes()
+	long := strings.Repeat("text ", 200)
+	pkg := deck(ooxmltest.Slide{Shapes: box(2, 10, 10, 600, 300, "", dpara("", plain("first")))},
+		ooxmltest.Slide{Shapes: box(2, 10, 10, 600, 300, "", dpara("", plain(long)))})
+	pkg.Rel("ppt/slides/slide1.xml", ooxmltest.RelPackage, "../embeddings/book.xlsx")
+	pkg.AddBytes("ppt/embeddings/book.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", inner)
+	child := func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+		return gofastooxml.Extract(ctx, r, size, o)
+	}
+	opts := &gofastcore.Options{Child: child, Limits: gofastcore.Limits{MaxTextBytes: 600}, Workers: 1}
+	doc, err := extract(t, pkg.Bytes(), opts)
+	if err != nil || len(doc.Children) != 1 || doc.Children[0].Source.Format != "" {
+		t.Fatalf("read whole: %v, children %+v", err, doc.Children)
+	}
+	f, err := gofastooxml.OpenBytes(pkg.Bytes(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, err := range f.Parts(context.Background()) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	children, err := f.Children(context.Background())
+	got, _ := json.Marshal(children)
+	want, _ := json.Marshal(doc.Children)
+	if err != nil || string(got) != string(want) {
+		t.Errorf("after the parts, children %s, want %s (%v)", got, want, err)
 	}
 }
 

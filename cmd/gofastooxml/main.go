@@ -6,15 +6,18 @@
 //
 // A directory stands for the Office files in it and below it. With one
 // input the JSON is indented; with several, each document is one line.
-// Only the documents go to standard output: everything said about them
-// goes to standard error, and the exit status is 1 if any input could
-// not be read.
+// JSON is written a part at a time, as the parts are read, so that what
+// is held is about one part (a sheet, a slide, a Word document's body);
+// the bytes are those of the document read whole. Should reading stop
+// partway through a file (an interrupt), what was written of it is cut
+// short and the command says so. Only the documents go to standard
+// output: everything said about them goes to standard error, and the exit
+// status is 1 if any input could not be read.
 package main
 
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -259,6 +262,32 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		o := opts
 		o.Name = filepath.Base(path)
+		if *format == "json" {
+			// JSON is written a part at a time, as the parts are read.
+			warnings, started, err := streamFile(ctx, extractor, path, &o, w, len(inputs) == 1)
+			if err != nil {
+				if started {
+					// What was written of the document is cut short.
+					w.Flush()
+					fmt.Fprintf(stderr, "%s: %v; the output for it is cut short\n", path, err)
+					return 1
+				}
+				fmt.Fprintf(stderr, "%s: %v\n", path, err)
+				status = 1
+				continue
+			}
+			if !*quiet {
+				if note := remarks(warnings); note != "" {
+					fmt.Fprintf(stderr, "%s: %s\n", path, note)
+				}
+			}
+			if err := w.Flush(); err != nil {
+				fmt.Fprintf(stderr, "gofastooxml: writing %s: %v\n", path, err)
+				return 1
+			}
+			written++
+			continue
+		}
 		doc, err := extractor.ExtractFile(ctx, path, &o)
 		if err != nil {
 			fmt.Fprintf(stderr, "%s: %v\n", path, err)
@@ -266,18 +295,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			continue
 		}
 		if !*quiet {
-			if note := remarks(doc); note != "" {
+			var all []gofastcore.Warning
+			for _, w := range doc.AllWarnings() {
+				all = append(all, w)
+			}
+			if note := remarks(all); note != "" {
 				fmt.Fprintf(stderr, "%s: %s\n", path, note)
 			}
 		}
 		switch *format {
-		case "json":
-			enc := json.NewEncoder(w)
-			enc.SetEscapeHTML(false)
-			if len(inputs) == 1 {
-				enc.SetIndent("", "  ")
-			}
-			err = enc.Encode(doc)
 		case "markdown":
 			if len(inputs) > 1 {
 				if written > 0 {
@@ -311,12 +337,23 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return status
 }
 
-// remarks sums up what a document's warnings say that a person running
-// the command would want to know without reading the JSON: anything of
-// severity error.
-func remarks(doc *gofastcore.Document) string {
+// streamFile opens the file at path and writes it as JSON a part at a
+// time (streamJSON).
+func streamFile(ctx context.Context, e *gofastooxml.Extractor, path string, o *gofastcore.Options, w *bufio.Writer, indent bool) ([]gofastcore.Warning, bool, error) {
+	f, err := e.Open(path, o)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	return streamJSON(ctx, f, w, indent)
+}
+
+// remarks sums up what a document's warnings, its own and its parts',
+// say that a person running the command would want to know without
+// reading the JSON: anything of severity error.
+func remarks(warnings []gofastcore.Warning) string {
 	counts := map[string]int{}
-	for _, w := range doc.AllWarnings() {
+	for _, w := range warnings {
 		if w.Severity == gofastcore.SeverityError {
 			counts[w.Code]++
 		}

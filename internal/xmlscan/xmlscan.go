@@ -148,6 +148,7 @@ type Scanner struct {
 	eof  bool   // the reader is exhausted
 	own  bool   // buf belongs to the scanner and may be written
 	err  error
+	late error // an error the reader gave with its last bytes: met once they are scanned
 	mode mode
 
 	spaces   map[string]Space
@@ -218,7 +219,7 @@ func (s *Scanner) ResetBytes(data []byte, opts *Options) {
 }
 
 func (s *Scanner) reset(opts *Options) {
-	s.pos, s.end, s.base, s.eof, s.err, s.mode = 0, 0, 0, false, nil, modeNormal
+	s.pos, s.end, s.base, s.eof, s.err, s.late, s.mode = 0, 0, 0, false, nil, nil, modeNormal
 	s.kind, s.pendingEnd, s.Repairs = EOF, false, 0
 	s.stack, s.names, s.binds, s.bindNames = s.stack[:0], s.names[:0], s.binds[:0], s.bindNames[:0]
 	if len(s.slots) > 1024 {
@@ -283,12 +284,22 @@ func (s *Scanner) fail(err error) {
 }
 
 func (s *Scanner) syntax(what string) {
+	if s.late != nil {
+		// The input stopped because the reader failed, not because the
+		// XML is wrong: the reader's error is the one to give.
+		s.fail(s.late)
+		return
+	}
 	s.fail(fmt.Errorf("%w at byte %d: %s", ErrSyntax, s.Offset(), what))
 }
 
 // more reads more input into the window, keeping the unconsumed part,
 // which moves to the front. It reports whether any bytes were added.
 func (s *Scanner) more() bool {
+	if s.eof && s.late != nil && s.err == nil {
+		// The bytes that came with the error have been scanned.
+		s.fail(s.late)
+	}
 	if s.eof || s.err != nil {
 		return false
 	}
@@ -312,6 +323,13 @@ func (s *Scanner) more() bool {
 		if err != nil {
 			s.eof = true
 			if err != io.EOF {
+				// The bytes that came with the error are scanned first,
+				// so that where the input stops does not depend on how
+				// the reader divides it.
+				if n > 0 {
+					s.late = err
+					return true
+				}
 				s.fail(err)
 				return false
 			}
