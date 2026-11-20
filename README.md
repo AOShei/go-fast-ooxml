@@ -46,6 +46,13 @@ text of a Word file and none of its structure. In the library itself,
 without starting a process, the three files take 0.06, 0.17 and 0.01
 seconds.
 
+With more than one worker (`Options.Workers`, all the CPUs by default), a
+Word body or a sheet of 1 MiB or more is decompressed on a goroutine of its
+own, ahead of its reading: 1.16 to 1.26 times as fast for such a file, the
+larger the more. Under 1 MiB, where it would not pay, a part is read as
+before. The document is the same with any number of workers
+([`bench/README.md`](bench/README.md)).
+
 On the 788 real files of the corpus, which include damaged, encrypted and
 hostile ones, this library reads 740 and refuses 48 with a reason (damaged
 archives, files that need a password, other formats); none makes it crash

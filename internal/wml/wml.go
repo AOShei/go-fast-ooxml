@@ -196,7 +196,7 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	p := r.newParser(main, byID)
 	p.body = true
 	var body []gofastcore.Block
-	if c, err := pkg.Scan(main, &p.s, scanOptions); err != nil {
+	if c, err := pkg.ScanPart(main, &p.s, scanOptions, opc.Spare(r.opts.Workers)); err != nil {
 		r.noteErr(main, err)
 		r.part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the main part could not be opened")
 	} else {

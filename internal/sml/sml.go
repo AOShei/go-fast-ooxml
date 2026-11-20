@@ -436,7 +436,7 @@ func (sh *sheet) finish(sawImage bool) {
 // part's blocks. It reports whether the sheet has pictures that were not
 // asked for.
 func (sh *sheet) content() (sawImage bool) {
-	c, err := sh.wb.pkg.Scan(sh.name, &sh.s, scanOptions)
+	c, err := sh.wb.pkg.ScanPart(sh.name, &sh.s, scanOptions, opc.Spare(sh.wb.opts.Workers))
 	if err != nil {
 		sh.failed(err)
 		return false
