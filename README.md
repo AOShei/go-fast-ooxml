@@ -362,7 +362,7 @@ placeholder it takes after, on the layout or the master.
 | Date, footer and slide-number placeholders | `footer`. A slide-number field shows the slide's number |
 | Text the layout or the master has of its own | `header` if it is in the upper half of the slide, `footer` if in the lower; on every slide that shows it, once where layout and master repeat each other |
 | Speaker's notes | `note` blocks of type `speaker`, one for each paragraph |
-| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master says not to show is flagged `invisible`. The date and the page number are not read |
+| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master says not to show is not flagged for that, as in Word (see "Hidden text"). The date and the page number are not read |
 | Header and footer of the handouts | `header` and `footer` blocks from the handout master, once, after the first slide |
 | Comments, in both the older and the threaded form | `note` blocks of type `comment`, with author and date; replies follow the comment |
 
@@ -519,6 +519,14 @@ defined names, macro code) is not flagged for that alone, only where it is
 out of proportion for its kind (see
 [What a file stores and shows nowhere](#what-a-file-stores-and-shows-nowhere)).
 
+A header or footer that no page shows is routine too: a Word template's
+first-page or even-page header in a document that has neither, a part no
+section names, a notes-page footer PowerPoint's master switches off. It is
+extracted like any header and flagged `invisible` only if it holds **more
+than 200 words**, far more than a header does (over the corpus and the
+soak set, half of Word's headers and footers with text have 3 words,
+99 in 100 under 70, and the longest 185), with `ooxml.unshown_text_long`.
+
 `Document.HiddenChecked` lists the reasons that are checked completely for
 the format. For Word and Excel they are `invisible`, `tiny`, `low_contrast`
 and `invisible_chars`. For PowerPoint, where every shape has a place, they
@@ -528,7 +536,7 @@ What is flagged in a Word document:
 
 | Reason | What is flagged |
 |---|---|
-| `invisible` | Text formatted as hidden, on the run or through its character style, its paragraph's style or the document defaults. A header or footer that no page shows: one no section names, a first-page one where no section has a different first page, an even-page one where the document does not have different odd and even pages. A footnote, text box or picture anchored in hidden text |
+| `invisible` | Text formatted as hidden, on the run or through its character style, its paragraph's style or the document defaults. A footnote, text box or picture anchored in hidden text |
 | `tiny` | A font size under 2 points, resolved through the same layers. Characters narrowed, or text fitted into a width, so that it is under 2 points |
 | `low_contrast` | A text colour set explicitly (on the run, through a style, or as a Word 2010 text fill) that cannot be told from what is behind it: the run's shading or highlight, the paragraph's shading, the table cell's shading whether set on the cell or given by the table's style, the fill of the shape or text box the text is in, the page colour where Word displays it. Theme colours are resolved. Text in the "automatic" colour is never flagged: Word draws it to contrast with its background. With `DeepHidden`, also a text box's gradient or picture fill, and a page background that is a gradient or a picture |
 | `off_page` | A text box anchored at a place on the page whose every possible place is off the page: measured from the page or a margin its place is known; from a column, a paragraph or a line it is somewhere between the margins, and is flagged only if it is off the page wherever that is |

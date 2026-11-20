@@ -88,6 +88,7 @@ type shared struct {
 	paperOnce  [2]sync.Once
 	paper      [2][]gofastcore.Block
 	paperFrom  [2][]int8 // the placeholder of each block: header 0, footer 1, none -1
+	paperLong  [2][2]int // the words of a header (0) or footer (1) not shown and out of proportion
 	paperBytes [2]int
 	damaged    []string // parts that could not be read in full
 

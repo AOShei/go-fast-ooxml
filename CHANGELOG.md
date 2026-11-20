@@ -48,6 +48,10 @@ when the work planned before the release is done.
   custom XML data, Word's document variables, Excel's defined names, the
   code of Excel 4 macro sheets, and the formulas of pivot caches'
   calculated fields.
+- A header or footer that no page shows (in Word, one no section names
+  or a first-page or even-page one the document does not use; in
+  PowerPoint, one a notes or handout master switches off) is not flagged
+  hidden for that, only where it holds more than 200 words.
 - Word's field codes that hold text of their own (index entries, the
   branches of IF, a citation tool's data) as `note` blocks of type `field` after their
   paragraph.
