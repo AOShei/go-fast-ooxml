@@ -82,7 +82,7 @@ leaves out, have no reason.
   (`Parts`, `Part`), a sheet in bands of rows (`Rows`), embedded files
   (`Children`), without holding the document.
 - The command `gofastooxml`: JSON, Markdown or text, with the render
-  flags every go-fast command shares (`-furniture`, `-stored`,
+  flags every go-fast command shares (`-furniture`, `-stored[=kinds]`,
   `-part-markers`, `-exclude-display`, `-children`).
 
 ### Safety
