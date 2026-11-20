@@ -48,6 +48,8 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Cells kept from a workbook, or from the tables of a presentation | 20 million | `Extractor.MaxCells` | The sheet or slide is cut off |
 | Rounds of hashing to try a password | 1 million | `Extractor.MaxSpinCount` | Refused |
 | Password checks of a document and the files embedded in it, together | 10 times the above | | Further encrypted files are listed, not opened |
+| Decryptions with a private key for one file | 64 | fixed | The keys have not opened the file (`ErrKeyRequired`) |
+| A certificate in the encryption information | 64 KiB, in 1 MiB of encryption information | fixed | The certificate is passed over |
 | Depth of embedded documents | 4 | `Options.Limits.MaxDepth` | Listed, not opened |
 | Nesting of XML elements | 512 | fixed | The part is cut off |
 | A record of a binary workbook (`.xlsb`) | 16 MiB, read as its bytes arrive, not all at once from its stated size | fixed | The part is cut off |
@@ -97,7 +99,10 @@ strangers they allow more than most services want to spend:
   and `File.Rows` hold a part or a band of rows at a time.
 - **Encrypted files.** Trying a password costs what the file says it
   costs, up to `MaxSpinCount`: about a hundredth of a second at what Office
-  writes, about a tenth at the default limit.
+  writes, about a tenth at the default limit. A private key is asked to
+  decrypt only for a certificate whose public key is its own (or, for a
+  certificate that cannot be read, one of its size), and at most 64 times
+  for a file, however many certificates the file names.
 
 ## What a file declares about display
 
@@ -126,7 +131,9 @@ that feeds a model decides what to do with each.
 - **Fidelity to what Office displays.** The library does no page layout
   and evaluates no formula. It reports stored values.
 - **Secrecy of a password in memory.** The password and the key derived
-  from it are ordinary Go values and are not wiped.
+  from it are ordinary Go values and are not wiped. The command reads a
+  private key file into memory the same way; it never puts what the file
+  holds in a message.
 - **Authenticity.** Digital signatures are not verified. For encrypted
   files the integrity value is checked and a mismatch reported
   (`ooxml.integrity_mismatch`), which shows damage or tampering by someone

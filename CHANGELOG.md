@@ -55,6 +55,10 @@ result: `ooxml.formula_no_value` no longer counts it.
   three, written as the characters Unicode gives their symbols.
 - **Password-protected files** of all three, in both encryption schemes
   Office has used (2007, and 2010 and later), with `Options.Password`.
+- **Files encrypted for a certificate**, with the private key in
+  `Options.Keys` (RSA, any `crypto.Decrypter`), or `-key` in the command.
+  Built from the specification and an encryptor written for the tests: no
+  such file made by Office was available.
 - **Pictures** in all three are blocks, with their place, size and
   alternative text, by default; their bytes with `ImagesData`.
 
@@ -132,4 +136,4 @@ result: `ooxml.formula_no_value` no longer counts it.
 ### Not in this release
 
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
-- Files encrypted for a certificate or protected by rights management.
+- Files protected by rights management.

@@ -80,7 +80,8 @@ name. Options are `gofastcore.Options`; the settings only this library
 has are fields of `Extractor` (`MaxCells`, `MaxArchiveMembers`,
 `MaxSpinCount`), which implements `gofastcore.Extractor`. Errors wrap the
 shared ones (`ErrMalformed`, `ErrUnsupported`, `ErrLimitExceeded`,
-`ErrNoPartsSelected`, `ErrPasswordRequired`, `ErrWrongPassword`). A file
+`ErrNoPartsSelected`, `ErrPasswordRequired`, `ErrWrongPassword`,
+`ErrKeyRequired`). A file
 that is damaged in part is not an error: what could be read is returned,
 with warnings that say what could not.
 
@@ -187,6 +188,7 @@ written once the document is read.
 | `-workers n` | Sheets or slides read at a time |
 | `-max-cells n`, `-max-decoded-bytes n`, `-max-text-bytes n` | The limits; `-1` for none |
 | `-password p` | The password of an encrypted file, and of encrypted files embedded in it |
+| `-key file` | A private key (RSA; PEM or DER, PKCS #1 or #8) for a file encrypted for its certificate, and for encrypted files embedded in it; may be given more than once. An encrypted key file is not read |
 | `-max-spin-count n` | Rounds of hashing an encrypted file may ask for when a password is tried |
 | `-quiet`, `-version` | |
 
@@ -196,7 +198,7 @@ are still read. Unless `-quiet` is given, a line on standard error names
 the files that have a warning of severity error. Office
 files embedded in a document are extracted too, into its `children`.
 
-## Password-protected files
+## Encrypted files
 
 A file encrypted with a password is opened with `Options.Password`:
 
@@ -235,8 +237,38 @@ unencrypted, with an `ooxml.decrypted` warning that names the scheme.
   it, further encrypted files are listed with `child.failed` and the
   reason.
 
-**Not read:** files protected by rights management or encrypted for a
-certificate, ciphers other than AES, and the legacy binary formats
+**Encrypted for a certificate.** The agile scheme can encrypt the file's
+key for certificates as well as for the password: whoever has the private
+key of one opens the file without the password. Such a file is opened with
+the key in `Options.Keys`, a `crypto.Decrypter`, so the key may be kept in
+hardware or in another process:
+
+```go
+doc, err := gofastooxml.ExtractFile(ctx, "board.docx", &gofastcore.Options{Keys: []crypto.Decrypter{rsaKey}})
+```
+
+- A key is tried on the certificates whose public key is its own, and the
+  file's verifier for the certificate is checked before anything is
+  decrypted. The keys are RSA, the only kind the scheme uses. A key costs
+  no rounds of hashing, and is tried before any password.
+- The `ooxml.decrypted` warning names the certificate that opened the
+  file. Opened with the password, it says what certificates the key is also
+  encrypted for.
+- Opened with neither, the error wraps `ErrKeyRequired`, beside
+  `ErrPasswordRequired` or `ErrWrongPassword` when the file can also be
+  opened with a password, as the specification requires of every file. The
+  message names the certificates (at most three).
+- No file encrypted for a certificate by Office was at hand. The reader
+  follows the published specification ([MS-OFFCRYPTO] 2.3.4.10), and is
+  tested against an encryptor written for the tests from the same text.
+  The specification does not say how the key is padded for RSA: PKCS #1
+  v1.5, which Office's cryptographic interface gives by default, is tried
+  first, then OAEP; the verifier decides. A mistake in this reading shows
+  as a refusal, never as wrong text, because the verifier and the
+  integrity check both fail on a wrong key.
+
+**Not read:** files protected by rights management, ciphers other than
+AES, and the legacy binary formats
 (`.doc`, `.xls`, `.ppt`), which share the container of encrypted files:
 each is refused with `ErrUnsupported` and a message that says which it is.
 A file protected by rights management cannot be read here at all: its key
@@ -599,7 +631,7 @@ and shapes; attribute values of custom XML data.
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook read into the same |
 | `internal/xlsb` | The records of a binary workbook (`.xlsb`): splitting a part into records, reading their fields, and turning a compiled formula back into its text |
 | `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
-| `internal/crypt` | The two password encryption schemes of Office: reading the encryption information, verifying a password, decrypting the package as it is read |
+| `internal/crypt` | The two encryption schemes of Office: reading the encryption information, verifying a password or a private key for a certificate, decrypting the package as it is read |
 | `internal/numfmt` | Number formats: what a cell displays for the value it holds |
 | `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables, reading order, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |

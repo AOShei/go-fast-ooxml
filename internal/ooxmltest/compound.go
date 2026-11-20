@@ -5,16 +5,22 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
+	crand "crypto/rand"
+	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"math/big"
 	"math/rand"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -298,6 +304,49 @@ type Encryption struct {
 	Seed int64
 	// NoIntegrity leaves the integrity check out (agile only).
 	NoIntegrity bool
+	// Certificates are certificates the key of the package is encrypted
+	// for as well as for the password (agile only).
+	Certificates []Recipient
+	// NoPassword leaves out the key encrypted for the password, which the
+	// description requires of every file (agile only).
+	NoPassword bool
+}
+
+// Recipient is a certificate the key of a package is encrypted for.
+type Recipient struct {
+	// Cert is the certificate, DER, with an RSA public key.
+	Cert []byte
+	// OAEP pads the key with OAEP (SHA-1) for RSA, in place of PKCS #1
+	// v1.5.
+	OAEP bool
+	// BadVerifier stores a verifier that does not match.
+	BadVerifier bool
+	// Key, if set, is encrypted in place of the key of the package.
+	Key []byte
+	// NotACertificate stores bytes that are not a certificate in place
+	// of Cert, with the key encrypted for Cert all the same.
+	NotACertificate bool
+}
+
+// Certificate returns a new RSA key of the given size and a certificate
+// for it, signed by itself, naming name.
+func Certificate(name string, bits int) (*rsa.PrivateKey, []byte) {
+	key, err := rsa.GenerateKey(crand.Reader, bits)
+	if err != nil {
+		panic(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: name},
+		NotBefore:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:     time.Date(2036, 1, 1, 0, 0, 0, 0, time.UTC),
+		KeyUsage:     x509.KeyUsageKeyEncipherment,
+	}
+	der, err := x509.CreateCertificate(crand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		panic(err)
+	}
+	return key, der
 }
 
 // Encrypt returns the package encrypted with the password: a compound
@@ -456,13 +505,53 @@ func EncryptStreams(pkg []byte, password string, how Encryption) (info, encrypte
 	}
 	b64 := base64.StdEncoding.EncodeToString
 	common := fmt.Sprintf(`saltSize="16" blockSize="16" keyBits="%d" hashSize="%d" cipherAlgorithm="AES" cipherChaining="ChainingModeCBC" hashAlgorithm="%s"`, keyBits, h.Size(), name)
+	encryptors := ""
+	if !how.NoPassword {
+		encryptors = `<keyEncryptor uri="http://schemas.microsoft.com/office/2006/keyEncryptor/password">` +
+			fmt.Sprintf(`<p:encryptedKey spinCount="%d" `, rounds) + common + ` saltValue="` + b64(keySalt) + `"` +
+			` encryptedVerifierHashInput="` + b64(encVerifierIn) + `" encryptedVerifierHashValue="` + b64(encVerifierIs) + `" encryptedKeyValue="` + b64(encKey) + `"/>` +
+			`</keyEncryptor>`
+	}
+	// For each certificate: the key encrypted with its public key, and
+	// the HMAC of the certificate keyed with the key, which says that it
+	// is this file's key that was encrypted.
+	for _, r := range how.Certificates {
+		cert, err := x509.ParseCertificate(r.Cert)
+		if err != nil {
+			panic(err)
+		}
+		pub := cert.PublicKey.(*rsa.PublicKey)
+		plain := secret
+		if r.Key != nil {
+			plain = r.Key
+		}
+		var encrypted []byte
+		if r.OAEP {
+			encrypted, err = rsa.EncryptOAEP(sha1.New(), crand.Reader, pub, plain, nil)
+		} else {
+			encrypted, err = rsa.EncryptPKCS1v15(crand.Reader, pub, plain)
+		}
+		if err != nil {
+			panic(err)
+		}
+		stored := r.Cert
+		if r.NotACertificate {
+			stored = []byte("these bytes are not a certificate")
+		}
+		mac := hmac.New(newHash, plain)
+		mac.Write(stored)
+		verifier := mac.Sum(nil)
+		if r.BadVerifier {
+			verifier[0] ^= 1
+		}
+		encryptors += `<keyEncryptor uri="http://schemas.microsoft.com/office/2006/keyEncryptor/certificate">` +
+			`<c:encryptedKey encryptedKeyValue="` + b64(encrypted) + `" X509Certificate="` + b64(stored) + `" certVerifier="` + b64(verifier) + `"/>` +
+			`</keyEncryptor>`
+	}
 	xml := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\r\n" +
-		`<encryption xmlns="http://schemas.microsoft.com/office/2006/encryption" xmlns:p="http://schemas.microsoft.com/office/2006/keyEncryptor/password">` +
+		`<encryption xmlns="http://schemas.microsoft.com/office/2006/encryption" xmlns:p="http://schemas.microsoft.com/office/2006/keyEncryptor/password" xmlns:c="http://schemas.microsoft.com/office/2006/keyEncryptor/certificate">` +
 		`<keyData ` + common + ` saltValue="` + b64(dataSalt) + `"/>` + integrity +
-		`<keyEncryptors><keyEncryptor uri="http://schemas.microsoft.com/office/2006/keyEncryptor/password">` +
-		fmt.Sprintf(`<p:encryptedKey spinCount="%d" `, rounds) + common + ` saltValue="` + b64(keySalt) + `"` +
-		` encryptedVerifierHashInput="` + b64(encVerifierIn) + `" encryptedVerifierHashValue="` + b64(encVerifierIs) + `" encryptedKeyValue="` + b64(encKey) + `"/>` +
-		`</keyEncryptor></keyEncryptors></encryption>`
+		`<keyEncryptors>` + encryptors + `</keyEncryptors></encryption>`
 	info = append([]byte{4, 0, 4, 0, 0x40, 0, 0, 0}, xml...)
 	return info, encrypted
 }

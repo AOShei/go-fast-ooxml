@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"sync/atomic"
 
 	"github.com/AOShei/go-fast-core"
@@ -80,9 +81,11 @@ func (f *File) tree(ctx context.Context) (_ context.Context, done func()) {
 // password-protected package, decrypts it: f.body becomes the package.
 // For a file that is not a compound file it does nothing.
 //
-// The passwords tried are Options.Password, if there is one, and the
-// password Excel encrypts with when a workbook is protected and none is
-// set, which Excel itself tries without asking. Each is verified against
+// A file whose key is encrypted for certificates is tried first with
+// Options.Keys, which costs no rounds of hashing. The passwords tried
+// then are Options.Password, if there is one, and the password Excel
+// encrypts with when a workbook is protected and none is set, which Excel
+// itself tries without asking. Each key and password is verified against
 // the file before anything is decrypted with it.
 func (f *File) unlock(ctx context.Context) error {
 	var head [8]byte
@@ -134,14 +137,29 @@ func (f *File) unlock(ctx context.Context) error {
 		return fail(err)
 	}
 
+	var key []byte
+	with := ""
+	if info.Certificates() > 0 && len(f.opts.Keys) > 0 {
+		k, subject, err := info.CertificateKey(f.opts.Keys)
+		switch {
+		case err == nil:
+			key, with = k, "the private key given for its certificate"
+			if subject != "" {
+				with += " " + clean.Label(subject)
+			}
+		case !errors.Is(err, crypt.ErrNoKey):
+			return fail(err)
+		}
+	}
 	passwords := []string{crypt.DefaultPassword}
 	if f.opts.Password != "" && f.opts.Password != crypt.DefaultPassword {
 		passwords = []string{f.opts.Password, crypt.DefaultPassword}
 	}
+	if key != nil || !info.Password() {
+		passwords = nil
+	}
 	maxSpin := int(gofastcore.ResolveLimit(int64(f.e.MaxSpinCount), DefaultMaxSpinCount))
 	left := f.allowance(ctx)
-	var key []byte
-	with := ""
 	for _, password := range passwords {
 		if left != nil && int64(info.SpinCount()) <= int64(maxSpin) && left.Add(-int64(info.SpinCount())) < 0 {
 			return fmt.Errorf("gofastooxml: encrypted Office document (%s): the password checks of the document and the files embedded in it have used the rounds of hashing allowed, %d times MaxSpinCount: %w",
@@ -159,12 +177,8 @@ func (f *File) unlock(ctx context.Context) error {
 			return fail(err)
 		}
 	}
-	switch {
-	case key != nil:
-	case f.opts.Password == "":
-		return fmt.Errorf("gofastooxml: encrypted Office document (%s): %w", info, gofastcore.ErrPasswordRequired)
-	default:
-		return fmt.Errorf("gofastooxml: encrypted Office document (%s): %w", info, gofastcore.ErrWrongPassword)
+	if key == nil {
+		return refused(info, f.opts.Password != "", len(f.opts.Keys))
 	}
 	pkg, err := info.Open(encrypted, encrypted.Size(), key)
 	if err != nil {
@@ -172,7 +186,7 @@ func (f *File) unlock(ctx context.Context) error {
 	}
 	f.body, f.bodySize = pkg, pkg.Size()
 	f.opened = append(f.opened, gofastcore.Warning{Code: WarnDecrypted, Severity: gofastcore.SeverityInfo,
-		Message: fmt.Sprintf("encrypted (%s); decrypted with %s", info, with)})
+		Message: fmt.Sprintf("encrypted (%s); decrypted with %s", describe(info), with)})
 	intact, checked, err := info.Intact(ctx, encrypted, encrypted.Size(), key)
 	if err != nil {
 		return fail(err)
@@ -185,6 +199,73 @@ func (f *File) unlock(ctx context.Context) error {
 }
 
 var _ io.ReaderAt = (*crypt.Package)(nil)
+
+// describe says how a file is encrypted, and for whom its key is
+// encrypted when that is more than a password: "agile, AES-256, SHA512;
+// the key is encrypted for a password and for 2 certificates: CN=A,
+// CN=B".
+func describe(info *crypt.Info) string {
+	n := info.Certificates()
+	if n == 0 {
+		return info.String()
+	}
+	var b strings.Builder
+	b.WriteString(info.String())
+	b.WriteString("; the key is encrypted for ")
+	if info.Password() {
+		b.WriteString("a password and for ")
+	}
+	if n == 1 {
+		b.WriteString("1 certificate")
+	} else {
+		fmt.Fprintf(&b, "%d certificates", n)
+	}
+	var names []string
+	for _, s := range info.Subjects() {
+		if s != "" && len(names) < maxSubjects {
+			names = append(names, clean.Label(s))
+		}
+	}
+	if len(names) > 0 {
+		b.WriteString(": ")
+		b.WriteString(strings.Join(names, "; "))
+		if n > len(names) {
+			b.WriteString("; ...")
+		}
+	}
+	return b.String()
+}
+
+// maxSubjects is how many certificates a message names.
+const maxSubjects = 3
+
+// refused is the error for an encrypted file that nothing given opens. It
+// wraps each of ErrPasswordRequired or ErrWrongPassword, and
+// ErrKeyRequired, that the file's encryption makes apply.
+func refused(info *crypt.Info, password bool, keys int) error {
+	var why []string
+	var errs []any
+	if info.Password() {
+		if password {
+			why, errs = append(why, "the password given does not open it"), append(errs, gofastcore.ErrWrongPassword)
+		} else {
+			why, errs = append(why, "no password given"), append(errs, gofastcore.ErrPasswordRequired)
+		}
+	}
+	if info.Certificates() > 0 {
+		switch keys {
+		case 0:
+			why = append(why, "no private key given")
+		case 1:
+			why = append(why, "the private key given is for none of its certificates")
+		default:
+			why = append(why, fmt.Sprintf("none of the %d private keys given is for one of its certificates", keys))
+		}
+		errs = append(errs, gofastcore.ErrKeyRequired)
+	}
+	verbs := strings.TrimSuffix(strings.Repeat("%w; ", len(errs)), "; ")
+	return fmt.Errorf("gofastooxml: encrypted Office document (%s): %s: "+verbs, append([]any{describe(info), strings.Join(why, "; ")}, errs...)...)
+}
 
 // rightsManaged says what a rights-managed file is, as the error about it.
 const rightsManaged = "encrypted Office document protected by rights management (Information Rights Management): " +

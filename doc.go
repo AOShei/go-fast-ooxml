@@ -19,8 +19,10 @@
 // is; File.Rows does the same within a sheet too long to hold. The
 // command is in cmd/gofastooxml.
 //
-// A file encrypted with a password is opened with Options.Password; see
-// the README for what is and is not read.
+// A file encrypted with a password is opened with Options.Password, and
+// one whose key is also encrypted for a certificate with the certificate's
+// private key in Options.Keys; see the README for what is and is not
+// read.
 //
 // Files are taken to come from people who are not trusted. Nothing in a
 // file is run or followed, every cost a file can impose has a limit

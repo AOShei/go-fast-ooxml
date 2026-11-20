@@ -3,7 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -387,5 +393,94 @@ func TestCorpusThroughTheCommand(t *testing.T) {
 	t.Logf("%d files read, %d refused", read, refused)
 	if read == 0 {
 		t.Skip("no corpus files downloaded")
+	}
+}
+
+// -key reads private keys in each of the forms they are kept in, and a
+// file encrypted for a certificate opens with the key.
+func TestKeys(t *testing.T) {
+	key, cert := ooxmltest.Certificate("Alice", 2048)
+	plain := ooxmltest.Docx(`<w:p><w:r><w:t>for Alice</w:t></w:r></w:p>`).Bytes()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "alice.docx")
+	data := ooxmltest.Encrypt(plain, "pw", ooxmltest.Encryption{SpinCount: 10, Certificates: []ooxmltest.Recipient{{Cert: cert}}})
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pkcs8, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkcs1 := x509.MarshalPKCS1PrivateKey(key)
+	other, _ := ooxmltest.Certificate("Mallory", 2048)
+	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecDER, _ := x509.MarshalPKCS8PrivateKey(ec)
+	write := func(name string, b []byte) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	block := func(kind string, b []byte) []byte { return pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: b}) }
+	opens := map[string]string{
+		"PKCS #8, PEM":                   write("k8.pem", block("PRIVATE KEY", pkcs8)),
+		"PKCS #1, PEM":                   write("k1.pem", block("RSA PRIVATE KEY", pkcs1)),
+		"PKCS #8, DER":                   write("k8.der", pkcs8),
+		"PKCS #1, DER":                   write("k1.der", pkcs1),
+		"PEM with a certificate first":   write("both.pem", append(block("CERTIFICATE", cert), block("PRIVATE KEY", pkcs8)...)),
+		"PEM with another key before it": write("two.pem", append(block("RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(other)), block("PRIVATE KEY", pkcs8)...)),
+	}
+	for name, keyFile := range opens {
+		stdout, stderr, status := command(t, "-key", keyFile, path)
+		if status != 0 || stderr != "" {
+			t.Errorf("%s: status %d: %s", name, status, stderr)
+			continue
+		}
+		doc := documents(t, stdout)[0]
+		if !strings.Contains(doc.Text(), "for Alice") || len(doc.Warnings) != 1 || !strings.Contains(doc.Warnings[0].Message, "private key given for its certificate CN=Alice") {
+			t.Errorf("%s: warnings %v", name, doc.Warnings)
+		}
+	}
+	// Two -key flags: the second opens it.
+	if _, stderr, status := command(t, "-key", write("other.pem", block("RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(other))), "-key", opens["PKCS #1, DER"], path); status != 0 {
+		t.Errorf("two keys: status %d: %s", status, stderr)
+	}
+	// A key that is not the file's: the file is not read, and the reason
+	// says what would open it.
+	if stdout, stderr, status := command(t, "-key", filepath.Join(dir, "other.pem"), path); status != 1 || stdout != "" || !strings.Contains(stderr, "private key required") || !strings.Contains(stderr, "password required") {
+		t.Errorf("another key: status %d, %q", status, stderr)
+	}
+	// Files that hold no key it can use: a usage error that names the
+	// file and never what is in it.
+	secret := base64.StdEncoding.EncodeToString(ecDER)[40:80]
+	for name, keyFile := range map[string]string{
+		"an elliptic-curve key":   write("ec.pem", block("PRIVATE KEY", ecDER)),
+		"an encrypted key":        write("enc.pem", block("ENCRYPTED PRIVATE KEY", ecDER)),
+		"a certificate only":      write("cert.pem", block("CERTIFICATE", cert)),
+		"neither PEM nor DER":     write("junk.key", []byte("not a key at all")),
+		"a key block that is not": write("bad.pem", block("PRIVATE KEY", []byte("not a key at all"))),
+		"no such file":            filepath.Join(dir, "missing.pem"),
+	} {
+		stdout, stderr, status := command(t, "-key", keyFile, path)
+		if status != 2 || stdout != "" || !strings.Contains(stderr, keyFile) || strings.Contains(stderr, secret) {
+			t.Errorf("%s: status %d, %q", name, status, stderr)
+		}
+	}
+}
+
+// A directory stands for the binary workbooks in it too.
+func TestDirectoryHasBinaryWorkbooks(t *testing.T) {
+	dir := t.TempDir()
+	book := ooxmltest.Xlsb(nil, []string{"in a binary workbook"}, nil, ooxmltest.XlsbSheet{Name: "S", Data: ooxmltest.Join(ooxmltest.Row(0, 0, 0), ooxmltest.Cell(ooxmltest.XCellIsst, 0, 0, ooxmltest.U32(0)))}).Bytes()
+	if err := os.WriteFile(filepath.Join(dir, "book.xlsb"), book, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, status := command(t, "-format", "text", dir)
+	if status != 0 || !strings.Contains(stdout, "in a binary workbook") {
+		t.Errorf("status %d, %q, %q", status, stdout, stderr)
 	}
 }
