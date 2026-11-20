@@ -20,9 +20,9 @@ import (
 	"math/bits"
 	"strings"
 	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-ooxml/internal/cfb"
+	"github.com/AOShei/go-fast-ooxml/internal/codepage"
 )
 
 // ErrNotProject says the compound file holds no VBA project.
@@ -41,8 +41,8 @@ type Project struct {
 	Modules []Module
 	// CodePage is the code page the project's text is written in.
 	CodePage int
-	// Undecoded counts bytes of text that the code page could not be
-	// decoded with: each became U+FFFD.
+	// Undecoded counts characters of text that the code page does not
+	// define, or bytes of a code page not known: each became U+FFFD.
 	Undecoded int
 	// Cut says the limit was reached: a module is cut off, or later ones
 	// are left out.
@@ -209,62 +209,9 @@ func (p *Project) parseDir(dir []byte) (mods []module, damaged bool) {
 
 // decode turns text in the project's code page into UTF-8.
 func (p *Project) decode(b []byte) string {
-	ascii := true
-	for _, c := range b {
-		if c >= 0x80 {
-			ascii = false
-			break
-		}
-	}
-	if ascii {
-		return string(b)
-	}
-	var sb strings.Builder
-	sb.Grow(len(b) + len(b)/4)
-	switch p.CodePage {
-	case 65001:
-		for len(b) > 0 {
-			r, n := utf8.DecodeRune(b)
-			if r == utf8.RuneError && n <= 1 {
-				p.Undecoded++
-			}
-			sb.WriteRune(r)
-			b = b[n:]
-		}
-	case 1252, 28591:
-		for _, c := range b {
-			switch {
-			case c < 0x80 || c >= 0xA0 || p.CodePage == 28591:
-				sb.WriteRune(rune(c))
-			case cp1252[c-0x80] != 0:
-				sb.WriteRune(cp1252[c-0x80])
-			default:
-				p.Undecoded++
-				sb.WriteRune(utf8.RuneError)
-			}
-		}
-	default:
-		// A code page this reader has no table for: what is not ASCII
-		// is not decoded.
-		for _, c := range b {
-			if c < 0x80 {
-				sb.WriteByte(c)
-				continue
-			}
-			p.Undecoded++
-			sb.WriteRune(utf8.RuneError)
-		}
-	}
-	return sb.String()
-}
-
-// cp1252 is Windows code page 1252 from 0x80 to 0x9F; above that it is
-// ISO 8859-1. Zero marks the five bytes the code page leaves undefined.
-var cp1252 = [32]rune{
-	0x20AC, 0, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
-	0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0, 0x017D, 0,
-	0, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
-	0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0, 0x017E, 0x0178,
+	text, undecoded := codepage.Decode(p.CodePage, b)
+	p.Undecoded += undecoded
+	return text
 }
 
 // fromUTF16 decodes UTF-16 little-endian text.

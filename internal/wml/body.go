@@ -14,6 +14,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -127,15 +128,85 @@ func (p *parser) fieldChar() {
 	}
 }
 
-// fieldNote keeps the code of a field as a note after the paragraph.
+// fieldNote keeps the code of a field as a note after the paragraph, if
+// the code holds text that is shown nowhere. Most fields are structure:
+// a page number, a cross-reference, a table of contents, a merge field.
+// Their codes say what to show, and what they show is the text; they are
+// not kept. Other codes are kept: an index entry, the branches of IF, the
+// text of SET, ASK or FILLIN, a citation tool's data. Like the other data
+// a file keeps and shows nowhere, they are not flagged for that, which is
+// routine. Flagged as hidden are a structural field whose code holds more
+// than such a field needs, and a code whose text is out of proportion for
+// a field (stored.MaxWords words in its quoted strings), apart from a
+// citation tool's, whose data is long by nature.
 func (p *parser) fieldNote(code []byte) {
 	text := p.clean(code, clean.Prose)
 	if text == "" {
 		return
 	}
+	keyword, _, _ := strings.Cut(text, " ")
+	keyword = strings.ToUpper(keyword)
+	structural := structuralFields[keyword] || strings.HasPrefix(keyword, "=") // a calculation is structure too
+	if structural && plainCode(text) {
+		return
+	}
+	var hidden gofastcore.Hidden
+	switch n := stored.QuotedWords(text); {
+	case structural:
+		hidden = gofastcore.HiddenInvisible // more than it needs
+		p.r.longs.Add("the code of a "+keyword+" field", "", stored.QuotedWords(text))
+	case n > stored.MaxWords && !citation(text):
+		hidden = gofastcore.HiddenInvisible
+		p.r.longs.Add("the code of a field", keyword, n)
+	}
 	p.r.fields++
-	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: gofastcore.HiddenInvisible,
+	p.after = append(p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Hidden: hidden,
 		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField}})
+}
+
+// citation reports whether a field's code is a citation tool's data
+// (Zotero, Mendeley, EndNote, Citavi), which is long by nature.
+func citation(code string) bool {
+	fields := strings.Fields(code)
+	if len(fields) < 2 || !strings.EqualFold(fields[0], "ADDIN") {
+		return false
+	}
+	tool := strings.ToUpper(fields[1])
+	for _, prefix := range []string{"ZOTERO_", "CSL_", "MENDELEY", "EN.", "CITAVI"} {
+		if strings.HasPrefix(tool, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// structuralFields are the fields whose codes name what to show (a page
+// number, a bookmark, a style, a property, a column of merged data) and
+// carry no text of their own.
+var structuralFields = map[string]bool{
+	"PAGE": true, "NUMPAGES": true, "SECTIONPAGES": true, "SECTION": true, "PAGEREF": true,
+	"REF": true, "NOTEREF": true, "SEQ": true, "TOC": true, "TOA": true, "INDEX": true,
+	"STYLEREF": true, "DATE": true, "TIME": true, "CREATEDATE": true, "SAVEDATE": true,
+	"PRINTDATE": true, "EDITTIME": true, "FILENAME": true, "FILESIZE": true, "NUMWORDS": true,
+	"NUMCHARS": true, "REVNUM": true, "TEMPLATE": true, "LISTNUM": true, "AUTONUM": true,
+	"AUTONUMLGL": true, "AUTONUMOUT": true, "HYPERLINK": true, "FORMTEXT": true,
+	"FORMCHECKBOX": true, "FORMDROPDOWN": true, "MERGEFIELD": true, "MERGEREC": true,
+	"MERGESEQ": true, "NEXT": true, "BIBLIOGRAPHY": true, "CITATION": true,
+	"DOCPROPERTY": true, "DOCVARIABLE": true, "SYMBOL": true, "INCLUDEPICTURE": true,
+	"INCLUDETEXT": true, "LINK": true, "EMBED": true, "SHAPE": true, "BARCODE": true,
+	"TITLE": true, "SUBJECT": true, "AUTHOR": true, "KEYWORDS": true, "COMMENTS": true,
+	"LASTSAVEDBY": true, "USERNAME": true, "USERINITIALS": true, "USERADDRESS": true,
+	"QUOTE": true, "INFO": true, "DOCPROPERTIES": true, "GREETINGLINE": true, "ADDRESSBLOCK": true,
+}
+
+// maxPlainCode bounds the code of a structural field that is not kept.
+const maxPlainCode = 4 << 10
+
+// plainCode reports whether a structural field's code is no more than such
+// a field needs: names, switches, a format, a list of styles, but no more
+// than stored.MaxWords words of text in its quoted arguments.
+func plainCode(code string) bool {
+	return len(code) <= maxPlainCode && stored.QuotedWords(code) <= stored.MaxWords
 }
 
 // alternate tracks one mc:AlternateContent element: a file may hold the

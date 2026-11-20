@@ -6,8 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
@@ -127,6 +129,7 @@ type reader struct {
 	pages      []pageGeom
 	paragraphs int
 	grids      map[string]*media.Grid // pictures reduced to colours, for DeepHidden
+	longs      stored.Longs           // field codes out of proportion
 }
 
 // Extract reads the Word document whose main part is named main into doc,
@@ -227,7 +230,8 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 	}
 
 	// A header or footer part that no section names is in the file but
-	// never on a page. It is read all the same, and flagged.
+	// never on a page. It is read all the same, and flagged only if it is
+	// out of proportion (readFurniture).
 	for _, rel := range rels {
 		header := ns.IsRel(rel.Type, ns.RelHeader)
 		if rel.External || !header && !ns.IsRel(rel.Type, ns.RelFooter) {
@@ -387,9 +391,6 @@ func (r *reader) readFurniture(name string, kind gofastcore.Kind, shown bool) []
 		// Pictures stay pictures, and notes (the code of a field, a
 		// deletion) notes.
 		if b.Kind == gofastcore.KindImage || b.Kind == gofastcore.KindNote {
-			if !shown && b.Kind == gofastcore.KindNote {
-				hideWhole(&b, gofastcore.HiddenInvisible)
-			}
 			out = append(out, b)
 			return
 		}
@@ -397,12 +398,7 @@ func (r *reader) readFurniture(name string, kind gofastcore.Kind, shown bool) []
 		if text == "" {
 			return
 		}
-		block := gofastcore.Block{Kind: kind, Text: text, Spans: spans, Hidden: hidden}
-		if !shown {
-			// The whole of it is unseen, whatever else is true of parts.
-			hideWhole(&block, gofastcore.HiddenInvisible)
-		}
-		out = append(out, block)
+		out = append(out, gofastcore.Block{Kind: kind, Text: text, Spans: spans, Hidden: hidden})
 	}
 	r.loadWith(name, &p.s, func() {
 		// Up to the root element; a line end after the XML declaration
@@ -417,6 +413,32 @@ func (r *reader) readFurniture(name string, kind gofastcore.Kind, shown bool) []
 			add(b)
 		}
 	})
+	// A header or footer that no page shows is routine (a template's
+	// even-page footer in a document without even pages) and is not
+	// flagged for that; one that holds far more than a header does is
+	// out of proportion, and all of it is flagged.
+	if shown {
+		return out
+	}
+	words := 0
+	for _, b := range out {
+		if b.Kind != gofastcore.KindImage {
+			words += stored.Words(b.Text)
+		}
+	}
+	if words <= stored.MaxFurnitureWords {
+		return out
+	}
+	what := "a header that no page shows"
+	if kind == gofastcore.KindFooter {
+		what = "a footer that no page shows"
+	}
+	r.longs.Add(what, path.Base(name), words)
+	for i := range out {
+		if out[i].Kind != gofastcore.KindImage {
+			hideWhole(&out[i], gofastcore.HiddenInvisible)
+		}
+	}
 	return out
 }
 
@@ -634,6 +656,7 @@ func (r *reader) finish() {
 	if r.clamped > 0 {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, strconv.Itoa(r.clamped)+" headings deeper than level 6")
 	}
+	r.longs.Warn(part)
 	if r.flattened > 0 {
 		part.Warn(gofastcore.SeverityWarning, WarnTableFlattened, strconv.Itoa(r.flattened))
 	}
@@ -655,6 +678,8 @@ type Body struct {
 
 	settings string        // the settings part, if it has document variables
 	extra    stored.Source // the VBA project and custom XML data
+	mu       sync.Mutex
+	bindings map[string]bool // custom XML store items content controls bind to
 }
 
 // Open prepares the Word document whose main part is named main. Only

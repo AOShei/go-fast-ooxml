@@ -766,8 +766,8 @@ func TestExcelOtherKindsOfSheet(t *testing.T) {
 		`sheet 5 "No part named"`,
 		`sheet 6 "Macros"`, `  table A1:B1 inferred [["Auto_Open" "0"]]`,
 		// The macro sheet's code is in the stored part, flagged.
-		`stored 7 "" hidden=invisible`,
-		"  code  \"B1\\t=EXEC(\\\"calc.exe\\\")\" hidden=invisible language=excel4 name=Macros stored=macro",
+		`stored 7 ""`,
+		"  code  \"B1\\t=EXEC(\\\"calc.exe\\\")\" language=excel4 name=Macros stored=macro",
 	)
 	if !warned(doc, gofastcore.WarnInputActiveContent) {
 		t.Errorf("the macro sheet is not reported: %+v", doc.Warnings)

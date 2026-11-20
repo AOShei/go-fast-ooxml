@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -523,6 +524,13 @@ func (pg *page) addPaper(blocks []gofastcore.Block, which int, own [2]bool, room
 		pg.full = true
 	default:
 		blocks = appendRepeated(blocks, paper)
+		var longs stored.Longs
+		for i, what := range [2]string{"a header", "a footer"} {
+			if n := p.paperLong[which][i]; n > 0 && !own[i] {
+				longs.Add(what+" that the master does not show", "", n)
+			}
+		}
+		longs.Warn(part)
 	}
 	return blocks
 }
@@ -530,7 +538,8 @@ func (pg *page) addPaper(blocks []gofastcore.Block, which int, own [2]bool, room
 // readPaper reads the notes master (which 0) or the handout master (1)
 // once: its header and footer, and text of its own. The frames its pages
 // fill in, the date and the page number are not read. A header or footer
-// the master says not to show is flagged.
+// the master says not to show is routine, and flagged only if it is out
+// of proportion (stored.MaxFurnitureWords).
 func (p *presentation) readPaper(which int) (blocks []gofastcore.Block, from []int8, bytes int) {
 	p.paperOnce[which].Do(func() {
 		name := p.masters[which]
@@ -566,12 +575,20 @@ func (p *presentation) readPaper(which int) (blocks []gofastcore.Block, from []i
 			from[i] = -1
 		}
 		for i := range 2 {
+			words := 0
 			for j := 0; j+1 < len(pg.hfBlock[i]); j += 2 {
 				for k := pg.hfBlock[i][j]; k < pg.hfBlock[i][j+1] && k < len(blocks); k++ {
 					from[k] = int8(i)
-					if !pg.hf[i] {
-						blocks[k].Hidden |= gofastcore.HiddenInvisible
-					}
+					words += stored.Words(blocks[k].Text)
+				}
+			}
+			if pg.hf[i] || words <= stored.MaxFurnitureWords {
+				continue
+			}
+			p.paperLong[which][i] = words
+			for k := range blocks {
+				if from[k] == int8(i) {
+					blocks[k].Hidden |= gofastcore.HiddenInvisible
 				}
 			}
 		}

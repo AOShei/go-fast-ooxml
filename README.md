@@ -277,7 +277,7 @@ Markdown writes the links of cells; formulas and values are only in the
 document, since a formula can hold text nobody sees on the sheet.
 
 **What a workbook stores and shows on no sheet** is in a last part of
-kind `stored`, flagged as hidden: its defined names (`Rate: 0.2`; a name
+kind `stored`: its defined names (`Rate: 0.2`; a name
 can stand for a text that appears nowhere else), the code of its Excel 4
 macro sheets, one formula to a line, the code of its VBA project, the
 records of pivot caches whose source is gone and the formulas of
@@ -329,8 +329,8 @@ source kept in the workbook. Where the source is a range or table of the
 workbook, the records repeat cells that are read and are not read again.
 Where it is another workbook, a connection to a database, scenarios, or a
 sheet or name the workbook no longer has, the records are data the file
-holds and shows nowhere: they are a table in the stored part, flagged
-`invisible`, with `stored` `pivot_cache`, the names of the cache's fields
+holds and shows nowhere: they are a table in the stored part, with
+`stored` `pivot_cache`, the names of the cache's fields
 as its header row and a row for each record (or, for a cache that keeps no
 records, the values each field takes, a column each). Over the corpus and
 the soak set, every pivot table openpyxl finds whose region has cells is
@@ -362,7 +362,7 @@ placeholder it takes after, on the layout or the master.
 | Date, footer and slide-number placeholders | `footer`. A slide-number field shows the slide's number |
 | Text the layout or the master has of its own | `header` if it is in the upper half of the slide, `footer` if in the lower; on every slide that shows it, once where layout and master repeat each other |
 | Speaker's notes | `note` blocks of type `speaker`, one for each paragraph |
-| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master says not to show is flagged `invisible`. The date and the page number are not read |
+| Header and footer of the notes pages | `header` and `footer` blocks after a slide's notes: the notes page's own, or the notes master's, with the master's own text. A header or footer the master says not to show is not flagged for that, as in Word (see "Hidden text"). The date and the page number are not read |
 | Header and footer of the handouts | `header` and `footer` blocks from the handout master, once, after the first slide |
 | Comments, in both the older and the threaded form | `note` blocks of type `comment`, with author and date; replies follow the comment |
 
@@ -445,32 +445,52 @@ may leave text out; that text is given here, unflagged.
 
 ## What a file stores and shows nowhere
 
-A file can keep text that nobody who opens it sees: it is a place to put
-text for a model. All of it is read as data, never run or followed,
-bounded by the limits, and flagged `invisible`, so that a consumer, and
-the renderers asked to leave hidden text out, can keep it from a model.
-What belongs to the file as a whole is in a last part of kind `stored`,
-which comes with the whole document, not with a range of parts; each
-block says what it is in `stored`:
+A file can keep text that nobody who opens it sees. All of it is read as
+data, never run or followed, and bounded by the limits. What belongs to
+the file as a whole is in a last part of kind `stored`, which comes with
+the whole document, not with a range of parts; each block says what it
+is in `stored`. The renderers leave the stored part out unless
+`RenderOptions.Stored` is set, and a consumer can keep it from a model, or
+review it, by its kind.
+
+**It is not flagged hidden for being stored.** The hidden flag is a signal
+of suspicious hiding (text in the colour of its background, a tiny box
+holding a page of text), and nearly every Office file keeps some such
+data: a flag on all of it would be set on clean and poisoned files alike.
+What is flagged is text **out of proportion for its kind**: a document
+variable, a defined name's text, a value of custom XML or the text of a
+field's code of **more than 30 words**, where a few are usual. Over the
+corpus and the soak set, half of these are of one word and 99 in 100 of
+under 35. Such text is flagged `invisible` (a value of custom XML by a
+span over it), and `ooxml.unshown_text_long` says what was found and how
+long it is. The rule is not applied to macro code, which is long by
+nature, nor to the records of pivot caches, which are data like cells,
+nor to a citation tool's field codes; and a value of custom XML that a
+content control shows is on the page.
 
 | `stored` | What |
 |---|---|
-| `macro` | The code of a VBA project, in all three formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes; text in code pages 1252, 28591 and UTF-8 is decoded, and in others what is not ASCII is U+FFFD, counted by `text.unmapped_glyphs`. The 246 modules of the corpus and the soak set agree with olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
+| `macro` | The code of a VBA project, in all three formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes, and decoded from the project's code page: the Windows code pages 874, 932, 936, 949, 950 and 1250 to 1258, Mac Roman, ISO 8859-1 and UTF-8, from Microsoft's tables of them. A character a code page does not define, or text in another code page, is U+FFFD, counted by `text.unmapped_glyphs`. All 246 modules of the corpus and the soak set are the same as olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
 | `custom_xml` | Custom XML data with text, in all three formats: a block for each part, a line for each element with text of its own (`Abstract: …`). Attribute values are not read. Data a content control is bound to is also in the body, where the control shows it |
 | `document_variable` | Word's document variables, `name: value` |
 | `defined_name` | Excel's defined names |
 | `pivot_cache` | The records of an Excel pivot cache whose source is gone, as a table, and the formulas of calculated fields (`Margin: =Sales*0.1`) |
 
-**Field codes** in Word are the instructions of fields whose results are
-the text (`PAGE`, `MERGEFIELD Name`, `XE "an index entry"`): each is a
-`note` block of type `field` after the paragraph its field ends in, flagged
-`invisible`. A field in another's code is written into that code in
-braces, as Word shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its
-result, which nothing shows, is not text.
-
-The renderers write hidden text unless `RenderOptions.ExcludeHidden` says
-otherwise, so by default Markdown and text include field codes and the
-stored part.
+**Field codes** in Word are the instructions of fields, whose results are
+the text. Most are structure: a page number, a cross-reference, a table of
+contents, a date, a merge field, a document property, a calculation.
+What they show is the text, and their
+codes are not kept. A code that holds text of its own, shown nowhere, is a
+`note` block of type `field` after the paragraph its field ends in: an
+index entry (`XE "…"`), the branches of `IF`, the
+text of `SET`, `ASK` or `FILLIN`, a citation tool's data (`ADDIN`), a
+field this library does not know. Such a note is flagged `invisible` only
+where it is out of proportion, as above, and so is a structural field
+whose code holds more than it needs (over 30 words of quoted text). A
+field in another's code is written into that code in braces, as Word
+shows it (`IF { MERGEFIELD Title } = "Dr" …`), and its result, which
+nothing shows, is not text. An equation field (`EQ`) and a macro button
+(`MACROBUTTON`) show their codes' text.
 
 ## Equations
 
@@ -491,6 +511,22 @@ table on the cells concerned. Every part that has flagged text carries a
 `text.hidden` warning, and `RenderOptions.ExcludeHidden` leaves the flagged
 text out of rendered output.
 
+**The flag is a signal of suspicious hiding**, as go-fast-core defines it
+(its README, "What earns a flag"): a means of hiding applied to text that
+would otherwise be seen. Data that files routinely keep and never show
+(properties, comments, field codes, document variables, custom XML,
+defined names, macro code) is not flagged for that alone, only where it is
+out of proportion for its kind (see
+[What a file stores and shows nowhere](#what-a-file-stores-and-shows-nowhere)).
+
+A header or footer that no page shows is routine too: a Word template's
+first-page or even-page header in a document that has neither, a part no
+section names, a notes-page footer PowerPoint's master switches off. It is
+extracted like any header and flagged `invisible` only if it holds **more
+than 200 words**, far more than a header does (over the corpus and the
+soak set, half of Word's headers and footers with text have 3 words,
+99 in 100 under 70, and the longest 185), with `ooxml.unshown_text_long`.
+
 `Document.HiddenChecked` lists the reasons that are checked completely for
 the format. For Word and Excel they are `invisible`, `tiny`, `low_contrast`
 and `invisible_chars`. For PowerPoint, where every shape has a place, they
@@ -500,7 +536,7 @@ What is flagged in a Word document:
 
 | Reason | What is flagged |
 |---|---|
-| `invisible` | Text formatted as hidden, on the run or through its character style, its paragraph's style or the document defaults. A header or footer that no page shows: one no section names, a first-page one where no section has a different first page, an even-page one where the document does not have different odd and even pages. A footnote, text box or picture anchored in hidden text |
+| `invisible` | Text formatted as hidden, on the run or through its character style, its paragraph's style or the document defaults. A footnote, text box or picture anchored in hidden text |
 | `tiny` | A font size under 2 points, resolved through the same layers. Characters narrowed, or text fitted into a width, so that it is under 2 points |
 | `low_contrast` | A text colour set explicitly (on the run, through a style, or as a Word 2010 text fill) that cannot be told from what is behind it: the run's shading or highlight, the paragraph's shading, the table cell's shading whether set on the cell or given by the table's style, the fill of the shape or text box the text is in, the page colour where Word displays it. Theme colours are resolved. Text in the "automatic" colour is never flagged: Word draws it to contrast with its background. With `DeepHidden`, also a text box's gradient or picture fill, and a page background that is a gradient or a picture |
 | `off_page` | A text box anchored at a place on the page whose every possible place is off the page: measured from the page or a margin its place is known; from a column, a paragraph or a line it is somewhere between the margins, and is flagged only if it is off the page wherever that is |
@@ -602,8 +638,8 @@ flagged. What this means for a reviewer:
   the values of drop-down lists,
   the series a chart's filter leaves out and the SmartArt nodes a layout
   does not draw (both flagged `invisible`),
-  field codes, flagged as hidden, and what a file stores and shows nowhere
-  (see above), flagged as hidden in the stored part. Each has its own
+  field codes and what a file stores and shows nowhere (see above), each
+  flagged only where out of proportion for its kind. Each has its own
   place in the model (metadata, `image` blocks, `note` blocks, the
   `stored` part), so a consumer can treat it apart. Formulas, with
   `Options.Cells`, are in `Table.Cells`, apart from what cells show.

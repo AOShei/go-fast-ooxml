@@ -75,7 +75,16 @@ type colorRef struct {
 
 func readColorRef(s *xmlscan.Scanner) colorRef {
 	var c colorRef
-	if v, ok := s.Attr(xmlscan.NoSpace, "rgb"); ok {
+	// A colour may say more than one way what it is. Excel takes the
+	// theme's colour first, then the RGB, then the palette's (as found by
+	// LibreOffice, tdf#113271): a file can say both white and the theme's
+	// dark text, and is shown dark.
+	if v, ok := s.Attr(xmlscan.NoSpace, "theme"); ok {
+		if n, err := strconv.Atoi(string(v)); err == nil {
+			c.kind, c.index = 3, n
+		}
+	}
+	if v, ok := s.Attr(xmlscan.NoSpace, "rgb"); ok && c.kind == 0 {
 		// Eight digits: transparency first, which is not used.
 		if len(v) == 8 {
 			v = v[2:]
@@ -83,15 +92,13 @@ func readColorRef(s *xmlscan.Scanner) colorRef {
 		if rgb, ok := theme.Hex(v); ok {
 			c.kind, c.rgb = 2, rgb
 		}
-	} else if v, ok := s.Attr(xmlscan.NoSpace, "theme"); ok {
-		if n, err := strconv.Atoi(string(v)); err == nil {
-			c.kind, c.index = 3, n
-		}
-	} else if v, ok := s.Attr(xmlscan.NoSpace, "indexed"); ok {
+	}
+	if v, ok := s.Attr(xmlscan.NoSpace, "indexed"); ok && c.kind == 0 {
 		if n, err := strconv.Atoi(string(v)); err == nil {
 			c.kind, c.index = 4, n
 		}
-	} else if v, ok := s.Attr(xmlscan.NoSpace, "auto"); ok && isTrue(v) {
+	}
+	if v, ok := s.Attr(xmlscan.NoSpace, "auto"); ok && c.kind == 0 && isTrue(v) {
 		c.kind = 1
 	}
 	if v, ok := s.Attr(xmlscan.NoSpace, "tint"); ok {

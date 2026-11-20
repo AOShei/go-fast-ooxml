@@ -97,10 +97,19 @@ func TestProject(t *testing.T) {
 	if err != nil || !p.Cut || len(p.Modules) != 2 || len(p.Modules[0].Code)+len(p.Modules[1].Code) > 200 {
 		t.Errorf("limit 200: %+v, %v", p, err)
 	}
-	// A code page with no table: what is not ASCII is U+FFFD.
+	// Other code pages: Cyrillic, and Chinese in two bytes a character.
 	p, err = vba.Read(ooxmltest.VBAProject(1251, ooxmltest.VBAModule{Name: "M", Code: "' \xcf\xf0\xe8\xe2\xe5\xf2\r\n"}), 1<<20)
-	if err != nil || p.Undecoded != 6 || p.Modules[0].Code != "' "+strings.Repeat("\uFFFD", 6)+"\n" {
+	if err != nil || p.Undecoded != 0 || p.Modules[0].Code != "' Привет\n" {
 		t.Errorf("1251: %+v, %v", p, err)
+	}
+	p, err = vba.Read(ooxmltest.VBAProject(936, ooxmltest.VBAModule{Name: "M", Code: "' \xc4\xe3\xba\xc3\r\n"}), 1<<20)
+	if err != nil || p.Undecoded != 0 || p.Modules[0].Code != "' 你好\n" {
+		t.Errorf("936: %+v, %v", p, err)
+	}
+	// A code page with no table: what is not ASCII is U+FFFD.
+	p, err = vba.Read(ooxmltest.VBAProject(1361, ooxmltest.VBAModule{Name: "M", Code: "' \xcf\xf0\r\n"}), 1<<20)
+	if err != nil || p.Undecoded != 2 || p.Modules[0].Code != "' \uFFFD\uFFFD\n" {
+		t.Errorf("1361: %+v, %v", p, err)
 	}
 	if _, err := vba.Read(ooxmltest.Compound(map[string][]byte{"x": []byte("y")}), 100); !errors.Is(err, vba.ErrNotProject) {
 		t.Errorf("no project: %v", err)

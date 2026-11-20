@@ -43,12 +43,18 @@ when the work planned before the release is done.
   each cell) and the types and stored values of what they hold; with
   `Options.Spans`, cell hyperlinks; both in `Table.Cells`.
 - A last part of kind `stored`, in all three formats, for what a file
-  stores and shows nowhere, flagged as hidden: the code of VBA projects,
+  stores and shows nowhere, flagged only where out of proportion for its
+  kind (`ooxml.unshown_text_long`): the code of VBA projects,
   custom XML data, Word's document variables, Excel's defined names, the
   code of Excel 4 macro sheets, and the formulas of pivot caches'
   calculated fields.
-- Word's field codes as `note` blocks of type `field` after their
-  paragraph, flagged as hidden.
+- A header or footer that no page shows (in Word, one no section names
+  or a first-page or even-page one the document does not use; in
+  PowerPoint, one a notes or handout master switches off) is not flagged
+  hidden for that, only where it holds more than 200 words.
+- Word's field codes that hold text of their own (index entries, the
+  branches of IF, a citation tool's data) as `note` blocks of type `field` after their
+  paragraph.
 - Equations in Word and PowerPoint written in UnicodeMath, with their
   structure; a Word display equation as a `formula` block.
 - The command's `-deep-hidden`.
@@ -60,7 +66,7 @@ when the work planned before the release is done.
   sheets; the workbook a chart embeds as an embedded file.
 - Pivot tables, as one table with role `pivot` and the pivot table's name;
   the records of pivot caches whose source is not in the workbook, in the
-  stored part, flagged.
+  stored part.
 - SmartArt in all three formats: the text of each node as list items in
   the model's order and nesting, placed and judged for hidden text by the
   drawing Office made of it; nodes the layout draws nowhere flagged

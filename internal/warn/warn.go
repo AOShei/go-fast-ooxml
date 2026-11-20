@@ -19,6 +19,7 @@ const (
 	FormulaNoValue      = "ooxml.formula_no_value"
 	RegionSplit         = "ooxml.region_split"
 	HiddenUnchecked     = "ooxml.hidden_unchecked"
+	UnshownTextLong     = "ooxml.unshown_text_long"
 )
 
 // ErrText is what a reader ends a scan with when the document has taken
