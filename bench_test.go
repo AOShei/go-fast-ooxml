@@ -3,6 +3,7 @@ package gofastooxml_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -118,6 +119,44 @@ func TestLargeWorkbookMemory(t *testing.T) {
 		if peak > ceiling {
 			t.Errorf("workers %d: peak heap %d MB is over the ceiling of %d MB", workers, peak>>20, ceiling>>20)
 		}
+	}
+}
+
+// BenchmarkRows reads the first sheet of the large generated workbook a
+// band of rows at a time (half a million cells), as File.Rows gives it:
+// with one worker, and with more, which decompress the sheet on a
+// goroutine of its own ahead of the scanner.
+func BenchmarkRows(b *testing.B) {
+	data, err := os.ReadFile(filepath.Join(ooxmltest.Root(b), "testdata", "corpus", "generated", "large.xlsx"))
+	if err != nil {
+		b.Skipf("large.xlsx is not generated: %v", err)
+	}
+	for _, c := range []struct {
+		band, workers int
+	}{{1000, 1}, {1000, 0}, {100, 0}, {10000, 0}} {
+		band := c.band
+		b.Run(fmt.Sprintf("band=%d/workers=%d", c.band, c.workers), func(b *testing.B) {
+			for b.Loop() {
+				f, err := gofastooxml.OpenBytes(data, &gofastcore.Options{Workers: c.workers})
+				if err != nil {
+					b.Fatal(err)
+				}
+				cells := 0
+				for part, err := range f.Rows(context.Background(), 1, band) {
+					if err != nil {
+						b.Fatal(err)
+					}
+					for _, blk := range part.Blocks {
+						if blk.Table != nil {
+							cells += len(blk.Table.Rows) * len(blk.Table.Rows[0])
+						}
+					}
+				}
+				if cells == 0 {
+					b.Fatal("no cells")
+				}
+			}
+		})
 	}
 }
 

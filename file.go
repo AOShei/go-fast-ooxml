@@ -692,6 +692,10 @@ func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
 // file gives twice, which the sheet read whole has once, is in each band
 // it falls in.
 //
+// With more than one worker (Options.Workers) the sheet is decompressed
+// on a goroutine of its own, a few chunks ahead of the reading of its
+// rows; the bands are the same as with one.
+//
 // The iterator yields an error and stops as Parts does; for a file that
 // is not a workbook the error wraps gofastcore.ErrUnsupported.
 func (f *File) Rows(ctx context.Context, number, band int) iter.Seq2[gofastcore.Part, error] {

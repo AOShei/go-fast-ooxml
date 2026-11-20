@@ -3,8 +3,11 @@ package gofastooxml_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -503,4 +506,60 @@ func TestRowsOfASheetThatGivesACellTwice(t *testing.T) {
 		}
 		sameCells(t, "one band", cellsOf(t, part), want)
 	}
+}
+
+// With more than one worker a sheet is decompressed ahead of the scanner,
+// on a goroutine of its own. The bands are the same as with one: over the
+// fixtures, and without -short over the corpus and the soak set, within
+// the limits and with a limit on decompressed bytes that cuts sheets off.
+func TestRowsTheSameWithAnyWorkers(t *testing.T) {
+	var files []string
+	for _, f := range ooxmltest.LoadManifest(t, "fixtures.json") {
+		if f.Format == "xlsx" {
+			files = append(files, f.AbsPath(t))
+		}
+	}
+	if !testing.Short() {
+		filepath.WalkDir(filepath.Join(ooxmltest.Root(t), "testdata", "corpus"), func(path string, d fs.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && strings.EqualFold(filepath.Ext(path), ".xlsx") {
+				files = append(files, path)
+			}
+			return nil
+		})
+	}
+	bands := func(data []byte, workers int, limits gofastcore.Limits) string {
+		f, err := gofastooxml.OpenBytes(data, &gofastcore.Options{Workers: workers, Limits: limits})
+		if err != nil {
+			return "open: " + err.Error()
+		}
+		// A hash of the bands, not the bands: Rows holds no more than a
+		// band, whatever the sheet, and nor does this.
+		out := sha256.New()
+		enc := json.NewEncoder(out)
+		for _, sheet := range f.Sheets() {
+			for part, err := range f.Rows(context.Background(), sheet.Number, 50) {
+				if err != nil {
+					fmt.Fprintf(out, "error: %v\n", err)
+					break
+				}
+				enc.Encode(part)
+			}
+		}
+		return fmt.Sprintf("%x", out.Sum(nil))
+	}
+	checked := 0
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil || len(data) > 64<<20 {
+			continue
+		}
+		for _, limits := range []gofastcore.Limits{{}, {MaxDecodedBytes: 300 << 10}} {
+			one, many := bands(data, 1, limits), bands(data, 4, limits)
+			if one != many {
+				t.Errorf("%s, %+v: the bands differ with one worker and with four", path, limits)
+			}
+		}
+		checked++
+	}
+	t.Logf("%d workbooks", checked)
 }
