@@ -220,8 +220,19 @@ func NewPart(ctx context.Context, number int) *Part {
 func (p *Part) Room() *gofastcore.TextBudget { return p.room }
 
 // Add adds a block, taking its cost from the budget. It reports false,
-// and adds nothing more, once the budget has run out.
+// and adds nothing more, once the budget has run out. Spaces and line
+// breaks at the ends of the text of a block other than code are left
+// out, as everywhere in a document (code is verbatim); a block with no
+// text left is not added.
 func (p *Part) Add(b gofastcore.Block) bool {
+	if b.Kind != gofastcore.KindCode {
+		if t := strings.TrimSpace(b.Text); len(t) != len(b.Text) {
+			b.Text = t
+		}
+	}
+	if b.Text == "" && b.Table == nil {
+		return !p.Full()
+	}
 	if p.Full() || !p.room.Take(gofastcore.BlockCost+len(b.Text)) {
 		p.cut = true
 		return false

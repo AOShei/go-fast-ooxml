@@ -294,7 +294,11 @@ func (b *Book) binaryNames(names []binName) {
 			b.unreadNames++
 			continue
 		}
-		b.names = append(b.names, definedName{name: n.name, formula: verbatim([]byte(text))})
+		f := strings.TrimSpace(verbatim([]byte(text)))
+		if f == "" {
+			continue // a formula of nothing: as readNames leaves it out
+		}
+		b.names = append(b.names, definedName{name: n.name, formula: f})
 		if n.sheet >= 0 {
 			b.localNames = append(b.localNames, localName{index: len(b.names) - 1, sheet: int(n.sheet)})
 		}
@@ -476,10 +480,10 @@ func (sh *sheet) readBin(r *xlsb.Reader) {
 			if inData && sh.pass != passAround && !endRow() {
 				return
 			}
+			// The pass of the rows reads on past the end, as the sheet
+			// read whole does: a damaged part may have its data in more
+			// than one place, or an end before its beginning.
 			inData, row = false, -1
-			if sh.pass == passRows {
-				return // the rest was read by the pass before
-			}
 			continue
 		}
 		if inData {
@@ -502,10 +506,10 @@ func (sh *sheet) readBin(r *xlsb.Reader) {
 				row = -1
 				if rw >= 0 && rw < maxRows && !f.Short {
 					row = rw
-					if row < sh.lastRow {
+					if row < sh.nextRow {
 						sh.unsorted = true
 					}
-					sh.lastRow = row
+					sh.nextRow = row + 1
 				}
 				// A hidden row, or one of no height.
 				rowHidden = flags&0x1000 != 0 || flags&0x2000 != 0 && height == 0

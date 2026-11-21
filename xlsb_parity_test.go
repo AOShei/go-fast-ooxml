@@ -324,3 +324,17 @@ func TestXlsbTablesForSheetsAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// A name whose formula reads back as nothing is left out, as in .xlsx; one
+// typed with spaces after it has them left out of its block, whose text
+// has no spaces at its ends.
+func TestXlsbNamesOfNothingAndSpaces(t *testing.T) {
+	b := Xlsb(nil, nil, Join(
+		bname("Nothing", -1, U8(0x16)),
+		bname("Spaced", -1, Join(ptgInt(1), U8(0x19), U8(0x40), U8(0), U8(2))),
+	), XlsbSheet{Name: "S", Data: Join(Row(0, 0, 300), Cell(XCellRk, 0, 0, U32(1<<2|2)))})
+	doc := excel(t, b, nil)
+	expectSheets(t, doc,
+		`sheet 1 "S"`, `  table A1:A1 inferred [["1"]]`,
+		`stored 2 ""`, `  paragraph  "Spaced: 1" name=Spaced stored=defined_name`)
+}

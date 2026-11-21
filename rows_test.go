@@ -563,3 +563,87 @@ func TestRowsTheSameWithAnyWorkers(t *testing.T) {
 	}
 	t.Logf("%d workbooks", checked)
 }
+
+// A sheet that gives a row's number twice, the second time with cells to
+// the left of the first's: a band of rows has its cells and their details
+// in order, as the sheet read whole has, in both formats.
+func TestRowsRowNumberGivenTwice(t *testing.T) {
+	x := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S"})
+	x.AddBytes(firstSheet, ooxmltest.CTWorksheet, []byte(`<worksheet xmlns="`+ooxmltest.NSSheet+`"><sheetData>`+
+		`<row r="3"><c r="A3"><v>1</v></c><c r="C3"><v>2</v></c><c r="D3"><v>3</v></c></row><row r="3"><c r="B3"><v>4</v></c></row></sheetData></worksheet>`))
+	b := ooxmltest.Xlsb(nil, nil, nil, ooxmltest.XlsbSheet{Name: "S", Data: ooxmltest.Join(
+		ooxmltest.Row(2, 0, 300), ooxmltest.Cell(ooxmltest.XCellRk, 0, 0, ooxmltest.U32(1<<2|2)), ooxmltest.Cell(ooxmltest.XCellRk, 2, 0, ooxmltest.U32(2<<2|2)), ooxmltest.Cell(ooxmltest.XCellRk, 3, 0, ooxmltest.U32(3<<2|2)),
+		ooxmltest.Row(2, 0, 300), ooxmltest.Cell(ooxmltest.XCellRk, 1, 0, ooxmltest.U32(4<<2|2)))})
+	for name, pkg := range map[string]*ooxmltest.Package{"xlsx": x, "xlsb": b} {
+		opts := &gofastcore.Options{Workers: 1, Cells: true}
+		f, err := (&gofastooxml.Extractor{}).OpenBytes(pkg.Bytes(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for part, err := range f.Rows(context.Background(), 1, 2) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := gofastcore.New("xlsx")
+			d.Parts = []gofastcore.Part{part}
+			if err := d.Validate(); err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+			if got := fmt.Sprint(part.Blocks[0].Table.Rows); got != "[[1 4 2 3]]" {
+				t.Errorf("%s: %s", name, got)
+			}
+		}
+	}
+}
+
+// Damaged sheets the fuzzer found read differently whole and a band at a
+// time: a cell with no value before one to the left of the last cell
+// kept, and a binary part whose data ends before it begins. Both give a
+// valid document, and the same cells either way.
+func TestRowsDamagedSheetsWholeAndInBands(t *testing.T) {
+	x := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: `<row r="1"><c r="A1"><v>1</v></c><c r="D1"><v>2</v></c><c r="A2"/><c r="B2"><v>5</v></c></row>`})
+	b := ooxmltest.Xlsb(nil, nil, nil, ooxmltest.XlsbSheet{Name: "S"})
+	b.AddBytes("xl/worksheets/sheet1.bin", ooxmltest.CTXlsbSheet, ooxmltest.Join(ooxmltest.Rec(129), ooxmltest.Rec(146), ooxmltest.Rec(145),
+		ooxmltest.Row(0, 0, 300), ooxmltest.Cell(ooxmltest.XCellRk, 0, 0, ooxmltest.U32(1<<2|2)), ooxmltest.Rec(146),
+		ooxmltest.Rec(145), ooxmltest.Row(1, 0, 300), ooxmltest.Cell(ooxmltest.XCellRk, 1, 0, ooxmltest.U32(2<<2|2)), ooxmltest.Rec(146), ooxmltest.Rec(130)))
+	for name, c := range map[string]struct {
+		pkg  *ooxmltest.Package
+		want string
+	}{"xlsx": {x, "[[[1 5]] [[2]]]"}, "xlsb": {b, "[[[1 ] [ 2]]]"}} {
+		opts := &gofastcore.Options{Workers: 1, Cells: true}
+		doc, err := extract(t, c.pkg.Bytes(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := doc.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		var whole, bands [][][]string
+		for _, bl := range doc.Parts[0].Blocks {
+			whole = append(whole, bl.Table.Rows)
+		}
+		f, err := (&gofastooxml.Extractor{}).OpenBytes(c.pkg.Bytes(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for part, err := range f.Rows(context.Background(), 1, 2) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := gofastcore.New("xlsx")
+			d.Parts = []gofastcore.Part{part}
+			if err := d.Validate(); err != nil {
+				t.Errorf("%s: a band: %v", name, err)
+			}
+			for _, bl := range part.Blocks {
+				bands = append(bands, bl.Table.Rows)
+			}
+		}
+		if got := fmt.Sprint(whole); got != c.want {
+			t.Errorf("%s: whole %s, want %s", name, got, c.want)
+		}
+		if fmt.Sprint(bands) != fmt.Sprint(whole) {
+			t.Errorf("%s: bands %v, whole %v", name, bands, whole)
+		}
+	}
+}

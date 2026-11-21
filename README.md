@@ -25,27 +25,27 @@ the method and the versions are in [`bench/comparison.md`](bench/comparison.md).
 <!-- comparison:begin -->
 | File | Tool | Time | Peak memory | Time against this library |
 |---|---|---|---|---|
-| `large.docx`: 1.5 million words | **this library**, all workers | 0.108 s | 35 MB |  |
-|  | **this library**, one worker | 0.106 s | 37 MB | 1.0 times |
-|  | docx2txt | 0.158 s | 152 MB | 1.5 times |
-|  | markitdown | 3.71 s | 325 MB | 34 times |
-|  | python-docx | 4.18 s | 199 MB | 39 times |
-| `large.xlsx`: 2 million cells | **this library**, all workers | 0.294 s | 187 MB |  |
-|  | **this library**, one worker | 0.689 s | 132 MB | 2.3 times |
-|  | openpyxl-readonly | 9.54 s | 307 MB | 32 times |
-|  | openpyxl | 12.41 s | 1,136 MB | 42 times |
-|  | markitdown | 66.49 s | 1,391 MB | 226 times |
-| `large.pptx`: 1,500 slides | **this library**, all workers | 0.018 s | 37 MB |  |
-|  | **this library**, one worker | 0.055 s | 32 MB | 3.1 times |
-|  | python-pptx | 0.362 s | 113 MB | 20 times |
-|  | markitdown | 1.78 s | 214 MB | 99 times |
+| `large.docx`: 1.5 million words | **this library**, all workers | 0.076 s | 39 MB |  |
+|  | **this library**, one worker | 0.104 s | 43 MB | 1.4 times |
+|  | docx2txt | 0.158 s | 152 MB | 2.1 times |
+|  | markitdown | 3.75 s | 325 MB | 49 times |
+|  | python-docx | 4.12 s | 199 MB | 54 times |
+| `large.xlsx`: 2 million cells | **this library**, all workers | 0.249 s | 194 MB |  |
+|  | **this library**, one worker | 0.710 s | 140 MB | 2.9 times |
+|  | openpyxl-readonly | 9.44 s | 307 MB | 38 times |
+|  | openpyxl | 12.31 s | 1,136 MB | 49 times |
+|  | markitdown | 63.33 s | 1,392 MB | 254 times |
+| `large.pptx`: 1,500 slides | **this library**, all workers | 0.020 s | 43 MB |  |
+|  | **this library**, one worker | 0.056 s | 33 MB | 2.8 times |
+|  | python-pptx | 0.366 s | 114 MB | 18 times |
+|  | markitdown | 1.78 s | 214 MB | 89 times |
 <!-- comparison:end -->
 
 The time for this library is the whole run of its command, writing text;
 for the others it leaves out importing the library. docx2txt gives the
 text of a Word file and none of its structure. In the library itself,
-without starting a process, the three files take 0.06, 0.17 and 0.01
-seconds.
+without starting a process, the three files take 0.03, 0.13 and 0.01
+seconds with all workers, and 0.06, 0.58 and 0.05 with one.
 
 With more than one worker (`Options.Workers`, all the CPUs by default), a
 Word body or a sheet of 1 MiB or more is decompressed on a goroutine of its
@@ -55,9 +55,10 @@ before. The document is the same with any number of workers
 ([`bench/README.md`](bench/README.md)).
 
 On the 788 real files of the corpus, which include damaged, encrypted and
-hostile ones, this library reads 740 and refuses 48 with a reason (damaged
-archives, files that need a password, other formats); none makes it crash
-or hang. The same holds for 5,810 more
+hostile ones, this library reads 773 and refuses 15 with a reason: seven
+need a password, four are archives too damaged to read, and the rest are
+other formats, a legacy `.xls`, a document type declaration and a cipher
+other than AES. None makes it crash or hang. The same holds for 5,810 more
 from other projects' test suites ([`bench/README.md`](bench/README.md)).
 
 ## Using it

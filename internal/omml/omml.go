@@ -57,33 +57,36 @@ func (w *writer) element() string {
 			return w.delimiter()
 		case "func":
 			p := w.parts()
-			return p.one("fName") + "\u2061" + group(p.one("e"))
+			return p.rest(p.one("fName") + "\u2061" + group(p.one("e")))
 		case "acc":
 			p := w.parts()
-			return base(p.one("e")) + p.prop("chr", "\u0302")
+			return p.rest(base(p.one("e")) + p.prop("chr", "\u0302"))
 		case "bar":
 			p := w.parts()
 			if p.prop("pos", "bot") == "top" {
-				return "¯" + group(p.one("e"))
+				return p.rest("¯" + group(p.one("e")))
 			}
-			return "▁" + group(p.one("e"))
+			return p.rest("▁" + group(p.one("e")))
 		case "box":
-			return "□" + group(w.parts().one("e"))
+			p := w.parts()
+			return p.rest("□" + group(p.one("e")))
 		case "borderBox":
-			return "▭" + group(w.parts().one("e"))
+			p := w.parts()
+			return p.rest("▭" + group(p.one("e")))
 		case "groupChr":
 			p := w.parts()
-			return p.prop("chr", "⏟") + group(p.one("e"))
+			return p.rest(p.prop("chr", "⏟") + group(p.one("e")))
 		case "limLow":
 			p := w.parts()
-			return name(p.one("e")) + "┬" + group(p.one("lim"))
+			return p.rest(name(p.one("e")) + "┬" + group(p.one("lim")))
 		case "limUpp":
 			p := w.parts()
-			return name(p.one("e")) + "┴" + group(p.one("lim"))
+			return p.rest(name(p.one("e")) + "┴" + group(p.one("lim")))
 		case "m":
 			return w.matrix()
 		case "eqArr":
-			return "█(" + strings.Join(w.parts().all("e"), "@") + ")"
+			p := w.parts()
+			return p.rest("█(" + strings.Join(p.all("e"), "@") + ")")
 		}
 		if strings.HasSuffix(string(s.Local()), "Pr") {
 			s.Skip()
@@ -222,6 +225,7 @@ type structure struct {
 
 type arg struct {
 	name, text string
+	used       bool
 }
 
 // parts reads the children of the current structure.
@@ -246,7 +250,7 @@ func (w *writer) parts() structure {
 		case name == "mr":
 			// A row of a matrix: its cells.
 			row := w.parts()
-			p.args = append(p.args, arg{name: "mr", text: strings.Join(row.all("e"), "&")})
+			p.args = append(p.args, arg{name: "mr", text: row.rest(strings.Join(row.all("e"), "&"))})
 		default:
 			p.args = append(p.args, arg{name: name, text: w.content()})
 		}
@@ -275,9 +279,10 @@ func (w *writer) props(into map[string]string) map[string]string {
 }
 
 // one returns the first argument of that name.
-func (p structure) one(name string) string {
-	for _, a := range p.args {
-		if a.name == name {
+func (p *structure) one(name string) string {
+	for i := range p.args {
+		if a := &p.args[i]; a.name == name {
+			a.used = true
 			return a.text
 		}
 	}
@@ -285,11 +290,24 @@ func (p structure) one(name string) string {
 }
 
 // all returns every argument of that name.
-func (p structure) all(name string) []string {
+func (p *structure) all(name string) []string {
 	var out []string
-	for _, a := range p.args {
-		if a.name == name {
+	for i := range p.args {
+		if a := &p.args[i]; a.name == name {
+			a.used = true
 			out = append(out, a.text)
+		}
+	}
+	return out
+}
+
+// rest returns a structure's linear form, out, followed by the arguments
+// it did not take: an element the structure does not have, or a second
+// of one it has one of. The file holds their text, and it is kept.
+func (p *structure) rest(out string) string {
+	for _, a := range p.args {
+		if !a.used && a.text != "" {
+			out += " " + a.text
 		}
 	}
 	return out
@@ -315,34 +333,38 @@ func (w *writer) fraction() string {
 	num, den := group(p.one("num")), group(p.one("den"))
 	switch p.prop("type", "bar") {
 	case "noBar":
-		return num + "¦" + den
+		return p.rest(num + "¦" + den)
 	case "lin":
-		return num + "∕" + den
+		return p.rest(num + "∕" + den)
 	case "skw":
-		return num + "⊘" + den
+		return p.rest(num + "⊘" + den)
 	}
-	return num + "/" + den
+	return p.rest(num + "/" + den)
 }
 
 func (w *writer) script(kind string) string {
 	p := w.parts()
 	// An empty script is left out, with its operator.
 	scripts := ""
-	if sub := p.one("sub"); sub != "" && kind != "sSup" {
-		scripts += "_" + group(sub)
+	if kind != "sSup" {
+		if sub := p.one("sub"); sub != "" {
+			scripts += "_" + group(sub)
+		}
 	}
-	if sup := p.one("sup"); sup != "" && kind != "sSub" {
-		scripts += "^" + group(sup)
+	if kind != "sSub" {
+		if sup := p.one("sup"); sup != "" {
+			scripts += "^" + group(sup)
+		}
 	}
 	e := p.one("e")
 	if scripts == "" {
-		return e
+		return p.rest(e)
 	}
 	if kind == "sPre" {
 		// Scripts before the base.
-		return scripts + base(e)
+		return p.rest(scripts + base(e))
 	}
-	return base(e) + scripts
+	return p.rest(base(e) + scripts)
 }
 
 func (w *writer) radical() string {
@@ -351,13 +373,13 @@ func (w *writer) radical() string {
 	deg := p.one("deg")
 	switch {
 	case p.flag("degHide") || deg == "":
-		return "√" + e
+		return p.rest("√" + e)
 	case deg == "3":
-		return "∛" + e
+		return p.rest("∛" + e)
 	case deg == "4":
-		return "∜" + e
+		return p.rest("∜" + e)
 	}
-	return "√(" + deg + "&" + p.one("e") + ")"
+	return p.rest("√(" + deg + "&" + p.one("e") + ")")
 }
 
 func (w *writer) nary() string {
@@ -369,16 +391,17 @@ func (w *writer) nary() string {
 	if sup := p.one("sup"); sup != "" && !p.flag("supHide") {
 		out += "^" + group(sup)
 	}
-	return out + "▒" + group(p.one("e"))
+	return p.rest(out + "▒" + group(p.one("e")))
 }
 
 func (w *writer) delimiter() string {
 	p := w.parts()
-	return p.prop("begChr", "(") + strings.Join(p.all("e"), p.prop("sepChr", "│")) + p.prop("endChr", ")")
+	return p.rest(p.prop("begChr", "(") + strings.Join(p.all("e"), p.prop("sepChr", "│")) + p.prop("endChr", ")"))
 }
 
 func (w *writer) matrix() string {
-	return "■(" + strings.Join(w.parts().all("mr"), "@") + ")"
+	p := w.parts()
+	return p.rest("■(" + strings.Join(p.all("mr"), "@") + ")")
 }
 
 // group returns an argument as it is written after an operator: as it

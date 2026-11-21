@@ -50,7 +50,7 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 	hand := func(last bool) bool {
 		blocks := sh.arrange(sh.tablesOf(nil))
 		// The cells are in the tables now, and the band is done with.
-		sh.cells, sh.hiddenRows, sh.unsorted, sh.lastRow = sh.cells[:0], sh.hiddenRows[:0], false, 0
+		sh.cells, sh.hiddenRows, sh.unsorted, sh.nextRow = sh.cells[:0], sh.hiddenRows[:0], false, 0
 		sh.details, sh.detailsUnsorted = sh.details[:0], false // shared formulas are kept: a later band may use them
 		if len(blocks) == 0 && !last {
 			return true

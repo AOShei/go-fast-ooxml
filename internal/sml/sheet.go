@@ -52,7 +52,7 @@ type sheet struct {
 	bin        bool // the sheet's part is records (binary.go), not XML
 	cells      []cell
 	unsorted   bool
-	lastRow    int32
+	nextRow    int32 // the row after the last one read: a row before it is out of order
 	hiddenRows []int32
 	hiddenCols []span
 	merges     []rect
@@ -290,10 +290,10 @@ func (sh *sheet) readData() {
 			s.Skip()
 			continue
 		}
-		if row < sh.lastRow {
-			sh.unsorted = true
+		if row < sh.nextRow {
+			sh.unsorted = true // a row before the last, or the last again
 		}
-		sh.lastRow = row
+		sh.nextRow = row + 1
 		hidden := false
 		if v, ok := s.Attr(xmlscan.NoSpace, "hidden"); ok && isTrue(v) {
 			hidden = true
@@ -343,6 +343,7 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 	s := &sh.s
 	depth := s.Depth()
 	col := int32(-1)
+	kept := int32(-1) // the column of the last cell kept: one at or before it is out of order
 	ordered := true
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
@@ -354,7 +355,6 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 		}
 		// A cell says where it is; one that does not follows the cell
 		// before. Its row is the row it is written in.
-		prev := col
 		col++
 		if v, ok := s.Attr(xmlscan.NoSpace, "r"); ok {
 			if c, _, ok := parseRef(v); ok {
@@ -435,9 +435,10 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 		if text == "" {
 			continue
 		}
-		if col <= prev {
+		if col <= kept {
 			ordered = false
 		}
+		kept = col
 		textBytes += int64(len(text))
 		sh.cells = append(sh.cells, cell{text: text, row: row, col: col, hidden: hidden})
 		if sh.wb.opts.Cells {

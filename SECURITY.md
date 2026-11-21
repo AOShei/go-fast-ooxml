@@ -146,8 +146,12 @@ that feeds a model decides what to do with each.
 
 - Fuzz targets for the XML reader, the archive and the recovery of one
   cut short, each format's main part, the records and formulas of binary
-  workbooks, number formats, the compound-file container and the
-  encryption information; all run in CI on every pull request.
+  workbooks and the parts their formulas and pivot tables name (links to
+  other workbooks, tables, pivot caches), number formats, the
+  compound-file container and the encryption information; all run in CI
+  on every pull request. Before the release, all eighteen targets ran
+  for five to forty-five minutes each. The five findings, none a crash, a
+  hang or a way past a limit, are fixed and kept as seeds.
 - A soak run over 6,598 files: the corpus and the Office files in the test
   suites of LibreOffice, Apache Tika, pandoc and ten other projects,
   among them their collections of crash cases and fuzzer findings. Every

@@ -66,24 +66,26 @@ in it.
 
 `comparison.md` has the tables; this is what they say.
 
-On the large files, as whole processes, the other tools take 36 to 40
-times as long on Word, 32 to 222 times on Excel and 20 to 98 times on
+On the large files, as whole processes, the other tools take 49 to 54
+times as long on Word, 38 to 254 times on Excel and 18 to 89 times on
 PowerPoint, and each uses more memory. The exception is docx2txt, which
-gives the text of a Word file and nothing else: it takes one and a half
-times as long.
+gives the text of a Word file and nothing else: it takes twice as long.
 
 On the 788 files of the corpus:
 
 | | Word (195) | Excel (477) | PowerPoint (116) |
 |---|---|---|---|
-| This library: read, refused with a reason | 178, 17 | 457, 20 | 105, 11 |
+| This library: read, refused with a reason | 191, 4 | 466, 11 | 116, 0 |
 | Best other tool: read, failed with an exception | 176, 19 (docx2txt) | 444, 33 (openpyxl, read-only) | 100, 16 (python-pptx) |
-| This library: time for all it read | 0.4 s | 4.5 s | 0.4 s |
-| Fastest other tool | 1.2 s | 38.3 s | 0.7 s |
+| This library: time for all it read | 0.6 s | 3.9 s | 0.5 s |
+| Fastest other tool | 1.2 s | 37.2 s | 0.7 s |
 
-Most of the Excel time is one hostile file, which is cut off at 2 GiB of
-text after about four seconds (see the soak run below). Small files are where the tools are closest: the median Word file takes
-this library 1.6 ms as a process, most of which is starting it.
+A fifth of the Excel time is two large workbooks from data.gov.uk, about
+half a second each. The hostile file that repeats one shared string in
+millions of cells (`poc-shared-strings.xlsx`) is cut off at the limit on
+text in a sixth of a second. Small files are where the tools are closest:
+the median Word file takes this library 2.5 ms as a process, most of which
+is starting it.
 
 The measurement favours the other tools in one way: their time does not
 count importing the library, this library's counts the whole process.
@@ -96,9 +98,9 @@ the library, not counting the start of a process):
 
 | File | Target, one worker | Measured | Target, all workers | Measured |
 |---|---|---|---|---|
-| `large.docx` | 0.11 s | 0.062 s | 0.11 s | 0.061 s |
-| `large.xlsx` | 0.80 s | 0.58 s | 0.30 s | 0.17 s |
-| `large.pptx` | 0.10 s | 0.045 s | 0.04 s | 0.009 s |
+| `large.docx` | 0.11 s | 0.059 s | 0.11 s | 0.034 s |
+| `large.xlsx` | 0.80 s | 0.58 s | 0.30 s | 0.13 s |
+| `large.pptx` | 0.10 s | 0.047 s | 0.04 s | 0.010 s |
 
 Time is the machine's as much as the library's, so the test holds it only
 when asked to. What it always holds, and CI with it, is allocation, which
@@ -108,13 +110,13 @@ document and one twice as long.
 
 | One more | Allocations | Bytes allocated | Budget |
 |---|---|---|---|
-| Word paragraph | 1.0 | 1,220 | 1.5 and 1,800 |
+| Word paragraph | 1.0 | 1,289 | 1.5 and 1,800 |
 | Excel cell | 0.004 | 208 | 0.02 and 320 |
-| PowerPoint slide | 63 | 4,980 | 95 and 7,500 |
+| PowerPoint slide | 65 | 4,990 | 95 and 7,500 |
 
 A paragraph costs one allocation: its text. Cells of a sheet share a few
 large allocations. A slide is a member of the archive with relationships
-of its own, which is most of its 63.
+of its own, which is most of its 65.
 
 ## Soak run
 
@@ -406,35 +408,67 @@ set carry the warning.
 
 ## Fuzz campaign
 
-Every fuzz target, run for the release (twelve processes, on the machine
-of `baseline.md` while it was busy with other work):
+Every fuzz target, run for the release on 2026-11-21 (three to four
+processes of four workers at a time). Times and executions are summed
+over the runs of a target:
 
 | Target | What it is given | Time | Executions | Result |
 |---|---|---|---|---|
-| `FuzzOpen` | A whole file | 10 min | 33 million | clean |
-| `FuzzDocx` | The parts of a Word document in a sound package | 10 min | 7.8 million | clean |
-| `FuzzXlsx` | The parts of a workbook | 10 min | 2.4 million | clean, after one finding |
-| `FuzzPptx` | The parts of a presentation | 10 min | 2.5 million | clean |
-| `FuzzXML` | XML, compared token for token with `encoding/xml` | 10 min | 81 million | clean, after two findings |
-| `FuzzCFB` | A compound file | 5 min | 68 million | clean |
-| `FuzzEncryptionInfo` | The encryption information of a protected file | 5 min | 63 million | clean |
-| `FuzzNumFmt` | A number format and a value | 5 min | 85 million | clean |
-| `FuzzRecover` | Bytes behind the start of an archive, read by its members' own headers | 6 min | 48 million | clean |
+| `FuzzOpen` | A whole file | 20 min | 19 million | clean |
+| `FuzzDocx` | The parts of a Word document in a sound package | 30 min | 3.3 million | clean |
+| `FuzzXlsx` | The parts of a workbook | 45 min | 5.5 million | clean, after two findings |
+| `FuzzPptx` | The parts of a presentation | 30 min | 0.9 million | clean |
+| `FuzzXlsb` | The parts of a binary workbook | 34 min | 8.8 million | clean, after two findings |
+| `FuzzXlsbLinksTablesPivots` | A binary workbook's links, tables, pivot tables and caches | 10 min | 2.4 million | clean |
+| `FuzzXML` | XML, compared token for token with `encoding/xml` | 10 min | 23 million | clean |
+| `FuzzRecords` | A binary part as records | 5 min | 54 million | clean |
+| `FuzzFormula` | A compiled formula and its place | 5 min | 76 million | clean |
+| `FuzzLinear` | An equation | 5 min | 33 million | clean, after one finding |
+| `FuzzCFB` | A compound file | 5 min | 5.5 million | clean |
+| `FuzzEncryptionInfo` | The encryption information of a protected file | 5 min | 18 million | clean |
+| `FuzzRecover` | Bytes behind the start of an archive, read by its members' own headers | 5 min | 21 million | clean |
+| `FuzzNumFmt` | A number format and a value | 5 min | 79 million | clean |
+| `FuzzProject` | A VBA project | 5 min | 47 million | clean |
+| `FuzzChart` | A chart | 5 min | 6.4 million | clean |
+| `FuzzDiagram` | A SmartArt drawing | 5 min | 1.4 million | clean |
+| `FuzzShift` | A formula moved to another cell | 5 min | 79 million | clean |
+| `FuzzDecode` | Text in a legacy code page | 5 min | 81 million | clean |
 
-The readers of binary workbooks came after the campaign, and were fuzzed
-when they came (2026-11-20, four processes each): `FuzzXlsb`, the parts of
-a binary workbook, 10 minutes, clean; `FuzzFormula`, a compiled formula
-and its place, 5 minutes and 68 million executions, clean after one
-finding (a count past the end of a formula was allocated before it was
-checked); `FuzzRecords`, a part as records, 5 minutes and 37 million,
-clean. The release campaign runs them with the others.
-
-`FuzzRecover` came with the recovery of archives cut short, after the
-campaign; `FuzzOpen` was then run again with files cut short among its
-seeds (6 minutes, 7.4 million executions, clean).
+The four targets given whole documents find new paths through the
+readers for as long as they run, and Go spends a minute shrinking each
+new input it keeps, without counting those executions: the first ten
+minutes of `FuzzPptx` counted 52. They were run again with
+`-fuzzminimizetime 0s`, which is where most of their executions are.
 
 The findings, each now a seed that every test run replays, and a test of
 its own:
+
+- **A row number given twice** (`<row r="3">` twice, the second with a
+  cell to the left of the first's last): a band of rows (`Rows`) had its
+  cells' details out of order, as the second row was not taken to be out
+  of order. In both formats (`TestRowsRowNumberGivenTwice`).
+- **A cell with no value, then one to the left of the last cell kept**:
+  the order of a row's cells was judged against the cell before, kept or
+  not, so the sheet's cells were left out of order and a cell given twice
+  was kept twice. The document was not valid
+  (`TestRowsDamagedSheetsWholeAndInBands`).
+- **A binary sheet whose data ends before it begins**: read a band at a
+  time, the reading stopped at the first end, and the bands had none of
+  the cells the sheet read whole has. The pass of the rows now reads the
+  part to its end, as the XML reader does.
+- **A defined name of a binary workbook whose formula reads back as
+  nothing, or ends in typed spaces**: its block's text ended in a space,
+  which a document may not have. Such a name is left out, as in `.xlsx`,
+  and the stored part trims every block's text
+  (`TestXlsbNamesOfNothingAndSpaces`).
+- **An equation part of a name its structure does not have** (`<m:nu>` in
+  a fraction), or a second numerator: its text was dropped. A structure
+  now keeps what it does not take, after itself (`TestLinear`).
+
+None was a crash, a hang or a way past a limit.
+
+The campaign before, on 2026-11-19, ran the nine targets there were then
+for 5 to 10 minutes each (343 million executions). Its findings:
 
 - **A character reference with many zeros in front** (`&#0000100000;`) was
   left as written: the XML reader took a reference to be at most twelve
@@ -451,8 +485,6 @@ its own:
   declaration and reads the bytes as UTF-8. This reader sees it, as XML
   says it should, and refuses an encoding it cannot read. The comparison
   now knows the difference (`TestEncodingDeclarationWithSpaces`).
-
-None was a crash, a hang or a way past a limit.
 
 ## Encrypted files
 

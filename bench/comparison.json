@@ -23,141 +23,141 @@
    "tool": "python-docx",
    "file": "large.docx",
    "bytes": 3857509,
-   "import_seconds": 0.032,
-   "import_rss_mb": 26.902,
-   "seconds": 4.18,
+   "import_seconds": 0.026,
+   "import_rss_mb": 26.984,
+   "seconds": 4.125,
    "words": 1497662,
-   "peak_rss_mb": 199.207
+   "peak_rss_mb": 199.184
   },
   {
    "tool": "docx2txt",
    "file": "large.docx",
    "bytes": 3857509,
-   "import_seconds": 0.011,
-   "import_rss_mb": 21.016,
+   "import_seconds": 0.012,
+   "import_rss_mb": 21.691,
    "seconds": 0.158,
    "words": 1497662,
-   "peak_rss_mb": 151.699
+   "peak_rss_mb": 152.012
   },
   {
    "tool": "openpyxl",
    "file": "large.xlsx",
    "bytes": 19903360,
-   "import_seconds": 0.068,
-   "import_rss_mb": 44.664,
-   "seconds": 12.411,
+   "import_seconds": 0.067,
+   "import_rss_mb": 44.754,
+   "seconds": 12.315,
    "words": 3400025,
-   "peak_rss_mb": 1135.844
+   "peak_rss_mb": 1136.008
   },
   {
    "tool": "openpyxl-readonly",
    "file": "large.xlsx",
    "bytes": 19903360,
-   "import_seconds": 0.069,
-   "import_rss_mb": 44.098,
-   "seconds": 9.544,
+   "import_seconds": 0.097,
+   "import_rss_mb": 44.457,
+   "seconds": 9.442,
    "words": 3400025,
-   "peak_rss_mb": 306.906
+   "peak_rss_mb": 306.883
   },
   {
    "tool": "python-pptx",
    "file": "large.pptx",
    "bytes": 3490257,
-   "import_seconds": 0.044,
-   "import_rss_mb": 35.559,
-   "seconds": 0.362,
+   "import_seconds": 0.041,
+   "import_rss_mb": 35.68,
+   "seconds": 0.366,
    "words": 139013,
-   "peak_rss_mb": 113.285
+   "peak_rss_mb": 113.527
   },
   {
    "tool": "markitdown",
    "file": "large.docx",
    "bytes": 3857509,
-   "import_seconds": 0.239,
-   "import_rss_mb": 140.5,
-   "seconds": 3.711,
+   "import_seconds": 0.264,
+   "import_rss_mb": 140.305,
+   "seconds": 3.749,
    "words": 1503032,
-   "peak_rss_mb": 325.137
+   "peak_rss_mb": 324.996
   },
   {
    "tool": "markitdown",
    "file": "large.pptx",
    "bytes": 3490257,
    "import_seconds": 0.258,
-   "import_rss_mb": 140.355,
-   "seconds": 1.782,
+   "import_rss_mb": 140.023,
+   "seconds": 1.781,
    "words": 155363,
-   "peak_rss_mb": 213.926
+   "peak_rss_mb": 213.617
   },
   {
    "tool": "markitdown",
    "file": "large.xlsx",
    "bytes": 19903360,
-   "import_seconds": 0.249,
-   "import_rss_mb": 140.047,
-   "seconds": 66.494,
+   "import_seconds": 0.243,
+   "import_rss_mb": 140.879,
+   "seconds": 63.333,
    "words": 5400157,
-   "peak_rss_mb": 1390.773
+   "peak_rss_mb": 1391.82
   },
   {
    "tool": "gofastooxml, one worker",
    "file": "large.docx",
    "bytes": 3857509,
-   "seconds": 0.106,
+   "seconds": 0.104,
    "words": 1497662,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0,
-   "peak_rss_mb": 37.461
+   "peak_rss_mb": 42.871
   },
   {
    "tool": "gofastooxml, one worker",
    "file": "large.pptx",
    "bytes": 3490257,
-   "seconds": 0.055,
+   "seconds": 0.056,
    "words": 148013,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0,
-   "peak_rss_mb": 32.453
+   "peak_rss_mb": 33.297
   },
   {
    "tool": "gofastooxml, one worker",
    "file": "large.xlsx",
    "bytes": 19903360,
-   "seconds": 0.689,
+   "seconds": 0.71,
    "words": 3200021,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0,
-   "peak_rss_mb": 131.613
+   "peak_rss_mb": 139.949
   },
   {
    "tool": "gofastooxml",
    "file": "large.docx",
    "bytes": 3857509,
-   "seconds": 0.108,
+   "seconds": 0.076,
    "words": 1497662,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0,
-   "peak_rss_mb": 35.16
+   "peak_rss_mb": 38.926
   },
   {
    "tool": "gofastooxml",
    "file": "large.pptx",
    "bytes": 3490257,
-   "seconds": 0.018,
+   "seconds": 0.02,
    "words": 148013,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0,
-   "peak_rss_mb": 37.105
+   "peak_rss_mb": 42.559
   },
   {
    "tool": "gofastooxml",
    "file": "large.xlsx",
    "bytes": 19903360,
-   "seconds": 0.294,
+   "seconds": 0.249,
    "words": 3200021,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0,
-   "peak_rss_mb": 187.32
+   "peak_rss_mb": 193.988
   }
  ],
  "corpus": {
@@ -172,14 +172,14 @@
     "XMLSyntaxError": 1
    },
    "megabytes": 10.89,
-   "seconds": 1.198,
-   "mb_per_second": 9.09,
-   "files_per_second": 138.6,
-   "median_ms": 1.38,
-   "p95_ms": 18.56,
-   "max_peak_rss_mb": 237.1,
-   "import_seconds": 0.027,
-   "import_rss_mb": 32.5
+   "seconds": 1.181,
+   "mb_per_second": 9.22,
+   "files_per_second": 140.5,
+   "median_ms": 1.32,
+   "p95_ms": 18.28,
+   "max_peak_rss_mb": 236.8,
+   "import_seconds": 0.026,
+   "import_rss_mb": 33.3
   },
   "docx2txt / docx": {
    "files": 195,
@@ -190,14 +190,14 @@
     "KeyError": 1
    },
    "megabytes": 11.4,
-   "seconds": 1.219,
-   "mb_per_second": 9.36,
-   "files_per_second": 144.4,
-   "median_ms": 0.54,
-   "p95_ms": 19.93,
-   "max_peak_rss_mb": 151.5,
+   "seconds": 1.193,
+   "mb_per_second": 9.56,
+   "files_per_second": 147.6,
+   "median_ms": 0.53,
+   "p95_ms": 19.83,
+   "max_peak_rss_mb": 151.9,
    "import_seconds": 0.012,
-   "import_rss_mb": 32.5
+   "import_rss_mb": 33.3
   },
   "openpyxl / xlsx": {
    "files": 477,
@@ -212,14 +212,14 @@
     "MemoryError": 1
    },
    "megabytes": 62.78,
-   "seconds": 82.897,
+   "seconds": 82.608,
    "mb_per_second": 0.76,
-   "files_per_second": 5.3,
-   "median_ms": 3.33,
-   "p95_ms": 327.19,
-   "max_peak_rss_mb": 1498.4,
-   "import_seconds": 0.118,
-   "import_rss_mb": 44.6
+   "files_per_second": 5.4,
+   "median_ms": 3.39,
+   "p95_ms": 352.08,
+   "max_peak_rss_mb": 1499.0,
+   "import_seconds": 0.113,
+   "import_rss_mb": 44.8
   },
   "openpyxl-readonly / xlsx": {
    "files": 477,
@@ -233,14 +233,14 @@
     "OSError": 1
    },
    "megabytes": 62.89,
-   "seconds": 38.399,
-   "mb_per_second": 1.64,
-   "files_per_second": 11.6,
-   "median_ms": 3.36,
-   "p95_ms": 222.25,
-   "max_peak_rss_mb": 413.5,
-   "import_seconds": 0.121,
-   "import_rss_mb": 44.6
+   "seconds": 37.229,
+   "mb_per_second": 1.69,
+   "files_per_second": 11.9,
+   "median_ms": 3.21,
+   "p95_ms": 222.59,
+   "max_peak_rss_mb": 413.8,
+   "import_seconds": 0.119,
+   "import_rss_mb": 44.8
   },
   "python-pptx / pptx": {
    "files": 116,
@@ -251,12 +251,12 @@
     "BadZipFile": 6
    },
    "megabytes": 24.91,
-   "seconds": 0.693,
-   "mb_per_second": 35.96,
-   "files_per_second": 144.4,
-   "median_ms": 2.71,
-   "p95_ms": 23.8,
-   "max_peak_rss_mb": 157.0,
+   "seconds": 0.688,
+   "mb_per_second": 36.21,
+   "files_per_second": 145.4,
+   "median_ms": 2.74,
+   "p95_ms": 20.64,
+   "max_peak_rss_mb": 156.9,
    "import_seconds": 0.048,
    "import_rss_mb": 35.5
   },
@@ -268,14 +268,14 @@
     "UnsupportedFormatException": 1
    },
    "megabytes": 11.34,
-   "seconds": 34.922,
-   "mb_per_second": 0.32,
-   "files_per_second": 5.0,
-   "median_ms": 30.25,
-   "p95_ms": 431.0,
-   "max_peak_rss_mb": 791.4,
-   "import_seconds": 0.397,
-   "import_rss_mb": 139.8
+   "seconds": 33.439,
+   "mb_per_second": 0.34,
+   "files_per_second": 5.2,
+   "median_ms": 28.66,
+   "p95_ms": 339.55,
+   "max_peak_rss_mb": 791.3,
+   "import_seconds": 0.387,
+   "import_rss_mb": 139.9
   },
   "markitdown / pptx": {
    "files": 116,
@@ -284,14 +284,14 @@
     "FileConversionException": 16
    },
    "megabytes": 24.91,
-   "seconds": 4.078,
-   "mb_per_second": 6.11,
-   "files_per_second": 24.5,
-   "median_ms": 21.34,
-   "p95_ms": 121.73,
-   "max_peak_rss_mb": 256.6,
-   "import_seconds": 0.433,
-   "import_rss_mb": 139.8
+   "seconds": 4.409,
+   "mb_per_second": 5.65,
+   "files_per_second": 22.7,
+   "median_ms": 22.36,
+   "p95_ms": 148.86,
+   "max_peak_rss_mb": 257.2,
+   "import_seconds": 0.422,
+   "import_rss_mb": 140.0
   },
   "markitdown / xlsx": {
    "files": 477,
@@ -300,14 +300,14 @@
     "FileConversionException": 38
    },
    "megabytes": 62.74,
-   "seconds": 333.305,
-   "mb_per_second": 0.19,
-   "files_per_second": 1.3,
-   "median_ms": 24.61,
-   "p95_ms": 1564.46,
-   "max_peak_rss_mb": 5102.9,
-   "import_seconds": 0.358,
-   "import_rss_mb": 139.9
+   "seconds": 317.87,
+   "mb_per_second": 0.2,
+   "files_per_second": 1.4,
+   "median_ms": 26.26,
+   "p95_ms": 1579.48,
+   "max_peak_rss_mb": 5103.2,
+   "import_seconds": 0.352,
+   "import_rss_mb": 140.1
   },
   "gofastooxml / docx": {
    "files": 195,
@@ -316,12 +316,12 @@
     "Refused": 4
    },
    "megabytes": 11.69,
-   "seconds": 0.422,
-   "mb_per_second": 27.73,
-   "files_per_second": 452.9,
-   "median_ms": 1.71,
-   "p95_ms": 3.58,
-   "max_peak_rss_mb": 32.5,
+   "seconds": 0.556,
+   "mb_per_second": 21.02,
+   "files_per_second": 343.3,
+   "median_ms": 2.45,
+   "p95_ms": 4.84,
+   "max_peak_rss_mb": 33.3,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0
   },
@@ -330,12 +330,12 @@
    "ok": 116,
    "errors": {},
    "megabytes": 27.47,
-   "seconds": 0.407,
-   "mb_per_second": 67.48,
-   "files_per_second": 284.9,
-   "median_ms": 2.16,
-   "p95_ms": 9.14,
-   "max_peak_rss_mb": 32.5,
+   "seconds": 0.545,
+   "mb_per_second": 50.4,
+   "files_per_second": 212.8,
+   "median_ms": 3.16,
+   "p95_ms": 11.62,
+   "max_peak_rss_mb": 33.3,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0
   },
@@ -346,12 +346,12 @@
     "Refused": 11
    },
    "megabytes": 65.58,
-   "seconds": 3.717,
-   "mb_per_second": 17.64,
-   "files_per_second": 125.4,
-   "median_ms": 1.64,
-   "p95_ms": 20.35,
-   "max_peak_rss_mb": 298.6,
+   "seconds": 3.902,
+   "mb_per_second": 16.8,
+   "files_per_second": 119.4,
+   "median_ms": 2.45,
+   "p95_ms": 19.5,
+   "max_peak_rss_mb": 274.0,
    "import_seconds": 0.0,
    "import_rss_mb": 0.0
   }
