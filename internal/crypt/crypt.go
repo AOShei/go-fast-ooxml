@@ -537,21 +537,19 @@ func (in *Info) CertificateKey(keys []crypto.Decrypter) (key []byte, subject str
 			}
 			// The scheme does not say how the key is padded for RSA.
 			// PKCS #1 v1.5 is what Office's cryptographic interface
-			// gives by default; OAEP is tried when that padding is not
-			// there. The verifier decides either way.
+			// gives by default; OAEP is tried when that does not give the
+			// key. The verifier decides either way. A key padded with OAEP
+			// reads as PKCS #1 v1.5 padding about once in 256, so padding
+			// that reads is no sign of which one was used.
 			for _, opts := range []crypto.DecrypterOpts{&rsa.PKCS1v15DecryptOptions{}, &rsa.OAEPOptions{Hash: crypto.SHA1}} {
 				if tried == maxDecrypts {
 					return nil, "", fmt.Errorf("%w: %d decryptions tried, the most allowed", ErrNoKey, maxDecrypts)
 				}
 				tried++
 				plain, err := k.Decrypt(rand.Reader, r.keyValue, opts)
-				if err != nil {
-					continue
-				}
-				if len(plain) == in.data.keyBytes && in.certVerified(r, plain) {
+				if err == nil && len(plain) == in.data.keyBytes && in.certVerified(r, plain) {
 					return plain, subject, nil
 				}
-				break // the padding was there: the key is not this file's
 			}
 		}
 	}

@@ -120,6 +120,31 @@ func TestOnlyTheKeyOfACertificateIsTried(t *testing.T) {
 	}
 }
 
+// A key padded with OAEP whose block also reads as PKCS #1 v1.5 padding,
+// as about one in 256 do: the PKCS #1 v1.5 reading gives no key that
+// verifies, and OAEP is tried after it.
+func TestOAEPThatReadsAsPKCS1(t *testing.T) {
+	p := people()
+	for i := range 10000 {
+		info, _ := ooxmltest.EncryptStreams([]byte("x"), "pw", ooxmltest.Encryption{SpinCount: 1, Certificates: []ooxmltest.Recipient{{Cert: p["Bob"].cert, OAEP: true}}})
+		_, rest, _ := strings.Cut(string(info), `<c:encryptedKey encryptedKeyValue="`)
+		value, _, _ := strings.Cut(rest, `"`)
+		encrypted, err := base64.StdEncoding.DecodeString(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rsa.DecryptPKCS1v15(nil, p["Bob"].key, encrypted); err != nil {
+			continue
+		}
+		var n atomic.Int64
+		if _, _, err := parse(t, info).CertificateKey([]crypto.Decrypter{counting{p["Bob"].key, &n}}); err != nil || n.Load() != 2 {
+			t.Errorf("after %d encryptions: %v after %d decryptions", i+1, err, n.Load())
+		}
+		return
+	}
+	t.Fatal("no key padded with OAEP read as PKCS #1 v1.5 in 10,000 encryptions")
+}
+
 // What the description says must be passed over is: a certificate whose
 // verifier does not match the key it holds. A certificate whose key is
 // not the package's, with a verifier made for that key, is not known
