@@ -31,7 +31,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,77 +50,6 @@ var extensions = map[string]bool{
 	".docx": true, ".docm": true, ".dotx": true, ".dotm": true,
 	".xlsx": true, ".xlsm": true, ".xltx": true, ".xltm": true, ".xlsb": true,
 	".pptx": true, ".pptm": true, ".ppsx": true, ".ppsm": true, ".potx": true, ".potm": true,
-}
-
-// displayFlag is --exclude-display: given alone it stands for every
-// reason, and with a value for the reasons named.
-type displayFlag struct{ reasons gofastcore.Display }
-
-func (h *displayFlag) IsBoolFlag() bool { return true }
-func (h *displayFlag) String() string {
-	if h.reasons == 0 {
-		return ""
-	}
-	return h.reasons.String()
-}
-
-func (h *displayFlag) Set(v string) error {
-	switch v {
-	case "true", "all":
-		h.reasons = gofastcore.DisplayAny
-		return nil
-	case "false", "":
-		h.reasons = 0
-		return nil
-	}
-	var reasons gofastcore.Display
-	if err := reasons.UnmarshalText([]byte(strings.ReplaceAll(v, ",", "+"))); err != nil {
-		return err
-	}
-	if !reasons.Valid() || reasons == 0 || reasons&gofastcore.DisplayUnknown != 0 {
-		return fmt.Errorf("unknown reason in %q; the reasons are %s", v, strings.ReplaceAll((gofastcore.DisplayHidden|gofastcore.DisplayNoInk).String(), "+", ", "))
-	}
-	h.reasons = reasons
-	return nil
-}
-
-// storedFlag is -stored: given alone it stands for every kind of stored
-// data, and with a value for the kinds named.
-type storedFlag struct {
-	all   bool
-	kinds []string
-}
-
-func (f *storedFlag) IsBoolFlag() bool { return true }
-func (f *storedFlag) String() string {
-	if f.all {
-		return "all"
-	}
-	return strings.Join(f.kinds, ",")
-}
-
-func (f *storedFlag) Set(v string) error {
-	f.all, f.kinds = false, nil
-	switch v {
-	case "true", "all":
-		f.all = true
-		return nil
-	case "false", "":
-		return nil
-	}
-	for _, kind := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == '+' }) {
-		if !slices.Contains(gofastcore.StoredKindNames, kind) {
-			f.kinds = nil
-			return fmt.Errorf("unknown kind %q; the kinds are %s", kind, strings.Join(gofastcore.StoredKindNames, ", "))
-		}
-		if !slices.Contains(f.kinds, kind) {
-			f.kinds = append(f.kinds, kind)
-		}
-	}
-	if len(f.kinds) == 0 {
-		return fmt.Errorf("no kind in %q; the kinds are %s", v, strings.Join(gofastcore.StoredKindNames, ", "))
-	}
-	return nil
 }
 
 // keysFlag is -key: each use reads the private keys in a file.
@@ -231,17 +159,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		maxText  = flags.Int64("max-text-bytes", 0, "bytes of text a document and the files embedded in it may hold (0: the default, 256 MiB; -1: no limit)")
 		quiet    = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
 		version  = flags.Bool("version", false, "print the version and exit")
-		// The render flags shared by every go-fast command (COMMAND_FLAGS.md).
-		furniture = flags.Bool("furniture", false, "in Markdown and text, include running headers and footers")
-		markers   = flags.Bool("part-markers", false, "in Markdown and text, put a line before each part saying which part it is")
-		children  = flags.Bool("children", true, "in Markdown and text, include embedded documents (attachments, members), each after a line naming it; -children=false leaves them out")
 	)
-	var exclude displayFlag
-	var stored storedFlag
+	// The render flags shared by every go-fast command, defined by core.
+	renderFlags := gofastcore.AddRenderFlags(flags)
 	var keys keysFlag
 	flags.Var(&keys, "key", "file of a private key (RSA; PEM or DER, PKCS #1 or #8) for a file encrypted for its certificate, and for encrypted files embedded in it; may be given more than once")
-	flags.Var(&stored, "stored", "in Markdown and text, include stored data (data the file keeps but shows nowhere): all of it, or with =kinds only those kinds (such as field_code, macro, custom_xml)")
-	flags.Var(&exclude, "exclude-display", "in Markdown and text, leave out what the file declares not displayed: all of it, or with =reasons only those reasons (hidden, no_ink); JSON always has everything")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "usage: gofastooxml [flags] file-or-directory...")
 		fmt.Fprintln(stderr, "Extracts Word, Excel and PowerPoint files. A directory stands for the Office files in it and below it.")
@@ -346,7 +268,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	w := bufio.NewWriter(out)
 	defer w.Flush()
-	render := &gofastcore.RenderOptions{Furniture: *furniture, Stored: stored.all, StoredKinds: stored.kinds, PartMarkers: *markers, ExcludeDisplay: exclude.reasons, Children: *children}
+	render := &gofastcore.RenderOptions{}
+	renderFlags.Apply(render)
 
 	written := 0
 	for _, path := range inputs {

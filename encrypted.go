@@ -70,7 +70,7 @@ func (f *File) tree(ctx context.Context) (_ context.Context, done func()) {
 		sess := f.sess
 		f.mu.Unlock()
 		if sess != nil {
-			decoded.Take(decoded.Left() - sess.pkg.Budget())
+			decoded.Settle(sess.pkg.Budget())
 		}
 		decoded.Close()
 		room.Close()

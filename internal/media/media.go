@@ -120,7 +120,7 @@ func Embedded(ctx context.Context, pkg *opc.Package, opts *gofastcore.Options, r
 		// to that, and what the child used is then taken from what the
 		// package may still read.
 		decoded := gofastcore.DecodeBudgetFrom(ctx)
-		decoded.Take(decoded.Left() - pkg.Budget())
+		decoded.Settle(pkg.Budget())
 		out = append(out, opts.ExtractChild(ctx, name, mime, bytes.NewReader(data), int64(len(data))))
 		if left := decoded.Left(); left < pkg.Budget() {
 			pkg.Restore(max(left, 0))
