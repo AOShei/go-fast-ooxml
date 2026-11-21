@@ -54,6 +54,7 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Nesting of XML elements | 512 | fixed | The part is cut off |
 | A record of a binary workbook (`.xlsb`) | 16 MiB, read as its bytes arrive, not all at once from its stated size | fixed | The part is cut off |
 | A formula of a binary workbook turned back into text | 32 KiB of text, 4,096 operands waiting for their operator | fixed | The formula is not read back, and is counted in `ooxml.unread_content` |
+| What a binary workbook's formulas name outside their sheet | 65,536 links, each with 65,536 sheets and 65,536 names; 65,536 tables of 16,384 columns | fixed | Those past it are not read, and a formula that names one is not read back |
 | Code of a VBA project, decompressed | what is left of the text and decompression budgets | | The module is cut off; what it decompresses to is charged to the decompression budget too |
 | Data after the end of the archive | 1 MiB read, and only what follows within the archive's last 64 KiB is found | fixed | The rest is not read; `input.trailing_data` says how many bytes there are |
 

@@ -42,11 +42,58 @@ const (
 
 	// The books a formula's references may be to, and the sheets of
 	// them that 3-D references index.
-	SupBookSrc  = 355
-	SupSelf     = 357
-	SupSame     = 358
-	ExternSheet = 362
-	SupAddin    = 667
+	SupBookSrc      = 355
+	SupSelf         = 357
+	SupSame         = 358
+	PlaceholderName = 361 // a name used through the link before it: an add-in's function, a sheet's name
+	ExternSheet     = 362
+	SupAddin        = 667
+
+	// A part of a link to another workbook (External Link): the kind of
+	// link, the other workbook's sheets, and its names a formula uses.
+	SupTabs      = 359
+	BeginSupBook = 360
+	SupNameStart = 577
+	SupNameBits  = 586
+
+	// Pivot tables, and the caches they are drawn from.
+	PivotCacheID    = 386 // in the workbook: a cache's part (BrtBeginPivotCacheID)
+	BeginSXView     = 280 // a pivot table: its name
+	BeginSXLocation = 314 // where it is on the sheet
+
+	// A pivot cache's definition: its source, and its fields with the
+	// values records refer to.
+	BeginPivotCacheDef = 179
+	BeginPCDField      = 183
+	EndPCDField        = 184
+	BeginPCDSource     = 185
+	BeginPCDSRange     = 187
+	BeginPCDFAtbl      = 189
+	EndPCDFAtbl        = 190
+	BeginPCDIRun       = 191
+	BeginPCDSCSet      = 217
+	BeginPCDFGroup     = 219
+	EndPCDFGroup       = 220
+	BeginPName         = 255
+
+	// A value of a pivot cache (BrtPCDI*), and the same with more said of
+	// it (BrtPCDIA*); a record of a cache, its values packed, or given by
+	// the value records that follow.
+	PCDIMissing   = 20
+	PCDINumber    = 21
+	PCDIBoolean   = 22
+	PCDIError     = 23
+	PCDIString    = 24
+	PCDIDatetime  = 25
+	PCDIIndex     = 26
+	PCDIAMissing  = 27
+	PCDIANumber   = 28
+	PCDIABoolean  = 29
+	PCDIAError    = 30
+	PCDIAString   = 31
+	PCDIADatetime = 32
+	PCRRecord     = 33
+	PCRRecordDt   = 34
 
 	// Styles.
 	Font            = 43
@@ -92,5 +139,7 @@ const (
 
 	// A table's part.
 	BeginList     = 343
+	EndList       = 344
+	BeginListCol  = 347
 	TableStyleClt = 513
 )

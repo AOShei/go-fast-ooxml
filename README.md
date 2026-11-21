@@ -400,22 +400,46 @@ gives the same document (`TestXlsbAsXlsx`). The source's `format` is
 
 Formulas in this format are compiled: tokens in reverse Polish order,
 functions by number. They are turned back into the text Excel shows:
-cells' formulas (with `Options.Cells`), defined names, drop-down lists and
-the code of macro sheets. A formula that cannot be read back, because it
-refers to another workbook, to a table's columns by name, or calls a
-function this library does not know, is left out and counted in
-`ooxml.unread_content` ("binary formulas not read back"): wrong text would
-be worse than none. Over the binary workbooks of the soak set, every cell
-pyxlsb reads holds the same here (905 cells, `TestXlsbAgainstPyxlsb`), and
-every formula read back is the one LibreOffice writes when it saves the
-workbook as `.xlsx` (324 formulas, `TestXlsbFormulasAgainstLibreOffice`).
+cells' formulas (with `Options.Cells`), defined names, drop-down lists,
+the code of macro sheets and the calculated fields of pivot caches. That
+includes references to a table's columns by name (`Sales[Amount]`,
+`Sales[[#This Row],[Amount]]`, `Sales[#All]`), to other workbooks by the
+number of their link (`[1]Rates!A1`, `'[1]Q 2'!A1`, `[1]!Tax`), the
+functions of add-ins by the name the workbook lists, and the functions and
+commands of Excel 4 macro sheets (`GET.CELL`, `ALERT`), whose names are
+those of the specification's tables. A formula that still cannot be read
+back is left out and counted in `ooxml.unread_content` ("binary formulas
+not read back"): wrong text would be worse than none. That is one through
+a DDE or OLE link, or that names a table, column, sheet or name the
+workbook does not have.
+
+How this is checked:
+
+- Each feature is written as a workbook in both formats, and the two
+  documents are compared whole (`TestXlsbAsXlsx`, `TestXlsbFormulasAsXlsx`,
+  `TestXlsbPivotsAsXlsx`).
+- Over the binary workbooks of the soak set, every cell pyxlsb reads holds
+  the same here (905 cells, `TestXlsbAgainstPyxlsb`).
+- Every formula read back is the one LibreOffice writes when it saves the
+  workbook as `.xlsx` (324 formulas, `TestXlsbFormulasAgainstLibreOffice`).
+  The exception is one reference to a workbook whose path the file
+  records as missing: `[1]ab!C1` here, `#REF!` in LibreOffice.
+- LibreOffice reads the test workbook's references to other workbooks
+  with the same text, and resolves each reference to a table's columns to
+  the same table, rows and columns, though it writes them as ranges of its
+  own (`TestXlsbFormulasAgainstLibreOfficeToo`).
+- LibreOffice reads neither another workbook's names nor the functions of
+  macro sheets, so those two are checked against the specification only.
+
+The pivot tables of the three soak-set workbooks that have them have the
+same names and places as in LibreOffice's `.xlsx`, except one that
+LibreOffice lays out again. Their calculated fields have the same
+formulas, except that LibreOffice quotes every field's name.
 
 **Not read:** dialog sheets (counted in `ooxml.unread_content`), and the
 formulas of a pivot table's calculated items. Macro sheets and VBA
 projects are reported as `input.active_content`, and their code is read
-as text, never run. In a binary workbook, the definitions of pivot tables
-and their caches: a pivot table's cells are read as cells, without the
-pivot table's name and role.
+as text, never run.
 
 ## PowerPoint presentations
 

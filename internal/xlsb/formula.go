@@ -14,24 +14,68 @@ import (
 // file holds it, without the "=".
 
 // Book is what a formula refers to outside itself: the workbook's defined
-// names, its sheets, and the table of sheet references that 3-D
-// references index.
+// names, its sheets, the table of sheet references that 3-D references
+// index, and its tables.
 type Book struct {
 	Names  []string // in the workbook's order; a formula numbers them from 1
 	Sheets []string
 	Links  []Link
 	XTI    []XTI
+
+	// Tables gives the workbook's tables by their number (idList). It is
+	// called the first time a formula names a table's columns, from any
+	// goroutine, and may be nil.
+	Tables func() map[uint32]Table
+	// Fields are the names of a pivot cache's fields that the formula of
+	// one of its calculated fields refers to, in the order it numbers
+	// them.
+	Fields []string
 }
 
-// Link is one entry of the workbook's list of linked books (SupBook).
-type Link byte
+// Link is one entry of the workbook's list of supporting links (SupBook):
+// what the 3-D references and the names a formula takes through the links
+// are to.
+type Link struct {
+	Kind LinkKind
+	// Book is the number a formula's text gives another workbook, as in
+	// [1]Sheet1!A1: the link's place among the workbook's links to other
+	// files, from 1.
+	Book int
+	// Sheets are the sheets of another workbook.
+	Sheets []string
+	// Names are the defined names of another workbook; or, for an add-in,
+	// the functions of it that formulas call; or, for the sheet the
+	// formula is on, the names it uses (BrtPlaceholderName). A formula
+	// numbers them from 1.
+	Names []ExternName
+}
 
-// The kinds of linked book.
+// LinkKind is the kind of a supporting link.
+type LinkKind byte
+
+// The kinds of supporting link.
 const (
-	LinkOther Link = iota // another file, an add-in or a DDE link: not read
-	LinkSelf              // this workbook
-	LinkSame              // the sheet the formula is on
+	LinkOther LinkKind = iota // a DDE or OLE link, or one whose part cannot be read: not read
+	LinkSelf                  // this workbook
+	LinkSame                  // the sheet the formula is on
+	LinkBook                  // another workbook
+	LinkAddin                 // the functions of add-ins
 )
+
+// ExternName is a name a formula takes through a link.
+type ExternName struct {
+	Name string
+	// Sheet is the sheet of another workbook the name is local to, from 1
+	// in the link's Sheets; 0 for a name of the whole workbook.
+	Sheet int32
+}
+
+// Table is a table of the workbook (a list object): its name as formulas
+// write it, and the names of its columns in order.
+type Table struct {
+	Name    string
+	Columns []string
+}
 
 // XTI is a reference to a range of sheets of a linked book.
 type XTI struct {
@@ -66,9 +110,9 @@ func ExpOf(rgce, extra []byte) (Exp, bool) {
 }
 
 // Formula returns the text of a formula, and false if it holds anything
-// this package cannot read back: a reference to another file, a table's
-// column by name, or a function it does not know. Wrong text would be
-// worse than none.
+// this package cannot read back: a reference through a DDE or OLE link, a
+// table or name the workbook does not have, a what-if table, or a
+// function it does not know. Wrong text would be worse than none.
 func Formula(rgce, extra []byte, book *Book, at Place) (string, bool) {
 	p := parser{b: rgce, extra: extra, book: book, at: at}
 	return p.run()
@@ -213,6 +257,24 @@ func (p *parser) base(t byte) {
 		n := int(p.u16())
 		s := string(AppendUTF16(nil, p.take(2*n)))
 		p.push(`"` + strings.ReplaceAll(s, `"`, `""`) + `"`)
+	case t == 0x18: // a token whose next byte says what it is
+		switch p.u8() {
+		case 0x19:
+			p.list()
+		case 0x1D: // a field of a pivot cache, in a calculated field's formula
+			i := p.u32()
+			if uint64(i) >= uint64(len(p.book.Fields)) || p.book.Fields[i] == "" {
+				p.bad = true
+				return
+			}
+			name := p.book.Fields[i]
+			if quoted(name) {
+				name = "'" + strings.ReplaceAll(name, "'", "''") + "'"
+			}
+			p.push(name)
+		default:
+			p.bad = true
+		}
 	case t == 0x19:
 		p.attr()
 	case t == 0x1C:
@@ -294,16 +356,17 @@ func (p *parser) classified(t byte) {
 			p.push(space + args[0] + open + "(" + strings.Join(args[1:], ",") + close + ")")
 			return
 		}
-		table := functions
+		name := ""
 		if id&0x8000 != 0 {
-			table = commands
+			name = commands[id&0x7FFF]
+		} else {
+			name = functions[id].name
 		}
-		f, ok := table[id&0x7FFF]
-		if !ok {
+		if name == "" {
 			p.bad = true
 			return
 		}
-		p.call(f.name, n)
+		p.call(name, n)
 	case 0x03: // a defined name
 		p.push(p.name(int64(p.u32())))
 	case 0x04:
@@ -333,15 +396,31 @@ func (p *parser) classified(t byte) {
 		r0, r1, c0, c1 := p.area()
 		p.push(p.rangeText(r0, r1, c0, c1, true))
 	case 0x19: // a name of another book, or of this one through its links
-		ixti := int(p.u16())
+		_, l := p.link(int(p.u16()))
 		i := int64(p.u32())
-		if ixti < len(p.book.XTI) {
-			if l := p.book.XTI[ixti].Link; l >= 0 && int(l) < len(p.book.Links) && p.book.Links[l] == LinkSelf {
-				p.push(p.name(i))
-				return
-			}
+		if l == nil {
+			return
 		}
-		p.bad = true
+		if l.Kind == LinkSelf {
+			p.push(p.name(i))
+			return
+		}
+		if l.Kind == LinkOther || i < 1 || i > int64(len(l.Names)) || l.Names[i-1].Name == "" {
+			p.bad = true
+			return
+		}
+		n := l.Names[i-1]
+		switch {
+		case l.Kind != LinkBook:
+			// A name the sheet uses, or an add-in's function: as it is.
+			p.push(n.Name)
+		case n.Sheet == 0:
+			p.push(bookPrefix(l, nil) + "!" + n.Name)
+		case n.Sheet > 0 && int(n.Sheet) <= len(l.Sheets):
+			p.push(bookPrefix(l, l.Sheets[n.Sheet-1:n.Sheet]) + "!" + n.Name)
+		default:
+			p.bad = true
+		}
 	case 0x1A:
 		sheets := p.sheets()
 		row, col := p.loc()
@@ -490,36 +569,81 @@ func appendRow(b []byte, r ref) []byte {
 // sheets reads the sheets a 3-D reference is to, written as its prefix:
 // "Sheet1!", "'My sheet'!", "Sheet1:Sheet3!".
 func (p *parser) sheets() string {
-	i := int(p.u16())
+	x, l := p.link(int(p.u16()))
+	if l == nil {
+		return ""
+	}
+	switch l.Kind {
+	case LinkSame:
+		return ""
+	case LinkSelf:
+		n := int32(len(p.book.Sheets))
+		if x.First < 0 || x.First >= n || x.Last < 0 || x.Last >= n {
+			return "#REF!" // a sheet that has been deleted
+		}
+		return quote("", sheetSpan(p.book.Sheets, x)) + "!"
+	case LinkBook:
+		// Another workbook's sheets, by the number of the link: [1]Data!,
+		// '[1]My sheet'!, [1]Jan:Mar!.
+		n := int32(len(l.Sheets))
+		if x.First < 0 || x.First >= n || x.Last < x.First || x.Last >= n {
+			p.bad = true // a sheet it cannot name
+			return ""
+		}
+		return bookPrefix(l, sheetSpan(l.Sheets, x)) + "!"
+	}
+	p.bad = true
+	return ""
+}
+
+// sheetSpan is the sheets an entry of the table of sheet references is
+// to: one, or the first and the last of a range of them.
+func sheetSpan(sheets []string, x XTI) []string {
+	if x.Last != x.First {
+		return []string{sheets[x.First], sheets[x.Last]}
+	}
+	return []string{sheets[x.First]}
+}
+
+// quote writes the names of sheets after a prefix, joined by a colon, in
+// quotes if any of them needs them: Data, 'My sheet', Jan:Mar,
+// 'Jan:My sheet'.
+func quote(prefix string, names []string) string {
+	q := false
+	for _, n := range names {
+		q = q || quoted(n)
+	}
+	s := prefix + strings.Join(names, ":")
+	if q {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	return s
+}
+
+// link reads the reference to the table of sheet references that a 3-D
+// reference or a name through the links starts with: the entry, and the
+// link it is through. The link is nil if there is none.
+func (p *parser) link(i int) (XTI, *Link) {
 	if i >= len(p.book.XTI) {
 		p.bad = true
-		return ""
+		return XTI{}, nil
 	}
 	x := p.book.XTI[i]
 	if x.Link < 0 || int(x.Link) >= len(p.book.Links) {
 		p.bad = true
-		return ""
+		return XTI{}, nil
 	}
-	switch p.book.Links[x.Link] {
-	case LinkSame:
-		return ""
-	case LinkSelf:
-	default:
-		p.bad = true // another file's sheets
-		return ""
+	return x, &p.book.Links[x.Link]
+}
+
+// bookPrefix writes another workbook's number before the name of one of
+// its sheets, or alone: [1]Data, '[1]My sheet', [1].
+func bookPrefix(l *Link, sheets []string) string {
+	s := "[" + strconv.Itoa(l.Book) + "]"
+	if len(sheets) == 0 {
+		return s
 	}
-	n := int32(len(p.book.Sheets))
-	if x.First < 0 || x.First >= n || x.Last < 0 || x.Last >= n {
-		return "#REF!" // a sheet that has been deleted
-	}
-	name := p.book.Sheets[x.First]
-	if x.Last != x.First {
-		name += ":" + p.book.Sheets[x.Last]
-	}
-	if quoted(name) {
-		name = "'" + strings.ReplaceAll(name, "'", "''") + "'"
-	}
-	return name + "!"
+	return quote(s, sheets)
 }
 
 // quoted reports whether a sheet's name needs quotes in a formula: one
@@ -564,6 +688,167 @@ func quoted(name string) bool {
 		rest = strings.TrimLeft(rest[1:], "0123456789")
 	}
 	return rest == "" && upper != ""
+}
+
+// The rows a reference to a table is to (PtgRowType), as its text names
+// them; the data rows alone are named by naming none.
+var tableRows = map[uint16][]string{
+	0x00: nil,
+	0x01: {"#All"},
+	0x02: {"#Headers"},
+	0x04: {"#Data"},
+	0x06: {"#Headers", "#Data"},
+	0x08: {"#Totals"},
+	0x0C: {"#Data", "#Totals"},
+	0x10: {"#This Row"},
+}
+
+// list reads a reference to a table's rows and columns by their names
+// (PtgList): Sales[Amount], Sales[[#Headers],[Amount]], Sales[#All],
+// Sales[[Q1]:[Q4]]. A table of another workbook is named in the extra
+// bytes, with its columns: [1]!Sales[Amount].
+func (p *parser) list() {
+	ixti := int(p.u16())
+	flags := p.u16()
+	id := p.u32()
+	c0, c1 := int(p.u16()), int(p.u16())
+	if p.bad {
+		return
+	}
+	if flags&0x1000 != 0 { // invalid: the table or its columns are gone
+		p.push("#REF!")
+		return
+	}
+	var name string
+	var cols []string
+	rowType := flags >> 2 & 0x1F
+	if flags&0x2000 != 0 {
+		// Another workbook's table (PtgExtraList).
+		_, l := p.link(ixti)
+		has := p.takeExtra(1)[0]
+		rowType = binary.LittleEndian.Uint16(p.takeExtra(2)) & 0x1F
+		name = p.extraString()
+		if has != 0 {
+			p.takeExtra(2)
+			n := int(p.takeExtra(1)[0])
+			if n != 1 && n != 2 {
+				p.bad = true
+				return
+			}
+			for range n {
+				p.takeExtra(3) // whether another follows; reserved
+				cols = append(cols, p.extraString())
+			}
+		}
+		if l == nil || l.Kind != LinkBook || name == "" {
+			p.bad = true
+			return
+		}
+		name = bookPrefix(l, nil) + "!" + name
+	} else {
+		var t Table
+		ok := false
+		if p.book.Tables != nil {
+			t, ok = p.book.Tables()[id]
+		}
+		if !ok || t.Name == "" {
+			p.bad = true
+			return
+		}
+		name = t.Name
+		switch flags & 3 {
+		case 0:
+		case 1:
+			c1 = c0
+			fallthrough
+		case 2:
+			if c0 > c1 || c1 >= len(t.Columns) {
+				p.bad = true
+				return
+			}
+			cols = []string{t.Columns[c0]}
+			if c1 != c0 {
+				cols = append(cols, t.Columns[c1])
+			}
+		default:
+			p.bad = true
+			return
+		}
+	}
+	rows, ok := tableRows[rowType]
+	if !ok || p.bad {
+		p.bad = true
+		return
+	}
+	for _, c := range cols {
+		if c == "" {
+			p.bad = true
+			return
+		}
+	}
+	p.push(name + tableSpec(rows, cols, flags&0x80 != 0, flags&0x100 != 0))
+}
+
+// extraString reads a string of the extra bytes: a 16-bit count of UTF-16
+// code units, then the units.
+func (p *parser) extraString() string {
+	n := int(binary.LittleEndian.Uint16(p.takeExtra(2)))
+	return string(AppendUTF16(nil, p.takeExtra(2*n)))
+}
+
+// tableSpec writes what follows a table's name in a reference to it: the
+// rows, by their special names, and the columns, one or a range. One
+// thing alone needs one pair of brackets, unless it is a column whose name
+// has a character that means something in a formula.
+func tableSpec(rows, cols []string, bracketSpace, commaSpace bool) string {
+	var items []string
+	for _, r := range rows {
+		items = append(items, "["+r+"]")
+	}
+	switch len(cols) {
+	case 1:
+		if len(items) == 0 {
+			c := escapeColumn(cols[0])
+			if strings.ContainsAny(cols[0], "\t\n\r,:.[]#'\"{}$^&*+=->/</@\\!()%?`;~_") {
+				return "[[" + c + "]]"
+			}
+			return "[" + c + "]"
+		}
+		items = append(items, "["+escapeColumn(cols[0])+"]")
+	case 2:
+		items = append(items, "["+escapeColumn(cols[0])+"]:["+escapeColumn(cols[1])+"]")
+	}
+	if len(items) == 0 {
+		return "[]"
+	}
+	if len(items) == 1 && len(rows) == 1 {
+		return items[0]
+	}
+	sep := ","
+	if commaSpace {
+		sep = ", "
+	}
+	inner := strings.Join(items, sep)
+	if bracketSpace {
+		return "[ " + inner + " ]"
+	}
+	return "[" + inner + "]"
+}
+
+// escapeColumn writes a column's name as a reference holds it, with a
+// single quote before each bracket, number sign and single quote.
+func escapeColumn(name string) string {
+	if !strings.ContainsAny(name, "[]#'") {
+		return name
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if r == '[' || r == ']' || r == '#' || r == '\'' {
+			b.WriteByte('\'')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // array reads an array of constants ({1,2;3,4}), whose values are in the

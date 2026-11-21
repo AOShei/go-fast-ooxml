@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
@@ -88,6 +89,7 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 	wb.formulas = fb
 	var names []binName
 	var buf []byte
+	books := 0 // links to other files
 	for r.Next() {
 		f := xlsb.NewFields(r.Data())
 		switch r.ID() {
@@ -127,23 +129,158 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 			rgce, extra := f.Formula()
 			names = append(names, binName{name: name, sheet: sheet, rgce: bytes.Clone(rgce), extra: bytes.Clone(extra)})
 			fb.Names = append(fb.Names, name)
-		case xlsb.SupSelf:
-			fb.Links = append(fb.Links, xlsb.LinkSelf)
-		case xlsb.SupSame:
-			fb.Links = append(fb.Links, xlsb.LinkSame)
-		case xlsb.SupBookSrc, xlsb.SupAddin:
-			fb.Links = append(fb.Links, xlsb.LinkOther)
+		case xlsb.SupSelf, xlsb.SupSame, xlsb.SupAddin, xlsb.SupBookSrc:
+			if len(fb.Links) >= maxLinksOut {
+				continue
+			}
+			l := xlsb.Link{Kind: xlsb.LinkSelf}
+			switch r.ID() {
+			case xlsb.SupSame:
+				l.Kind = xlsb.LinkSame
+			case xlsb.SupAddin:
+				l.Kind = xlsb.LinkAddin
+			case xlsb.SupBookSrc:
+				// Another file, read from its part once the workbook is.
+				books++
+				l = xlsb.Link{Kind: xlsb.LinkOther, Book: books}
+				buf = f.String(buf[:0])
+				if rel, found := byID[string(buf)]; found && !rel.External && ns.IsRel(rel.Type, ns.RelExternalLink) && binary(b.wb.pkg, rel.Target) {
+					b.linkParts = append(b.linkParts, linkPart{index: len(fb.Links), target: rel.Target})
+				}
+			}
+			fb.Links = append(fb.Links, l)
+		case xlsb.PlaceholderName:
+			// A name used through the link before it.
+			if n := len(fb.Links); n > 0 && fb.Links[n-1].Kind != xlsb.LinkOther && len(fb.Links[n-1].Names) < maxExternNames {
+				buf = f.String(buf[:0])
+				fb.Links[n-1].Names = append(fb.Links[n-1].Names, xlsb.ExternName{Name: clean.Name(string(buf))})
+			}
 		case xlsb.ExternSheet:
 			n := f.U32()
 			for i := uint32(0); i < n && f.Left() >= 12 && len(fb.XTI) < 1<<16; i++ {
 				fb.XTI = append(fb.XTI, xlsb.XTI{Link: f.I32(), First: f.I32(), Last: f.I32()})
+			}
+		case xlsb.PivotCacheID:
+			f.U32() // the number pivot tables know it by
+			buf = f.String(buf[:0])
+			if rel, found := byID[string(buf)]; found && !rel.External && ns.IsRel(rel.Type, relPivotCache) && len(b.caches) < maxCaches {
+				b.caches = append(b.caches, pivotCache{target: rel.Target})
 			}
 		}
 	}
 	for _, ref := range b.refs {
 		fb.Sheets = append(fb.Sheets, ref.name)
 	}
+	fb.Tables = sync.OnceValue(b.binaryTables)
 	return names
+}
+
+// Bounds on what a binary workbook's links give formulas: the links, and
+// the sheets and names of each.
+const (
+	maxLinksOut    = 1 << 16
+	maxExternNames = 1 << 16
+)
+
+// linkPart is a link to another file whose part says what it is.
+type linkPart struct {
+	index  int // in the formulas' links
+	target string
+}
+
+// readLink reads the part of a link to another file (External Link) into
+// what formulas take from it: whether it is a workbook, and the sheets and
+// names of one.
+func readLink(r *xlsb.Reader, l *xlsb.Link) {
+	var buf []byte
+	for r.Next() {
+		f := xlsb.NewFields(r.Data())
+		switch r.ID() {
+		case xlsb.BeginSupBook:
+			if f.U16() == 0 && !f.Short {
+				l.Kind = xlsb.LinkBook // not a DDE or OLE link
+			}
+		case xlsb.SupTabs:
+			n := f.U32()
+			for i := uint32(0); i < n && !f.Short && len(l.Sheets) < maxSheets; i++ {
+				buf = f.String(buf[:0])
+				name, _ := clean.String(buf, clean.Prose)
+				l.Sheets = append(l.Sheets, name)
+			}
+		case xlsb.SupNameStart:
+			if len(l.Names) < maxExternNames {
+				buf = f.String(buf[:0])
+				l.Names = append(l.Names, xlsb.ExternName{Name: clean.Name(string(buf))})
+			}
+		case xlsb.SupNameBits:
+			// The sheet the name before is local to (ExternalNameProperties).
+			f.U16()
+			sheet := f.I32()
+			if n := len(l.Names); n > 0 && !f.Short && sheet >= 0 {
+				l.Names[n-1].Sheet = sheet
+			}
+		}
+	}
+}
+
+// maxBookTables bounds the tables a binary workbook's formulas may name.
+const maxBookTables = 1 << 16
+
+// binaryTables reads the tables the sheets of a binary workbook declare,
+// for formulas that name their columns: their numbers, names and columns.
+func (b *Book) binaryTables() map[uint32]xlsb.Table {
+	out := map[uint32]xlsb.Table{}
+	pkg := b.wb.pkg
+	for _, ref := range b.refs {
+		if ref.target == "" || !pkg.Has(ref.target) {
+			continue
+		}
+		rels, _ := pkg.Rels(ref.target)
+		for _, rel := range rels {
+			if rel.External || !ns.IsRel(rel.Type, ns.RelTable) || !binary(pkg, rel.Target) || !pkg.Has(rel.Target) {
+				continue
+			}
+			// A part that cannot be read to its end gives what it has; its
+			// sheet reports it.
+			records(pkg, rel.Target, func(r *xlsb.Reader) {
+				var t xlsb.Table
+				id, in := uint32(0), false
+				var buf []byte
+				for r.Next() && len(out) < maxBookTables {
+					f := xlsb.NewFields(r.Data())
+					switch r.ID() {
+					case xlsb.BeginList:
+						f.Skip(16) // where it is
+						f.U32()    // its kind
+						id = f.U32()
+						f.Skip(40) // its header and total rows, flags, formats, connection
+						buf = f.String(buf[:0])
+						t = xlsb.Table{Name: clean.Name(string(buf))}
+						buf = f.String(buf[:0])
+						if display := clean.Name(string(buf)); display != "" {
+							t.Name = display
+						}
+						in = !f.Short
+					case xlsb.BeginListCol:
+						if in && len(t.Columns) < maxCols {
+							f.Skip(24) // its number, total, formats and query field
+							buf = f.String(buf[:0])
+							name, _ := clean.String(buf, clean.Prose)
+							t.Columns = append(t.Columns, name)
+						}
+					case xlsb.EndList:
+						if in {
+							if _, dup := out[id]; !dup {
+								out[id] = t
+							}
+						}
+						in = false
+					}
+				}
+			})
+		}
+	}
+	return out
 }
 
 // binaryNames reads the formulas of the defined names, as readNames does.

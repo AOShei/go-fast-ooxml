@@ -42,10 +42,14 @@ result: `ooxml.formula_no_value` no longer counts it.
   as `.xlsx` gives, with the same formats, tables, display reasons and
   limits, and a band of rows at a time. Formulas, which this format
   stores compiled, are turned back into the text Excel shows: those of
-  cells, defined names, drop-down lists and macro sheets. One that refers
-  to another workbook or to a table's columns by name, or calls a function
-  not known, is left out and counted in `ooxml.unread_content`. Pivot
-  tables are read as their cells.
+  cells, defined names, drop-down lists, macro sheets and the calculated
+  fields of pivot caches. That includes references to a table's columns
+  by name and to other workbooks, and calls of add-in functions and of
+  the functions and commands of macro sheets. One that cannot be read
+  back (through a DDE or OLE link, or to a table or name the workbook
+  does not have) is left out and counted in `ooxml.unread_content`.
+  Pivot tables have their names and roles, and caches whose source is
+  gone are stored with their records, as in `.xlsx`.
 - **PowerPoint** (`.pptx`, `.pptm`, `.ppsx`, `.ppsm`, `.potx`, `.potm`):
   every slide as a part, with titles, body text with bullets and numbers,
   tables, pictures, speaker's notes, comments, the text and pictures of
