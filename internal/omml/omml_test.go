@@ -35,6 +35,11 @@ func TestLinear(t *testing.T) {
 		{"subscript and exponent", `<m:sSubSup>` + e(r("x")) + `<m:sub>` + r("i") + `</m:sub><m:sup>` + r("10") + `</m:sup></m:sSubSup>`, "x_i^10"},
 		{"two letters as a base", `<m:sSub>` + e(r("ab")) + `<m:sub>` + r("1") + `</m:sub></m:sSub>`, "(ab)_1"},
 		{"fraction", `<m:f><m:num>` + r("a+b") + `</m:num><m:den>` + r("2") + `</m:den></m:f>`, "(a+b)/2"},
+		// What a structure does not have is kept after it: an element of
+		// another name, a second of one it has one of.
+		{"fraction with a part of no such name", `<m:f><m:nu>` + r("0") + `</m:nu></m:f>`, "/ 0"},
+		{"fraction with two numerators", `<m:f><m:num>` + r("a") + `</m:num><m:num>` + r("b") + `</m:num><m:den>` + r("c") + `</m:den></m:f>`, "a/c b"},
+		{"subscript with an exponent", `<m:sSub>` + e(r("x")) + `<m:sub>` + r("i") + `</m:sub><m:sup>` + r("2") + `</m:sup></m:sSub>`, "x_i 2"},
 		{"linear fraction", `<m:f><m:fPr><m:type m:val="lin"/></m:fPr><m:num>` + r("1") + `</m:num><m:den>` + r("n") + `</m:den></m:f>`, "1∕n"},
 		{"binomial", `<m:d><m:e><m:f><m:fPr><m:type m:val="noBar"/></m:fPr><m:num>` + r("n") + `</m:num><m:den>` + r("k") + `</m:den></m:f></m:e></m:d>`, "(n¦k)"},
 		{"square root", `<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/>` + e(r("x+1")) + `</m:rad>`, "√(x+1)"},
