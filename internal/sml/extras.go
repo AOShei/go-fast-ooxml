@@ -94,12 +94,14 @@ const maxPivots = 1 << 10
 func (sh *sheet) pivots(out []declaredTable) []declaredTable {
 	n := 0
 	for _, rel := range sh.list {
-		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) || n >= maxPivots || binary(sh.wb.pkg, rel.Target) {
-			// A pivot table of a binary workbook is not read: its cells
-			// are, as cells.
+		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) || n >= maxPivots {
 			continue
 		}
 		n++
+		if binary(sh.wb.pkg, rel.Target) {
+			out = sh.binPivot(rel.Target, out)
+			continue
+		}
 		sh.load(rel.Target, func(s *xmlscan.Scanner) {
 			t := declaredTable{role: gofastcore.RolePivot}
 			for s.Next() != xmlscan.EOF {

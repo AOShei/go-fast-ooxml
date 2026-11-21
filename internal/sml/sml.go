@@ -73,13 +73,14 @@ type Book struct {
 	refs []sheetRef
 	cfg  Config
 
-	after       int64    // the decompression budget once the shared parts were read
-	budget      bool     // it ran out while they were read
-	damaged     []string // shared parts that could not be read to their end
-	external    int      // links to other workbooks and files
-	removed     int      // control characters removed from shared strings
-	stringsFull bool     // the shared strings were cut off at their limit
-	unreadNames int      // defined names of a binary workbook whose formulas could not be read back
+	after       int64      // the decompression budget once the shared parts were read
+	budget      bool       // it ran out while they were read
+	damaged     []string   // shared parts that could not be read to their end
+	external    int        // links to other workbooks and files
+	removed     int        // control characters removed from shared strings
+	stringsFull bool       // the shared strings were cut off at their limit
+	unreadNames int        // formulas a binary workbook keeps outside its sheets (defined names, calculated fields) not read back
+	linkParts   []linkPart // the parts of a binary workbook's links to other files
 
 	// What the workbook stores and shows on no sheet (stored.go).
 	names       []definedName
@@ -142,7 +143,14 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 	}
 	b.extra = stored.Find(pkg, rels)
 	if binary(pkg, main) {
-		loadBin(main, func(r *xlsb.Reader) { b.binaryNames(b.readBinaryBook(r, byID)) })
+		var names []binName
+		loadBin(main, func(r *xlsb.Reader) { names = b.readBinaryBook(r, byID) })
+		// What formulas take from other workbooks, before the names'
+		// formulas are read.
+		for _, l := range b.linkParts {
+			loadBin(l.target, func(r *xlsb.Reader) { readLink(r, &wb.formulas.Links[l.index]) })
+		}
+		b.binaryNames(names)
 	} else {
 		b.readBook(main, byID, load)
 	}

@@ -36,7 +36,12 @@ func FuzzRecords(f *testing.F) {
 // length, valid UTF-8, or nothing.
 func FuzzFormula(f *testing.F) {
 	book := &Book{Names: []string{"Rate", "_xlnm.Print_Area"}, Sheets: []string{"A", "My sheet"},
-		Links: []Link{LinkSelf, LinkOther, LinkSame}, XTI: []XTI{{0, 0, 1}, {1, 0, 0}, {2, 0, 0}, {0, -1, 7}}}
+		Links: []Link{{Kind: LinkSelf}, {Kind: LinkOther}, {Kind: LinkSame},
+			{Kind: LinkBook, Book: 1, Sheets: []string{"B", "C d"}, Names: []ExternName{{"N", 0}, {"M", 2}, {"L", 5}}},
+			{Kind: LinkAddin, Names: []ExternName{{"F", 0}}}},
+		XTI:    []XTI{{0, 0, 1}, {1, 0, 0}, {2, 0, 0}, {0, -1, 7}, {3, 0, 1}, {3, -2, -2}, {4, -2, -2}, {3, 1, 0}},
+		Tables: func() map[uint32]Table { return map[uint32]Table{1: {"T", []string{"a", "b[", ""}}} },
+		Fields: []string{"x", "y z"}}
 	for _, seed := range [][2][]byte{
 		{{0x1E, 1, 0, 0x1E, 2, 0, 0x03}, nil},
 		{{0x24, 0, 0, 0, 0, 0, 0xC0, 0x42, 1, 4, 0}, nil},
@@ -44,6 +49,10 @@ func FuzzFormula(f *testing.F) {
 		{{0x3B, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0x0F, 0, 0, 0, 0, 0, 0x23, 1, 0, 0, 0, 0x10}, nil},
 		{{0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 0, 'x', 0, 2, 1}},
 		{{0x2C, 0xFF, 0xFF, 0x0F, 0, 0xFF, 0xFF, 0x26, 0, 0, 0, 0, 3, 0}, {1, 0, 0, 0}},
+		{{0x18, 0x19, 0, 0, 9, 0, 1, 0, 0, 0, 1, 0, 1, 0}, nil},
+		{{0x18, 0x19, 4, 0, 1, 0x20, 0, 0, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 1, 0, 'T', 0, 0, 0, 1, 0, 2, 0, 1, 0, 'a', 0}},
+		{{0x3A, 4, 0, 0, 0, 0, 0, 0, 0xC0, 0x39, 5, 0, 2, 0, 0, 0, 0x10}, nil},
+		{{0x39, 6, 0, 1, 0, 0, 0, 0x42, 1, 0xFF, 0, 0x18, 0x1D, 1, 0, 0, 0, 0x03}, nil},
 	} {
 		f.Add(seed[0], seed[1], int32(3), int32(2))
 	}

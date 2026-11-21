@@ -195,6 +195,13 @@ func TestXlsbFormulasAgainstLibreOffice(t *testing.T) {
 					continue
 				}
 				if c.detail.Formula != o.detail.Formula {
+					if strings.HasPrefix(strings.TrimPrefix(c.detail.Formula, "'"), "[") && o.detail.Formula == "#REF!" {
+						// A reference to a workbook whose path the file
+						// says is missing (bug66682.xlsb: [1]ab!C1), which
+						// LibreOffice writes as #REF!.
+						t.Logf("%s %s %v: %q, LibreOffice %q", filepath.Base(path), sheet, at, c.detail.Formula, o.detail.Formula)
+						continue
+					}
 					t.Errorf("%s %s %v: %q, LibreOffice %q", filepath.Base(path), sheet, at, c.detail.Formula, o.detail.Formula)
 				}
 				formulas++

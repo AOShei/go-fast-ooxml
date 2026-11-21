@@ -57,6 +57,14 @@ func (b *Book) readCaches(s *xmlscan.Scanner, byID map[string]opc.Rel) {
 	}
 }
 
+// cacheSource is where a cache says its records come from.
+type cacheSource struct {
+	typ           string // worksheet, external, consolidation or scenario; empty for a worksheet
+	sheet, name   string // a range of a sheet, or a defined name or table
+	external      bool   // in another workbook
+	consolidation []string
+}
+
 // judgeCaches decides, for each cache, whether its source is in the
 // workbook. A source named by a table or a defined name is in it if the
 // workbook has a table or name of that name. It also reads the formulas
@@ -76,81 +84,95 @@ func (b *Book) judgeCaches() {
 		if !b.wb.pkg.Has(c.target) {
 			continue
 		}
-		var s xmlscan.Scanner
-		closer, err := b.wb.pkg.Scan(c.target, &s, scanOptions)
-		if err != nil {
+		var src cacheSource
+		var ok bool
+		if binary(b.wb.pkg, c.target) {
+			src, ok = b.binarySource(c.target)
+		} else {
+			src, ok = b.xmlSource(c.target)
+		}
+		if !ok {
 			continue
 		}
-		typ, sheet, name, external := "", "", "", false
-		consolidation := []string{}
-		for s.Next() != xmlscan.EOF {
-			if s.Kind() != xmlscan.Start {
-				continue
-			}
-			switch {
-			case s.Is(ns.Sheet, "cacheSource"):
-				if v, ok := s.Attr(xmlscan.NoSpace, "type"); ok {
-					typ = string(v)
-				}
-			case s.Is(ns.Sheet, "worksheetSource"):
-				if v, ok := s.Attr(xmlscan.NoSpace, "sheet"); ok {
-					sheet = string(v)
-				}
-				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
-					name = string(v)
-				}
-				_, external = s.Attr(ns.Rel, "id")
-			case s.Is(ns.Sheet, "rangeSet"):
-				if _, ok := s.Attr(ns.Rel, "id"); ok {
-					external = true
-				}
-				if v, ok := s.Attr(xmlscan.NoSpace, "sheet"); ok && len(consolidation) < 256 {
-					consolidation = append(consolidation, string(v))
-				}
-			case s.Is(ns.Sheet, "cacheField"):
-				// A calculated field has a formula; what it holds of
-				// values is not wanted here.
-				if f, ok := s.Attr(xmlscan.NoSpace, "formula"); ok && len(b.calculated) < maxCalculated {
-					formula, _ := clean.String(f, clean.Prose)
-					n, _ := s.Attr(xmlscan.NoSpace, "name")
-					if formula != "" {
-						b.calculated = append(b.calculated, calcField{name: clean.Name(string(n)), formula: strings.TrimPrefix(formula, "=")})
-					}
-				}
-				s.Skip()
-			case s.Is(ns.Sheet, "extLst"), s.Is(ns.Sheet, "cacheHierarchies"), s.Is(ns.Sheet, "kpis"), s.Is(ns.Sheet, "dimensions"):
-				s.Skip()
-			}
-		}
-		closer.Close()
 		switch {
-		case typ == "external":
+		case src.typ == "external":
 			c.gone = "a connection to a source outside the workbook"
-		case typ == "scenario":
+		case src.typ == "scenario":
 			c.gone = "the scenarios of the workbook"
-		case external:
+		case src.external:
 			c.gone = "another workbook"
-		case typ == "consolidation":
-			for _, sh := range consolidation {
+		case src.typ == "consolidation":
+			for _, sh := range src.consolidation {
 				if !sheets[strings.ToLower(sh)] {
 					c.gone = "a sheet the workbook does not have"
 				}
 			}
-		case sheet != "" && !sheets[strings.ToLower(sheet)]:
+		case src.sheet != "" && !sheets[strings.ToLower(src.sheet)]:
 			c.gone = "a sheet the workbook does not have"
-		case sheet == "" && name != "":
+		case src.sheet == "" && src.name != "":
 			// A named range or a table.
-			if names[strings.ToLower(name)] {
+			if names[strings.ToLower(src.name)] {
 				continue
 			}
 			if tables == nil {
 				tables = b.tableNames()
 			}
-			if !tables[strings.ToLower(name)] {
+			if !tables[strings.ToLower(src.name)] {
 				c.gone = "a name the workbook does not have"
 			}
 		}
 	}
+}
+
+// xmlSource reads the source of a cache whose definition is XML, and the
+// formulas of its calculated fields.
+func (b *Book) xmlSource(target string) (src cacheSource, ok bool) {
+	var s xmlscan.Scanner
+	closer, err := b.wb.pkg.Scan(target, &s, scanOptions)
+	if err != nil {
+		return src, false
+	}
+	defer closer.Close()
+	for s.Next() != xmlscan.EOF {
+		if s.Kind() != xmlscan.Start {
+			continue
+		}
+		switch {
+		case s.Is(ns.Sheet, "cacheSource"):
+			if v, ok := s.Attr(xmlscan.NoSpace, "type"); ok {
+				src.typ = string(v)
+			}
+		case s.Is(ns.Sheet, "worksheetSource"):
+			if v, ok := s.Attr(xmlscan.NoSpace, "sheet"); ok {
+				src.sheet = string(v)
+			}
+			if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
+				src.name = string(v)
+			}
+			_, src.external = s.Attr(ns.Rel, "id")
+		case s.Is(ns.Sheet, "rangeSet"):
+			if _, ok := s.Attr(ns.Rel, "id"); ok {
+				src.external = true
+			}
+			if v, ok := s.Attr(xmlscan.NoSpace, "sheet"); ok && len(src.consolidation) < 256 {
+				src.consolidation = append(src.consolidation, string(v))
+			}
+		case s.Is(ns.Sheet, "cacheField"):
+			// A calculated field has a formula; what it holds of
+			// values is not wanted here.
+			if f, ok := s.Attr(xmlscan.NoSpace, "formula"); ok && len(b.calculated) < maxCalculated {
+				formula, _ := clean.String(f, clean.Prose)
+				n, _ := s.Attr(xmlscan.NoSpace, "name")
+				if formula != "" {
+					b.calculated = append(b.calculated, calcField{name: clean.Name(string(n)), formula: strings.TrimPrefix(formula, "=")})
+				}
+			}
+			s.Skip()
+		case s.Is(ns.Sheet, "extLst"), s.Is(ns.Sheet, "cacheHierarchies"), s.Is(ns.Sheet, "kpis"), s.Is(ns.Sheet, "dimensions"):
+			s.Skip()
+		}
+	}
+	return src, true
 }
 
 // tableNames returns the names of the tables the workbook's sheets
@@ -165,6 +187,9 @@ func (b *Book) tableNames() map[string]bool {
 		for _, rel := range rels {
 			if rel.External || !ns.IsRel(rel.Type, ns.RelTable) || !b.wb.pkg.Has(rel.Target) {
 				continue
+			}
+			if binary(b.wb.pkg, rel.Target) {
+				continue // read below, with the binary workbook's formulas
 			}
 			var s xmlscan.Scanner
 			closer, err := b.wb.pkg.Scan(rel.Target, &s, scanOptions)
@@ -185,6 +210,11 @@ func (b *Book) tableNames() map[string]bool {
 			closer.Close()
 		}
 	}
+	if b.wb.formulas != nil && b.wb.formulas.Tables != nil {
+		for _, t := range b.wb.formulas.Tables() {
+			out[strings.ToLower(t.Name)] = true
+		}
+	}
 	return out
 }
 
@@ -200,10 +230,21 @@ func (b *Book) goneCaches() int {
 }
 
 // cacheField is a field of a cache: its name, and the values records
-// refer to by number.
+// refer to by number. A binary cache's record packs its values, each as
+// its field says (pack); a field that is not of the source has none.
 type cacheField struct {
-	name  string
-	items []string
+	name   string
+	items  []string
+	pack   byte // 'x' a number of one of items, 'n' a number, 'd' a date, 's' a string
+	source bool // of the source's data, and so in each record (a binary cache)
+}
+
+// anyCacheFields is cacheFields for a definition in XML or in records.
+func (b *Book) anyCacheFields(target string) ([]cacheField, string, error) {
+	if binary(b.wb.pkg, target) {
+		return b.binaryFields(target)
+	}
+	return b.cacheFields(target)
 }
 
 // cacheTable reads a cache whose source is gone: a table with the names
@@ -211,7 +252,7 @@ type cacheField struct {
 // room as it goes. A cache that keeps no records gives the values each
 // field takes, a column each. cut reports that the budget ran out.
 func (b *Book) cacheTable(c pivotCache, room *gofastcore.TextBudget) (block gofastcore.Block, ok, cut, damaged bool) {
-	fields, records, err := b.cacheFields(c.target)
+	fields, records, err := b.anyCacheFields(c.target)
 	if err != nil {
 		damaged = true
 	}
@@ -246,7 +287,11 @@ func (b *Book) cacheTable(c pivotCache, room *gofastcore.TextBudget) (block gofa
 		return true
 	}
 	if records != "" && b.wb.pkg.Has(records) {
-		cut, err = b.cacheRecords(records, fields, add)
+		if binary(b.wb.pkg, records) {
+			cut, err = b.binaryRecords(records, fields, add)
+		} else {
+			cut, err = b.cacheRecords(records, fields, add)
+		}
 		if err != nil {
 			damaged = true
 		}
