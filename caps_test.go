@@ -239,10 +239,10 @@ func TestSheetDrawingPartsCap(t *testing.T) {
 }
 
 // Defined names past 16384 are said on the stored part; a name longer
-// than 512 bytes is cut there, and said.
+// than 1024 bytes is cut there, and said.
 func TestDefinedNamesCap(t *testing.T) {
 	var names strings.Builder
-	fmt.Fprintf(&names, `<definedName name="%s">S!$A$1</definedName>`, strings.Repeat("N", 600))
+	fmt.Fprintf(&names, `<definedName name="%s">S!$A$1</definedName>`, strings.Repeat("N", 1100))
 	for i := range 1 << 14 {
 		fmt.Fprintf(&names, `<definedName name="n%d">S!$A$1</definedName>`, i)
 	}
@@ -251,7 +251,7 @@ func TestDefinedNamesCap(t *testing.T) {
 	doc := capsExtract(t, pkg.Bytes())
 	stored := len(doc.Parts) - 1
 	saysOnce(t, doc, stored, "defined names past 16384 were not read", "(1 name)")
-	saysOnce(t, doc, stored, "longer than 512 bytes were cut there", "(1 name)")
+	saysOnce(t, doc, stored, "longer than 1024 bytes", "were cut there (1 name, 76 bytes left out)")
 }
 
 // A file with nothing past a bound says nothing of one.
@@ -259,4 +259,44 @@ func TestNoCapsOnOrdinaryFiles(t *testing.T) {
 	noLimits(t, capsExtract(t, ooxmltest.Docx(para(run(text("plain")))).Bytes()))
 	noLimits(t, capsExtract(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: xlRow(1, xlNum("A1", "1"))}).Bytes()))
 	noLimits(t, capsExtract(t, ooxmltest.Pptx(ooxmltest.Slide{Shapes: ooxmltest.TextShape(2, 0, 0, 100, 100, ooxmltest.DrawPara("plain"))}).Bytes()))
+}
+
+// A name that reaches the output is kept to 1024 bytes, and a cut is
+// said with how many bytes it left out; a name of 255 characters, the
+// most Excel allows, is whole in any script. A shape's name that reaches
+// no output is not said.
+func TestNamesCutAreSaid(t *testing.T) {
+	variables := func(name string) *gofastcore.Document {
+		pkg := ooxmltest.Docx(para(run(text("body"))))
+		pkg.Rel("word/document.xml", ooxmltest.RelSettings, "settings.xml")
+		pkg.Add("word/settings.xml", ooxmltest.CTSettings, `<w:settings`+ooxmltest.WordNS+`><w:docVars><w:docVar w:name="`+name+`" w:val="x"/></w:docVars></w:settings>`)
+		return capsExtract(t, pkg.Bytes())
+	}
+	long := strings.Repeat("N", 1100)
+	doc := variables(long)
+	saysOnce(t, doc, 1, "names and labels longer than 1024 bytes", "(1 name, 76 bytes left out)")
+	if contains(doc, long) || !contains(doc, long[:1024]) {
+		t.Error("the name is not cut at 1024 bytes")
+	}
+	noLimits(t, variables(strings.Repeat("\u6f22", 255)))
+	shape := strings.Replace(ooxmltest.TextShape(2, 0, 0, 100, 100, ooxmltest.DrawPara("text")), `name="Shape 2"`, `name="`+long+`"`, 1)
+	noLimits(t, capsExtract(t, ooxmltest.Pptx(ooxmltest.Slide{Shapes: shape}).Bytes()))
+}
+
+// Document properties cut by a bound are limit.exceeded on the document,
+// not a code of this library's own.
+func TestPropertyCutsAreLimits(t *testing.T) {
+	var many strings.Builder
+	for i := range 258 {
+		fmt.Fprintf(&many, `<property fmtid="x" pid="%d" name="p%d"><vt:lpwstr>v</vt:lpwstr></property>`, i+2, i)
+	}
+	fmt.Fprintf(&many, `<property fmtid="x" pid="999" name="%s"><vt:lpwstr>v</vt:lpwstr></property>`, strings.Repeat("n", 1032))
+	pkg := ooxmltest.Docx("").WithCore(`<dc:title>` + strings.Repeat("t", 70<<10) + `</dc:title>`).WithCustom(many.String())
+	doc := capsExtract(t, pkg.Bytes())
+	saysOnce(t, doc, -1, "document property values longer than 65536 bytes were cut there", "(1 value, 6144 bytes left out)")
+	saysOnce(t, doc, -1, "custom document properties past 256 were not read", "(3 properties)")
+	saysOnce(t, doc, -1, "custom property names longer than 1024 bytes were cut there", "(1 name, 8 bytes left out)")
+	if warned(doc, gofastooxml.WarnPropertyTruncated) {
+		t.Error("the deprecated code is raised")
+	}
 }

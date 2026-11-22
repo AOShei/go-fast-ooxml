@@ -7,7 +7,7 @@ minor version may change the API.
 
 ## [Unreleased]
 
-To be released as 0.1.1, with `go-fast-core` v0.1.1.
+To be released as 0.1.1. Requires `go-fast-core` v0.1.1.
 
 ### Fixed
 
@@ -31,8 +31,21 @@ To be released as 0.1.1, with `go-fast-core` v0.1.1.
   65,536 entries is refused with `ErrLimitExceeded`, not `ErrMalformed`.
 - Data after the end of the archive past the first 1 MiB is said with
   `limit.exceeded` as well as in `input.trailing_data`.
+- **Names and labels cut at their bound are said** where they reach the
+  output: authors, names of sheets, shapes, tables, pictures, embedded
+  files, VBA modules and defined names, a cell's stored value. A
+  paragraph identifier longer than 32 bytes, which was dropped, is
+  said too. Each cut gives how many bytes it left out. The bound on a
+  name rises from 512 bytes to 1,024, so that a name of 255 characters,
+  the most Excel allows, is whole in any script.
 
 ### Changed
+
+- **Cut document properties are `limit.exceeded`**, severity error, in
+  place of `ooxml.property_truncated` (severity warning): a value cut at
+  64 KiB, custom properties past 256, and a custom property's name, now
+  cut at 1,024 bytes (it was 256). `WarnPropertyTruncated` is kept,
+  deprecated, and no longer raised.
 
 - **`ooxml.part_damaged` is one warning**, with how many parts and the
   first eight, in place of one per part: "2 parts could not be read to

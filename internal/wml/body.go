@@ -507,8 +507,12 @@ func readParaProps(s *xmlscan.Scanner, pp *paraProps, p *parser) {
 func (p *parser) paragraph(emit func(gofastcore.Block)) {
 	s := &p.s
 	var paraID string
-	if v, ok := s.Attr(ns.Word14, "paraId"); ok && len(v) <= 32 {
-		paraID = clean.Label(string(v))
+	if v, ok := s.Attr(ns.Word14, "paraId"); ok {
+		if len(v) <= 32 {
+			paraID = clean.Label(string(v))
+		} else {
+			p.r.lost.Add(warn.CapParaID, 1)
+		}
 	}
 	pp := paraProps{numID: -1, ilvl: -1, outline: -1}
 	if p.r.styles != nil {
@@ -693,7 +697,7 @@ func (p *parser) linkTarget() string {
 		}
 	}
 	if anchor, ok := s.Attr(ns.Word, "anchor"); ok && len(anchor) > 0 {
-		return "#" + clean.Label(string(anchor))
+		return "#" + p.r.lost.Address(string(anchor))
 	}
 	return ""
 }
@@ -979,10 +983,7 @@ func (p *parser) fieldLink(code []byte) string {
 		case strings.HasPrefix(f, `\`):
 			// another switch, with or without a value
 		case strings.HasPrefix(f, `"`):
-			if clean.AddressCut(strings.Trim(f, `"`)) {
-				p.r.lost.Add(warn.CapAddress, 1)
-			}
-			target := clean.Address(strings.Trim(f, `"`))
+			target := p.r.lost.Address(strings.Trim(f, `"`))
 			if target == "" {
 				continue
 			}
@@ -1223,6 +1224,7 @@ func (p *parser) deletion() {
 func (p *parser) drawing(deleted bool) {
 	s := &p.s
 	var alt, target, name string
+	var nameOver int64
 	var external, line bool
 	boxes := len(p.after)
 	// The drawing is declared hidden: wp:docPr hidden, or a VML shape
@@ -1249,7 +1251,7 @@ func (p *parser) drawing(deleted bool) {
 				unseen = true
 			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
-				name = clean.Name(string(v))
+				name, nameOver = clean.Name(string(v)), warn.Over(string(v))
 			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && len(v) > 0 {
 				alt = p.clean(v, clean.Prose)
@@ -1292,7 +1294,7 @@ func (p *parser) drawing(deleted bool) {
 			p.boxes--
 			p.cell = outerCell
 		case s.Is(ns.Chart, "chart"), s.Is(ns.ChartEx, "chart"):
-			p.chart(name)
+			p.chart(name, nameOver)
 		case s.Is(ns.Diagram, "relIds"):
 			p.diagram()
 		}

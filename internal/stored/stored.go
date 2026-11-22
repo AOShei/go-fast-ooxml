@@ -160,7 +160,7 @@ func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
 				continue
 			}
 			if !p.Add(gofastcore.Block{Kind: gofastcore.KindCode, Text: code, Attrs: map[string]string{
-				gofastcore.AttrStored: gofastcore.StoredMacro, gofastcore.AttrName: clean.Name(m.Name), gofastcore.AttrLanguage: "vba"}}) {
+				gofastcore.AttrStored: gofastcore.StoredMacro, gofastcore.AttrName: p.Lost.Name(m.Name), gofastcore.AttrLanguage: "vba"}}) {
 				return
 			}
 		}
@@ -176,12 +176,12 @@ func (s Source) XML(ctx context.Context, pkg *opc.Package, p *Part) {
 		if p.Full() || ctx.Err() != nil {
 			return
 		}
-		text, cut, err := customXML(pkg, name, p.room.Left())
+		text, cut, err := customXML(pkg, name, p.room.Left(), &p.Lost)
 		p.note(name, err)
 		if text == "" {
 			continue
 		}
-		label := clean.Label(path.Base(pkg.Written(name)))
+		label := p.Lost.Label(path.Base(pkg.Written(name)))
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text, Attrs: map[string]string{
 			gofastcore.AttrStored: gofastcore.StoredCustomXML, gofastcore.AttrName: label}}
 		if !p.Add(b) {
@@ -336,7 +336,7 @@ var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 // values are not read: a part that keeps its data in them (the schema of
 // a document library, say) gives little or nothing. At most about room
 // bytes are given; cut says there was more.
-func customXML(pkg *opc.Package, name string, room int64) (text string, cut bool, err error) {
+func customXML(pkg *opc.Package, name string, room int64, lost *warn.Lost) (text string, cut bool, err error) {
 	var s xmlscan.Scanner
 	c, err := pkg.Scan(name, &s, scanOptions)
 	if err != nil {
@@ -357,7 +357,7 @@ func customXML(pkg *opc.Package, name string, room int64) (text string, cut bool
 			if value == "" {
 				continue
 			}
-			local := clean.Name(string(s.Local()))
+			local := lost.Name(string(s.Local()))
 			if int64(sb.Len()+len(local)+len(value)+3) > room {
 				return sb.String(), true, s.Err()
 			}

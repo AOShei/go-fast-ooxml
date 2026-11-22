@@ -551,7 +551,7 @@ func (r *reader) image(name string) *gofastcore.Image {
 	}
 	var img *gofastcore.Image
 	if r.budget {
-		img = &gofastcore.Image{ID: clean.Label(r.pkg.Written(name)), MIME: clean.Label(r.pkg.ContentType(name))}
+		img = &gofastcore.Image{ID: r.pkg.Label(r.pkg.Written(name)), MIME: r.pkg.Label(r.pkg.ContentType(name))}
 	} else {
 		var err error
 		img, err = media.Image(r.pkg, name, r.opts.Images)
@@ -721,5 +721,5 @@ func (b *Body) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	if msg := damaged.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
 		out = append(out, gofastcore.Warning{Code: WarnPartDamaged, Severity: gofastcore.SeverityWarning, Message: msg})
 	}
-	return append(out, warn.Package(b.pkg.CutTargets())...)
+	return append(out, warn.Package(b.pkg)...)
 }

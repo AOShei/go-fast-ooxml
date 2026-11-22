@@ -330,7 +330,7 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the shared strings are cut off at 4 GiB; cells that use later ones are empty")
 	}
 	out = append(out, b.docLost.Warnings()...)
-	out = append(out, warn.Package(b.wb.pkg.CutTargets())...)
+	out = append(out, warn.Package(b.wb.pkg)...)
 	unread := map[string]int{}
 	if b.unreadNames > 0 {
 		unread[unreadFormula] += b.unreadNames

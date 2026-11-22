@@ -39,6 +39,7 @@ func (pg *page) chart(sh *props, g *group) {
 	pg.charts = append(pg.charts, c.Rels...)
 	pg.place(sh, g)
 	at := len(pg.blocks)
+	pg.lost.NameOver(sh.nameOver) // the chart takes the shape's name
 	blocks, taken, cut := c.Blocks(pg.text.Budget, sh.name)
 	pg.text.Taken += taken
 	for i := range blocks {

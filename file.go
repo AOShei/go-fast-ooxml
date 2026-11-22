@@ -221,9 +221,7 @@ func (f *File) open(first bool) (*session, error) {
 		for _, name := range meta.Damaged {
 			warn(gofastcore.SeverityWarning, WarnPropertiesDamaged, clean.Label(name))
 		}
-		if meta.Truncated > 0 {
-			warn(gofastcore.SeverityWarning, WarnPropertyTruncated, fmt.Sprintf("%d values", meta.Truncated))
-		}
+		f.opened = append(f.opened, meta.Warnings()...)
 		if meta.Removed > 0 {
 			warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", meta.Removed))
 		}

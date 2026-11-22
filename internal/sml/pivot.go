@@ -173,7 +173,7 @@ func (b *Book) xmlSource(target string) (src cacheSource, ok bool) {
 				case len(b.calculated) >= maxCalculated:
 					b.lost.Add(warn.CapCalculated, 1)
 				default:
-					b.calculated = append(b.calculated, calcField{name: clean.Name(string(n)), formula: strings.TrimPrefix(formula, "=")})
+					b.calculated = append(b.calculated, calcField{name: b.lost.Name(string(n)), formula: strings.TrimPrefix(formula, "=")})
 				}
 			}
 			s.Skip()
@@ -299,7 +299,7 @@ func (b *Book) cacheTable(c pivotCache, room *gofastcore.TextBudget, lost *warn.
 		if binary(b.wb.pkg, records) {
 			cut, err = b.binaryRecords(records, fields, add)
 		} else {
-			cut, err = b.cacheRecords(records, fields, add)
+			cut, err = b.cacheRecords(records, fields, add, lost)
 		}
 		if err != nil {
 			damaged = true
@@ -379,7 +379,7 @@ func (b *Book) cacheFields(target string, lost *warn.Lost) (fields []cacheField,
 					continue
 				}
 				items++
-				f.items = append(f.items, b.cacheValue(&s))
+				f.items = append(f.items, b.cacheValue(&s, lost))
 			}
 			fields = append(fields, f)
 		case s.Is(ns.Sheet, "extLst"):
@@ -391,7 +391,7 @@ func (b *Book) cacheFields(target string, lost *warn.Lost) (fields []cacheField,
 
 // cacheValue reads a value of a cache (s, n, b, d, e, m), whose Start
 // token is current, as text.
-func (b *Book) cacheValue(s *xmlscan.Scanner) string {
+func (b *Book) cacheValue(s *xmlscan.Scanner, lost *warn.Lost) string {
 	v, _ := s.Attr(xmlscan.NoSpace, "v")
 	switch string(s.Local()) {
 	case "m":
@@ -408,7 +408,7 @@ func (b *Book) cacheValue(s *xmlscan.Scanner) string {
 		}
 	case "d":
 		// ISO 8601 already; a date at midnight is a date.
-		return strings.TrimSuffix(clean.Label(string(v)), "T00:00:00")
+		return strings.TrimSuffix(lost.Label(string(v)), "T00:00:00")
 	}
 	t, _ := clean.String(v, clean.Prose)
 	return t
@@ -416,7 +416,7 @@ func (b *Book) cacheValue(s *xmlscan.Scanner) string {
 
 // cacheRecords reads a records part, handing each record to add as a
 // row, until add reports false. cut reports that it did.
-func (b *Book) cacheRecords(target string, fields []cacheField, add func([]string) bool) (cut bool, err error) {
+func (b *Book) cacheRecords(target string, fields []cacheField, add func([]string) bool, lost *warn.Lost) (cut bool, err error) {
 	var s xmlscan.Scanner
 	closer, err := b.wb.pkg.Scan(target, &s, scanOptions)
 	if err != nil {
@@ -441,7 +441,7 @@ func (b *Book) cacheRecords(target string, fields []cacheField, add func([]strin
 						row[i] = fields[i].items[v]
 					}
 				} else {
-					row[i] = b.cacheValue(&s)
+					row[i] = b.cacheValue(&s, lost)
 				}
 			}
 			i++

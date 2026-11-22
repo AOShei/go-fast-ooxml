@@ -124,10 +124,7 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 			f.U8() // the keyboard shortcut of a macro
 			sheet := f.I32()
 			buf = f.String(buf[:0])
-			if clean.LabelCut(string(buf)) {
-				b.lost.Add(warn.CapName, 1)
-			}
-			name := clean.Name(string(buf))
+			name := b.lost.Name(string(buf))
 			if flags&0x20 != 0 && name != "" {
 				name = "_xlnm." + name // a name Excel gives a meaning to: Print_Area
 			}
@@ -163,7 +160,7 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 					continue
 				}
 				buf = f.String(buf[:0])
-				fb.Links[n-1].Names = append(fb.Links[n-1].Names, xlsb.ExternName{Name: clean.Name(string(buf))})
+				fb.Links[n-1].Names = append(fb.Links[n-1].Names, xlsb.ExternName{Name: b.docLost.Name(string(buf))})
 			}
 		case xlsb.ExternSheet:
 			n := f.U32()
@@ -229,7 +226,7 @@ func readLink(r *xlsb.Reader, l *xlsb.Link, lost *warn.Lost) {
 		case xlsb.SupNameStart:
 			if len(l.Names) < maxExternNames {
 				buf = f.String(buf[:0])
-				l.Names = append(l.Names, xlsb.ExternName{Name: clean.Name(string(buf))})
+				l.Names = append(l.Names, xlsb.ExternName{Name: lost.Name(string(buf))})
 			} else {
 				lost.Add(warn.CapExternalNames, 1)
 			}
@@ -280,9 +277,9 @@ func (b *Book) binaryTables() map[uint32]xlsb.Table {
 						id = f.U32()
 						f.Skip(40) // its header and total rows, flags, formats, connection
 						buf = f.String(buf[:0])
-						t = xlsb.Table{Name: clean.Name(string(buf))}
+						t = xlsb.Table{Name: b.docLost.Name(string(buf))}
 						buf = f.String(buf[:0])
-						if display := clean.Name(string(buf)); display != "" {
+						if display := b.docLost.Name(string(buf)); display != "" {
 							t.Name = display
 						}
 						in = !f.Short
@@ -797,10 +794,7 @@ func (sh *sheet) binLink(f *xlsb.Fields) {
 		href = rel.Target // cleaned when the relationships were read
 	}
 	if href == "" && len(location) > 0 {
-		if clean.AddressCut(string(location)) {
-			sh.lost.Add(warn.CapAddress, 1)
-		}
-		href = "#" + clean.Address(string(location))
+		href = "#" + sh.lost.Address(string(location))
 	}
 	sh.addLink(at, href)
 }
@@ -865,9 +859,9 @@ func (sh *sheet) binDeclared(target string, out []declaredTable) []declaredTable
 				header, totals := f.U32(), f.U32()
 				f.Skip(32)
 				buf = f.String(buf[:0])
-				name := clean.Name(string(buf))
+				name := sh.lost.Name(string(buf))
 				buf = f.String(buf[:0])
-				if display := clean.Name(string(buf)); display != "" {
+				if display := sh.lost.Name(string(buf)); display != "" {
 					name = display
 				}
 				t = declaredTable{at: at, headerRows: int(min(header, 1)), totalRows: int(min(totals, 1)), name: name}
@@ -899,7 +893,7 @@ func (sh *sheet) binComments(target string, add func(row, col int32, raw []byte,
 			switch r.ID() {
 			case xlsb.CommentAuthor:
 				if len(authors) < maxAuthors {
-					authors = append(authors, clean.Name(string(f.String(nil))))
+					authors = append(authors, sh.lost.Name(string(f.String(nil))))
 				} else {
 					sh.lost.Add(warn.CapCommentAuthorsSheet, 1)
 				}

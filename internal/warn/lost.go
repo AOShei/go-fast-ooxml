@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/clean"
 )
 
 // Cap is a fixed bound of this library that can leave content out. Each
@@ -77,6 +78,9 @@ const (
 	CapPropertyName
 	CapAddress
 	CapName
+	CapParaID
+	CapPropertyValue
+	CapCustomProps
 	numCaps
 )
 
@@ -131,24 +135,27 @@ var caps = [numCaps]capInfo{
 	CapBookTables:          {"declared tables of the workbook past " + itoa(MaxBookTables) + " were not read; formulas that use them are not read back", "table", "tables"},
 	CapTableColumns:        {"columns of a declared table past " + itoa(MaxCols) + " were not read; formulas that use them are not read back", "column", "columns"},
 
-	CapChartSeries:  {"chart series past " + itoa(MaxChartSeries) + " were not read", "series", "series"},
-	CapChartPoints:  {"chart points at an index past " + itoa(MaxChartPoints) + " were not read", "point", "points"},
-	CapChartLevels:  {"levels of chart categories past " + itoa(MaxChartLevels) + " were not read", "level", "levels"},
-	CapChartTitle:   {"chart and series titles longer than " + itoa(MaxChartTitle) + " bytes were cut there", "title", "titles"},
-	CapChartValues:  {"sets of values of a chart series past " + itoa(MaxChartValues) + " were not read", "set", "sets"},
-	CapChartTotal:   {"charts holding more than " + itoa(MaxChartTotal) + " points were cut there", "chart", "charts"},
-	CapChartAxes:    {"chart axes or plot types past " + itoa(MaxChartAxes) + " were not read", "axis", "axes"},
-	CapDiagramNodes: {"SmartArt nodes past " + itoa(MaxDiagramNodes) + " were not read", "node", "nodes"},
-	CapDiagramLinks: {"SmartArt connections past " + itoa(MaxDiagramLinks) + " were not read; nodes that only they place are not read", "connection", "connections"},
-	CapDiagramDepth: {"SmartArt nodes deeper than " + itoa(MaxDiagramDepth) + " levels were not read", "node", "nodes"},
-	CapCustomXML:    {"custom XML parts past " + itoa(MaxCustomXML) + " were not read", "part", "parts"},
-	CapProjects:     {"VBA projects past " + itoa(MaxProjects) + " were not read", "project", "projects"},
-	CapProjectSize:  {"VBA projects larger than " + itoa(MaxProjectSize) + " bytes, or with more than 65536 entries in their compound file, were not read", "project", "projects"},
-	CapTrailing:     {"data after the end of the archive past its first " + itoa(MaxTrailing) + " bytes was not read", "byte", "bytes"},
-	CapModules:      {"VBA modules past " + itoa(MaxModules) + " were not read", "module", "modules"},
-	CapPropertyName: {"custom property names longer than " + itoa(MaxPropertyName) + " bytes were cut there", "name", "names"},
-	CapAddress:      {"link addresses longer than " + itoa(MaxAddress) + " bytes were cut there", "address", "addresses"},
-	CapName:         {"names of defined names or document variables longer than " + itoa(MaxName) + " bytes were cut there", "name", "names"},
+	CapChartSeries:   {"chart series past " + itoa(MaxChartSeries) + " were not read", "series", "series"},
+	CapChartPoints:   {"chart points at an index past " + itoa(MaxChartPoints) + " were not read", "point", "points"},
+	CapChartLevels:   {"levels of chart categories past " + itoa(MaxChartLevels) + " were not read", "level", "levels"},
+	CapChartTitle:    {"chart and series titles longer than " + itoa(MaxChartTitle) + " bytes were cut there", "title", "titles"},
+	CapChartValues:   {"sets of values of a chart series past " + itoa(MaxChartValues) + " were not read", "set", "sets"},
+	CapChartTotal:    {"charts holding more than " + itoa(MaxChartTotal) + " points were cut there", "chart", "charts"},
+	CapChartAxes:     {"chart axes or plot types past " + itoa(MaxChartAxes) + " were not read", "axis", "axes"},
+	CapDiagramNodes:  {"SmartArt nodes past " + itoa(MaxDiagramNodes) + " were not read", "node", "nodes"},
+	CapDiagramLinks:  {"SmartArt connections past " + itoa(MaxDiagramLinks) + " were not read; nodes that only they place are not read", "connection", "connections"},
+	CapDiagramDepth:  {"SmartArt nodes deeper than " + itoa(MaxDiagramDepth) + " levels were not read", "node", "nodes"},
+	CapCustomXML:     {"custom XML parts past " + itoa(MaxCustomXML) + " were not read", "part", "parts"},
+	CapProjects:      {"VBA projects past " + itoa(MaxProjects) + " were not read", "project", "projects"},
+	CapProjectSize:   {"VBA projects larger than " + itoa(MaxProjectSize) + " bytes, or with more than 65536 entries in their compound file, were not read", "project", "projects"},
+	CapTrailing:      {"data after the end of the archive past its first " + itoa(MaxTrailing) + " bytes was not read", "byte", "bytes"},
+	CapModules:       {"VBA modules past " + itoa(MaxModules) + " were not read", "module", "modules"},
+	CapPropertyName:  {"custom property names longer than " + itoa(MaxPropertyName) + " bytes were cut there", "name", "names"},
+	CapAddress:       {"link addresses longer than " + itoa(MaxAddress) + " bytes were cut there", "address", "addresses"},
+	CapName:          {"names and labels longer than " + itoa(MaxName) + " bytes (authors, names of sheets, shapes, tables, files and defined names, cell values) were cut there", "name", "names"},
+	CapParaID:        {"paragraph identifiers longer than 32 bytes were not kept", "identifier", "identifiers"},
+	CapPropertyValue: {"document property values longer than " + itoa(MaxPropertyValue) + " bytes were cut there", "value", "values"},
+	CapCustomProps:   {"custom document properties past " + itoa(MaxCustomProps) + " were not read", "property", "properties"},
 }
 
 // The bounds, where the code that keeps to them and the messages above
@@ -205,17 +212,27 @@ const (
 	MaxProjectSize         = 1 << 28
 	MaxTrailing            = 1 << 20
 	MaxModules             = 1 << 12
-	MaxPropertyName        = 256
-	MaxAddress             = 8 << 10
-	MaxName                = 512
+	MaxPropertyName        = clean.MaxLabel
+	MaxPropertyValue       = 64 << 10
+	MaxCustomProps         = 256
+	MaxAddress             = clean.MaxAddress
+	MaxName                = clean.MaxLabel
 )
 
-// Package is the warnings about what fixed bounds left out of what the
-// package itself holds, for the document: link addresses cut, of the
-// cut addresses found in its relationships.
-func Package(cutTargets int64) []gofastcore.Warning {
+// Cuts is what a package counts of the names and addresses it cut.
+type Cuts interface {
+	CutTargets() int64
+	CutNames() (n, bytes int64)
+}
+
+// Package is the warnings about what fixed bounds cut of what the package
+// itself holds, for the document: the addresses its relationships give
+// links, and the names of its parts put in the output.
+func Package(p Cuts) []gofastcore.Warning {
 	var l Lost
-	l.Add(CapAddress, cutTargets)
+	l.Add(CapAddress, p.CutTargets())
+	n, bytes := p.CutNames()
+	l.AddCut(CapName, n, bytes)
 	return l.Warnings()
 }
 
@@ -237,6 +254,7 @@ func (c Cap) Message(n int64) string {
 type Lost struct {
 	mu    sync.Mutex
 	n     [numCaps]int64
+	bytes [numCaps]int64 // of a bound that cuts text: the bytes cut off
 	order []Cap
 }
 
@@ -253,6 +271,21 @@ func (l *Lost) Add(c Cap, n int64) {
 	l.n[c] = satAdd(l.n[c], n)
 }
 
+// AddCut records that the bound c cut n more texts short, leaving bytes
+// bytes out.
+func (l *Lost) AddCut(c Cap, n, bytes int64) {
+	if l == nil || n <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.n[c] == 0 {
+		l.order = append(l.order, c)
+	}
+	l.n[c] = satAdd(l.n[c], n)
+	l.bytes[c] = satAdd(l.bytes[c], max(bytes, 0))
+}
+
 // Merge adds what o counted to l, and leaves o as it is.
 func (l *Lost) Merge(o *Lost) {
 	if l == nil || o == nil || l == o {
@@ -260,10 +293,48 @@ func (l *Lost) Merge(o *Lost) {
 	}
 	o.mu.Lock()
 	order := append([]Cap(nil), o.order...)
-	n := o.n
+	n, bytes := o.n, o.bytes
 	o.mu.Unlock()
 	for _, c := range order {
-		l.Add(c, n[c])
+		l.AddCut(c, n[c], bytes[c])
+	}
+}
+
+// Name is clean.Name, counting a name it cuts.
+func (l *Lost) Name(s string) string {
+	l.cut(s, MaxName, CapName)
+	return clean.Name(s)
+}
+
+// Over returns how many bytes a name is longer than Name keeps; 0 if it
+// is not.
+func Over(s string) int64 {
+	return max(int64(len(strings.TrimSpace(s))-MaxName), 0)
+}
+
+// NameOver counts a name over the bound by over bytes (Over), where it is
+// put in the output.
+func (l *Lost) NameOver(over int64) {
+	if over > 0 {
+		l.AddCut(CapName, 1, over)
+	}
+}
+
+// Label is clean.Label, counting a label it cuts.
+func (l *Lost) Label(s string) string {
+	l.cut(s, MaxName, CapName)
+	return clean.Label(s)
+}
+
+// Address is clean.Address, counting an address it cuts.
+func (l *Lost) Address(s string) string {
+	l.cut(s, MaxAddress, CapAddress)
+	return clean.Address(s)
+}
+
+func (l *Lost) cut(s string, limit int, c Cap) {
+	if n := len(strings.TrimSpace(s)); n > limit {
+		l.AddCut(c, 1, int64(n-limit))
 	}
 }
 
@@ -296,7 +367,11 @@ func (l *Lost) Warnings() []gofastcore.Warning {
 	defer l.mu.Unlock()
 	var out []gofastcore.Warning
 	for _, c := range l.order {
-		out = append(out, gofastcore.Warning{Code: gofastcore.WarnLimitExceeded, Severity: gofastcore.SeverityError, Message: c.Message(l.n[c])})
+		msg := c.Message(l.n[c])
+		if b := l.bytes[c]; b > 0 {
+			msg = strings.TrimSuffix(msg, ")") + ", " + strconv.FormatInt(b, 10) + " bytes left out)"
+		}
+		out = append(out, gofastcore.Warning{Code: gofastcore.WarnLimitExceeded, Severity: gofastcore.SeverityError, Message: msg})
 	}
 	return out
 }
@@ -309,8 +384,8 @@ func (l *Lost) Take() *Lost {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	out.n, out.order = l.n, l.order
-	l.n, l.order = [numCaps]int64{}, nil
+	out.n, out.bytes, out.order = l.n, l.bytes, l.order
+	l.n, l.bytes, l.order = [numCaps]int64{}, [numCaps]int64{}, nil
 	return out
 }
 

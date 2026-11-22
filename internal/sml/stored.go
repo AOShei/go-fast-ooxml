@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
@@ -42,10 +41,7 @@ func (b *Book) readNames(s *xmlscan.Scanner) {
 			continue
 		}
 		v, _ := s.Attr(xmlscan.NoSpace, "name")
-		if clean.LabelCut(string(v)) {
-			b.lost.Add(warn.CapName, 1)
-		}
-		name := clean.Name(string(v))
+		name := b.lost.Name(string(v))
 		local, isLocal := intAttr(s, "localSheetId")
 		b.raw = s.AppendText(b.raw[:0])
 		f := verbatim(b.raw, &b.lost)
@@ -171,7 +167,7 @@ func (b *Book) macroCode(target string, room int64, lost *warn.Lost) (string, bo
 				if sb.Len() > 0 {
 					sb.WriteByte('\n')
 				}
-				sb.WriteString(clean.Label(string(ref)))
+				sb.WriteString(lost.Label(string(ref)))
 				sb.WriteString("\t=")
 				sb.WriteString(strings.ReplaceAll(f, "\n", " "))
 			}

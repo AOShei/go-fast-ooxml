@@ -343,7 +343,7 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	}
 	out = append(out, d.lost.Warnings()...)
 	out = append(out, d.p.lost.Warnings()...)
-	out = append(out, warn.Package(d.p.pkg.CutTargets())...)
+	out = append(out, warn.Package(d.p.pkg)...)
 	if programs > 0 {
 		add(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent,
 			strconv.Itoa(programs)+" actions that start a program or run a macro; none was run")

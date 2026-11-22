@@ -92,7 +92,7 @@ func (b *Book) binarySource(target string) (src cacheSource, ok bool) {
 				if flags&0x100 != 0 && len(calc) < maxCalculated {
 					rgce, extra := f.Formula()
 					if !f.Short {
-						calc = append(calc, binCalc{name: clean.Name(name), rgce: bytes.Clone(rgce), extra: bytes.Clone(extra)})
+						calc = append(calc, binCalc{name: b.lost.Name(name), rgce: bytes.Clone(rgce), extra: bytes.Clone(extra)})
 						cur = &calc[len(calc)-1]
 					}
 				}
@@ -424,7 +424,7 @@ func (sh *sheet) binPivot(target string, out []declaredTable) []declaredTable {
 			switch r.ID() {
 			case xlsb.BeginSXView:
 				f.Skip(32) // flags, the data field's place, versions, format, cache
-				t.name = clean.Name(string(f.String(nil)))
+				t.name = sh.lost.Name(string(f.String(nil)))
 			case xlsb.BeginSXLocation:
 				at, ok := binRect(&f)
 				if !ok {

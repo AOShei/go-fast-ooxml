@@ -12,7 +12,7 @@ import (
 // token is current): a caption with its title and tables of its data,
 // after the paragraph the drawing is in. name is the name the drawing
 // gives it.
-func (p *parser) chart(name string) {
+func (p *parser) chart(name string, nameOver int64) {
 	s := &p.s
 	id, _ := s.Attr(ns.Rel, "id")
 	rel, found := p.rels[string(id)]
@@ -26,6 +26,7 @@ func (p *parser) chart(name string) {
 		return
 	}
 	p.r.removed += c.Removed
+	p.r.lost.NameOver(nameOver) // the chart takes the drawing's name
 	p.r.charts = append(p.r.charts, c.Rels...)
 	p.r.lost.Merge(&c.Lost)
 	blocks, _, cut := c.Blocks(p.r.text, name)

@@ -240,17 +240,19 @@ type group struct {
 
 // props is what is known of the shape being read.
 type props struct {
-	id      int64 // the number animations refer to it by
-	ph      phRef
-	alt     string
-	name    string // the name the file gives it, which a chart takes
-	hide    bool
-	media   bool // it plays sound or video
-	xfrm    dml.Xfrm
-	font    dml.Color
-	blip    string // a picture: the relationship of its image
-	linked  bool   // the image is outside the file
-	hasBlip bool
+	id   int64 // the number animations refer to it by
+	ph   phRef
+	alt  string
+	name string // the name the file gives it, which a chart takes
+	// nameOver is how many bytes the name was longer than it is kept.
+	nameOver int64
+	hide     bool
+	media    bool // it plays sound or video
+	xfrm     dml.Xfrm
+	font     dml.Color
+	blip     string // a picture: the relationship of its image
+	linked   bool   // the image is outside the file
+	hasBlip  bool
 
 	// Worked out by place.
 	placed  bool
@@ -551,7 +553,7 @@ func (pg *page) nonVisual(sh *props, alt bool) {
 				sh.hide = isTrue(v)
 			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
-				sh.name = clean.Name(string(v))
+				sh.name, sh.nameOver = clean.Name(string(v)), warn.Over(string(v))
 			}
 			if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && alt && len(v) > 0 {
 				var removed int

@@ -174,7 +174,7 @@ func (r *reader) text() string {
 
 // kind adds a type of plot to the chart, once.
 func (c *Chart) kind(k string) {
-	k = strings.ToLower(clean.Label(k))
+	k = strings.ToLower(c.Lost.Label(k))
 	if k == "" {
 		return
 	}

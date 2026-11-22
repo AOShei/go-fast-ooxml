@@ -12,15 +12,16 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // Bounds on what a file can put into Metadata.Extra through its custom
 // properties.
 const (
-	maxCustom     = 256
-	maxValueBytes = 64 << 10
-	maxCustomName = 256
+	maxCustom     = warn.MaxCustomProps
+	maxValueBytes = warn.MaxPropertyValue
+	maxCustomName = warn.MaxPropertyName
 	customPrefix  = "custom."
 
 	conventionCore = "docprops/core.xml"
@@ -36,10 +37,22 @@ type Result struct {
 	// Damaged names property parts that could not be read to the end.
 	// What was read before the damage is kept.
 	Damaged []string
-	// Truncated counts property values cut at the size bound, custom
-	// property names cut at theirs, and custom properties left out
-	// because there were too many.
-	Truncated int
+	// What the bounds left out: values cut at their size bound and the
+	// bytes cut off them, custom property names likewise, and custom
+	// properties past the bound on their number.
+	ValuesCut, ValueBytes int64
+	NamesCut, NameBytes   int64
+	CustomPast            int64
+}
+
+// Warnings returns what the bounds left out as limit.exceeded warnings,
+// one per bound.
+func (r *Result) Warnings() []gofastcore.Warning {
+	var l warn.Lost
+	l.AddCut(warn.CapPropertyValue, r.ValuesCut, r.ValueBytes)
+	l.AddCut(warn.CapPropertyName, r.NamesCut, r.NameBytes)
+	l.Add(warn.CapCustomProps, r.CustomPast)
+	return l.Warnings()
 }
 
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
@@ -103,8 +116,9 @@ func value(s *xmlscan.Scanner, res *Result) string {
 		for n > 0 && !utf8.RuneStart(text[n]) {
 			n-- // do not cut a character in two
 		}
+		res.ValuesCut++
+		res.ValueBytes += int64(len(text) - n)
 		text = text[:n]
-		res.Truncated++
 	}
 	// Property values are text to be read: ligatures are written as
 	// their letters here as everywhere.
@@ -197,8 +211,13 @@ func readCustom(s *xmlscan.Scanner, res *Result) {
 		}
 		raw, _ := s.Attr(xmlscan.NoSpace, "name")
 		if len(raw) > maxCustomName {
-			raw = raw[:maxCustomName]
-			res.Truncated++
+			n := maxCustomName
+			for n > 0 && !utf8.RuneStart(raw[n]) {
+				n-- // do not cut a character in two
+			}
+			res.NamesCut++
+			res.NameBytes += int64(len(raw) - n)
+			raw = raw[:n]
 		}
 		name, removed := clean.String(raw, clean.Trim)
 		res.Removed += removed
@@ -208,7 +227,7 @@ func readCustom(s *xmlscan.Scanner, res *Result) {
 			continue
 		}
 		if n >= maxCustom {
-			res.Truncated++
+			res.CustomPast++
 			continue
 		}
 		n++

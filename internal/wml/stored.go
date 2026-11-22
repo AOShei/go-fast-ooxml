@@ -72,10 +72,7 @@ func (b *Body) readStored(ctx context.Context) *unit.Result {
 				}
 				n++
 				name, _ := s.Attr(ns.Word, "name")
-				if clean.LabelCut(string(name)) {
-					p.Lost.Add(warn.CapName, 1)
-				}
-				label := clean.Name(string(name))
+				label := p.Lost.Name(string(name))
 				val, _ := s.Attr(ns.Word, "val")
 				value, _ := clean.String(val, clean.Prose)
 				text := label + ": " + value

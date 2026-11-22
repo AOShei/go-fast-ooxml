@@ -86,8 +86,34 @@ type Package struct {
 	trailing  []byte               // what follows the end of the archive, up to maxTrailing
 	afterEnd  int64                // how many bytes follow it in all
 
-	cutMu sync.Mutex
-	cut   map[string]int64 // by relationships part: external targets cut to their bound
+	cutMu    sync.Mutex
+	cut      map[string]int64 // by relationships part: external targets cut to their bound
+	cutNames map[string]int64 // names of parts and their types put in the output, cut: the bytes left out
+}
+
+// Label is clean.Label for a name of a part, or its content type, that is
+// put in the output (a picture's identifier, an embedded file's name): a
+// name cut to its bound is counted, once however often it is used.
+func (p *Package) Label(s string) string {
+	if n := len(strings.TrimSpace(s)); n > warn.MaxName {
+		p.cutMu.Lock()
+		if p.cutNames == nil {
+			p.cutNames = map[string]int64{}
+		}
+		p.cutNames[s] = int64(n - warn.MaxName)
+		p.cutMu.Unlock()
+	}
+	return clean.Label(s)
+}
+
+// CutNames returns how many names Label cut, and the bytes it left out.
+func (p *Package) CutNames() (n, bytes int64) {
+	p.cutMu.Lock()
+	defer p.cutMu.Unlock()
+	for _, b := range p.cutNames {
+		n, bytes = n+1, bytes+b
+	}
+	return n, bytes
 }
 
 // cutTargets records that the relationships part name has n external

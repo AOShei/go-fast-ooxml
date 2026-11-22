@@ -7,7 +7,6 @@ import (
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/formula"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -57,10 +56,10 @@ func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
 	var twoD, rowInput bool
 	if string(typ) == "dataTable" {
 		if v, ok := s.Attr(xmlscan.NoSpace, "r1"); ok {
-			r1 = clean.Label(string(v))
+			r1 = sh.lost.Label(string(v))
 		}
 		if v, ok := s.Attr(xmlscan.NoSpace, "r2"); ok {
-			r2 = clean.Label(string(v))
+			r2 = sh.lost.Label(string(v))
 		}
 		v, _ := s.Attr(xmlscan.NoSpace, "dt2D")
 		twoD = isTrue(v)
@@ -136,12 +135,12 @@ func (sh *sheet) keepDetail(c *cell, typ byte, raw []byte, f string, date bool) 
 			d.typ = gofastcore.CellDate
 		}
 		if v := bytes.TrimSpace(raw); string(v) != c.text {
-			d.value = clean.Label(string(v))
+			d.value = sh.lost.Label(string(v))
 		}
 	case 'd':
 		d.typ = gofastcore.CellDate
 		if v := bytes.TrimSpace(raw); string(v) != c.text {
-			d.value = clean.Label(string(v))
+			d.value = sh.lost.Label(string(v))
 		}
 	case 'b':
 		d.typ = gofastcore.CellBool
@@ -220,10 +219,7 @@ func (sh *sheet) readLinks(s *xmlscan.Scanner) {
 			}
 		}
 		if v, ok := s.Attr(xmlscan.NoSpace, "location"); ok && href == "" && len(v) > 0 {
-			if clean.AddressCut(string(v)) {
-				sh.lost.Add(warn.CapAddress, 1)
-			}
-			href = "#" + clean.Address(string(v))
+			href = "#" + sh.lost.Address(string(v))
 		}
 		sh.addLink(at, href)
 	}
