@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xlsb"
 )
 
@@ -85,10 +86,13 @@ func (b *Book) binarySource(target string) (src cacheSource, ok bool) {
 					f.String(nil) // its caption
 				}
 				cur = nil
+				if flags&0x100 != 0 && len(calc) >= maxCalculated {
+					b.lost.Add(warn.CapCalculated, 1)
+				}
 				if flags&0x100 != 0 && len(calc) < maxCalculated {
 					rgce, extra := f.Formula()
 					if !f.Short {
-						calc = append(calc, binCalc{name: clean.Name(name), rgce: bytes.Clone(rgce), extra: bytes.Clone(extra)})
+						calc = append(calc, binCalc{name: b.lost.Name(name), rgce: bytes.Clone(rgce), extra: bytes.Clone(extra)})
 						cur = &calc[len(calc)-1]
 					}
 				}
@@ -124,8 +128,12 @@ func (b *Book) binarySource(target string) (src cacheSource, ok bool) {
 			b.unreadNames++
 			continue
 		}
-		if text = verbatim([]byte(text)); text != "" && len(b.calculated) < maxCalculated {
+		switch text = verbatim([]byte(text), &b.lost); {
+		case text == "":
+		case len(b.calculated) < maxCalculated:
 			b.calculated = append(b.calculated, calcField{name: c.name, formula: text})
+		default:
+			b.lost.Add(warn.CapCalculated, 1)
 		}
 	}
 	return src, true
@@ -142,7 +150,7 @@ type binCalc struct {
 // binaryFields is cacheFields for a definition in records: the fields,
 // with the values each takes and how a record packs its value, and the
 // records part.
-func (b *Book) binaryFields(target string) (fields []cacheField, recordsPart string, err error) {
+func (b *Book) binaryFields(target string, lost *warn.Lost) (fields []cacheField, recordsPart string, err error) {
 	rels, _ := b.wb.pkg.Rels(target)
 	byID := map[string]opc.Rel{}
 	for _, rel := range rels {
@@ -176,6 +184,7 @@ func (b *Book) binaryFields(target string) (fields []cacheField, recordsPart str
 			case xlsb.BeginPCDField:
 				cur = nil
 				if len(fields) >= maxCacheFields {
+					lost.Add(warn.CapPivotFields, 1)
 					continue
 				}
 				flags := f.U16()
@@ -214,12 +223,20 @@ func (b *Book) binaryFields(target string) (fields []cacheField, recordsPart str
 				if cur == nil || !inValues || inGroup {
 					continue
 				}
-				for _, v := range cacheRun(&f, maxSharedItems-items) {
+				run, more := cacheRun(&f, maxSharedItems-items)
+				for _, v := range run {
 					cur.items = append(cur.items, v)
 					items++
 				}
+				lost.Add(warn.CapPivotItems, more)
 			default:
-				if cur == nil || !inValues || inGroup || items >= maxSharedItems {
+				if cur == nil || !inValues || inGroup {
+					continue
+				}
+				if items >= maxSharedItems {
+					if _, ok := cacheItem(id, &f); ok {
+						lost.Add(warn.CapPivotItems, 1)
+					}
 					continue
 				}
 				if v, ok := cacheItem(id, &f); ok {
@@ -257,10 +274,14 @@ func cacheItem(id int, f *xlsb.Fields) (string, bool) {
 }
 
 // cacheRun reads a run of values of one type (BrtBeginPCDIRun), at most n.
-func cacheRun(f *xlsb.Fields, n int) []string {
+func cacheRun(f *xlsb.Fields, n int) (out []string, more int64) {
 	kind := f.U16()
 	count := int64(f.U32())
-	var out []string
+	if count > int64(n) && !f.Short {
+		// The run holds more than the bound leaves room for: as many as
+		// it says, past those read.
+		more = count - int64(n)
+	}
 	for i := int64(0); i < count && i < int64(n) && !f.Short && f.Left() > 0; i++ {
 		switch kind {
 		case 0x01:
@@ -273,13 +294,13 @@ func cacheRun(f *xlsb.Fields, n int) []string {
 		case 0x20:
 			out = append(out, cacheDate(f))
 		default:
-			return out
+			return out, 0
 		}
 	}
 	if f.Short && len(out) > 0 {
 		out = out[:len(out)-1] // the last was cut short
 	}
-	return out
+	return out, more
 }
 
 // cacheNumber writes a number as cacheValue does an XML cache's.
@@ -403,7 +424,7 @@ func (sh *sheet) binPivot(target string, out []declaredTable) []declaredTable {
 			switch r.ID() {
 			case xlsb.BeginSXView:
 				f.Skip(32) // flags, the data field's place, versions, format, cache
-				t.name = clean.Name(string(f.String(nil)))
+				t.name = sh.lost.Name(string(f.String(nil)))
 			case xlsb.BeginSXLocation:
 				at, ok := binRect(&f)
 				if !ok {

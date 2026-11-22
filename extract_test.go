@@ -214,7 +214,7 @@ func TestExtractSurvivesDamagedProperties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(doc.Metadata.Title); n > 64<<10 || n < 60<<10 || !warned(doc, gofastooxml.WarnPropertyTruncated) {
+	if n := len(doc.Metadata.Title); n > 64<<10 || n < 60<<10 || !warned(doc, gofastcore.WarnLimitExceeded) || warned(doc, gofastooxml.WarnPropertyTruncated) {
 		t.Errorf("long title: %d bytes, warnings %+v", n, doc.Warnings)
 	}
 	if len(doc.Metadata.Extra) != 256 {

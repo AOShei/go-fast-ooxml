@@ -32,14 +32,16 @@ import (
 // chart becomes is bounded by the document's text budget; these bound the
 // work done before it is charged.
 const (
-	maxSeries = 1 << 10
-	maxPoints = 1 << 20 // points of one series or one level of categories
-	maxLevels = 16      // levels of categories
-	maxKinds  = 16
-	maxTitle  = 4096 // bytes of a title, of a series' name
+	maxSeries = warn.MaxChartSeries
+	maxPoints = warn.MaxChartPoints // points of one series or one level of categories
+	maxLevels = warn.MaxChartLevels // levels of categories
+	maxKinds  = warn.MaxChartAxes
+	maxAxes   = warn.MaxChartAxes
+	maxValues = warn.MaxChartValues // sets of values of one series
+	maxTitle  = warn.MaxChartTitle  // bytes of a title, of a series' name
 	// The points of all the series of a chart, and the cells of all its
 	// tables: what is held before any of it is charged to the budget.
-	maxTotal = 1 << 21
+	maxTotal = warn.MaxChartTotal
 )
 
 // Chart is what a chart part says.
@@ -58,9 +60,8 @@ type Chart struct {
 	Rels []opc.Rel
 	// Removed counts control characters taken out of its text.
 	Removed int
-	// Cut says the chart holds more points than are read, and its data
-	// is cut off.
-	Cut bool
+	// Lost counts what the reader's fixed bounds left out.
+	Lost warn.Lost
 }
 
 // Table is a table of a chart's data: a header row with the names of the
@@ -120,6 +121,7 @@ type reader struct {
 	formats  map[string]*numfmt.Format
 	total    int  // points held so far
 	cut      bool // points were left out
+	lost     *warn.Lost
 }
 
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
@@ -131,7 +133,7 @@ func Read(pkg *opc.Package, name string) (*Chart, error) {
 	if err == nil {
 		c.Rels = rels
 	}
-	r := &reader{formats: map[string]*numfmt.Format{}}
+	r := &reader{formats: map[string]*numfmt.Format{}, lost: &c.Lost}
 	closer, err := pkg.Scan(name, &r.s, scanOptions)
 	if err != nil {
 		return nil, err
@@ -153,7 +155,9 @@ func Read(pkg *opc.Package, name string) (*Chart, error) {
 	}
 	c.Removed = r.removed
 	c.Tables = tables(list, &r.cut)
-	c.Cut = r.cut
+	if r.cut {
+		c.Lost.Add(warn.CapChartTotal, 1)
+	}
 	if err := r.s.Err(); err != nil {
 		return c, err
 	}
@@ -170,14 +174,18 @@ func (r *reader) text() string {
 
 // kind adds a type of plot to the chart, once.
 func (c *Chart) kind(k string) {
-	k = strings.ToLower(clean.Label(k))
-	if k == "" || len(c.Kinds) >= maxKinds {
+	k = strings.ToLower(c.Lost.Label(k))
+	if k == "" {
 		return
 	}
 	for _, have := range c.Kinds {
 		if have == k {
 			return
 		}
+	}
+	if len(c.Kinds) >= maxKinds {
+		c.Lost.Add(warn.CapChartAxes, 1)
+		return
 	}
 	c.Kinds = append(c.Kinds, k)
 }
@@ -254,7 +262,11 @@ func (r *reader) points(space xmlscan.Space, numeric bool, code string) []string
 					}
 				}
 			}
-			if i < 0 || i >= maxPoints {
+			if i >= maxPoints {
+				r.lost.Add(warn.CapChartPoints, 1)
+				continue
+			}
+			if i < 0 {
 				continue
 			}
 			if numeric {

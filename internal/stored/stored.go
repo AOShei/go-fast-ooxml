@@ -22,10 +22,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/cfb"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/vba"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -41,10 +43,17 @@ type Source struct {
 	vba      []string // VBA projects
 	xml      []string // custom XML data
 	afterEnd bool     // data follows the end of the archive
+	// The VBA projects found by their content type, and the custom XML
+	// parts, past the bounds on each: they are not read.
+	moreVBA, moreXML int
 }
 
-// maxCustomXML bounds the custom XML parts read from one package.
-const maxCustomXML = 1 << 10
+// The bounds on the parts read: custom XML parts, and VBA projects found
+// by their content type.
+const (
+	maxCustomXML = warn.MaxCustomXML
+	maxProjects  = warn.MaxProjects
+)
 
 // Find names the parts from the relationships of the package's main part.
 // A VBA project that the main part does not name but the package declares
@@ -60,7 +69,10 @@ func Find(pkg *opc.Package, rels []opc.Rel) Source {
 		case ns.IsRel(rel.Type, relVBA):
 			src.vba = append(src.vba, rel.Target)
 			seen[rel.Target] = true
-		case ns.IsRel(rel.Type, relCustomXML) && len(src.xml) < maxCustomXML:
+		case ns.IsRel(rel.Type, relCustomXML) && len(src.xml) >= maxCustomXML:
+			seen[rel.Target] = true
+			src.moreXML++
+		case ns.IsRel(rel.Type, relCustomXML):
 			// Most hold no text (an empty list of sources, the schema
 			// of a document library): those make no stored part.
 			seen[rel.Target] = true
@@ -70,9 +82,14 @@ func Find(pkg *opc.Package, rels []opc.Rel) Source {
 		}
 	}
 	for _, name := range pkg.Names() {
-		if !seen[name] && len(src.vba) < 16 && pkg.ContentType(name) == vbaType {
+		if seen[name] || pkg.ContentType(name) != vbaType {
+			continue
+		}
+		seen[name] = true
+		if len(src.vba) < maxProjects {
 			src.vba = append(src.vba, name)
-			seen[name] = true
+		} else {
+			src.moreVBA++
 		}
 	}
 	_, n := pkg.Trailing()
@@ -101,6 +118,7 @@ func (s Source) Empty() bool { return len(s.vba) == 0 && len(s.xml) == 0 && !s.a
 
 // Macros reads the modules of the VBA projects into the part.
 func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
+	p.Lost.Add(warn.CapProjects, int64(s.moreVBA))
 	for _, name := range s.vba {
 		if p.Full() || ctx.Err() != nil {
 			return
@@ -115,6 +133,7 @@ func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
 			p.note(name, err)
 			continue
 		}
+		p.Lost.Add(warn.CapModules, int64(project.Unlisted))
 		if project.Damaged {
 			p.Damaged = append(p.Damaged, name)
 		}
@@ -141,7 +160,7 @@ func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
 				continue
 			}
 			if !p.Add(gofastcore.Block{Kind: gofastcore.KindCode, Text: code, Attrs: map[string]string{
-				gofastcore.AttrStored: gofastcore.StoredMacro, gofastcore.AttrName: clean.Name(m.Name), gofastcore.AttrLanguage: "vba"}}) {
+				gofastcore.AttrStored: gofastcore.StoredMacro, gofastcore.AttrName: p.Lost.Name(m.Name), gofastcore.AttrLanguage: "vba"}}) {
 				return
 			}
 		}
@@ -152,16 +171,17 @@ func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
 // XML reads the custom XML data into the part, a block for each part
 // that holds text.
 func (s Source) XML(ctx context.Context, pkg *opc.Package, p *Part) {
+	p.Lost.Add(warn.CapCustomXML, int64(s.moreXML))
 	for _, name := range s.xml {
 		if p.Full() || ctx.Err() != nil {
 			return
 		}
-		text, cut, err := customXML(pkg, name, p.room.Left())
+		text, cut, err := customXML(pkg, name, p.room.Left(), &p.Lost)
 		p.note(name, err)
 		if text == "" {
 			continue
 		}
-		label := clean.Label(path.Base(pkg.Written(name)))
+		label := p.Lost.Label(path.Base(pkg.Written(name)))
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text, Attrs: map[string]string{
 			gofastcore.AttrStored: gofastcore.StoredCustomXML, gofastcore.AttrName: label}}
 		if !p.Add(b) {
@@ -189,6 +209,7 @@ func (s Source) AfterEnd(pkg *opc.Package, p *Part) {
 	case text != "":
 		if int64(len(data)) < total {
 			msg += fmt.Sprintf("; the first %d are read", len(data))
+			p.Lost.Add(warn.CapTrailing, total-int64(len(data)))
 		}
 		p.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
 			Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredAfterEnd}})
@@ -201,6 +222,9 @@ type Part struct {
 	gofastcore.Part
 	// Damaged names the parts that could not be read to their end.
 	Damaged []string
+
+	// Lost counts what the fixed bounds left out of it.
+	Lost warn.Lost
 
 	room      *gofastcore.TextBudget
 	cut       bool // the limit on text was reached
@@ -253,6 +277,8 @@ func (p *Part) note(name string, err error) {
 	case err == nil:
 	case errors.Is(err, opc.ErrBudget):
 		p.budget = true
+	case errors.Is(err, errTooLarge), errors.Is(err, cfb.ErrTooLarge):
+		p.Lost.Add(warn.CapProjectSize, 1)
 	default:
 		p.Damaged = append(p.Damaged, name)
 	}
@@ -275,15 +301,19 @@ func (p *Part) Finish() (limited bool) {
 		p.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, fmt.Sprintf(
 			"%d characters of macro code in code page %s, which it does not define or which is not known here, are U+FFFD", p.undecoded, strings.Join(pages, ", ")))
 	}
+	capped := p.Lost.Say(&p.Part)
 	if len(p.Blocks) == 0 {
 		p.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")
 	}
 	p.Part.Finish()
-	return p.cut || p.budget
+	return p.cut || p.budget || capped
 }
 
 // maxProject bounds the size of a VBA project read.
-const maxProject = 1 << 28
+const maxProject = warn.MaxProjectSize
+
+// errTooLarge is readPart's error for a project larger than maxProject.
+var errTooLarge = errors.New("the VBA project is larger than " + strconv.Itoa(maxProject>>20) + " MiB")
 
 // readPart reads a whole part into memory.
 func readPart(pkg *opc.Package, name string) ([]byte, error) {
@@ -294,7 +324,7 @@ func readPart(pkg *opc.Package, name string) ([]byte, error) {
 	defer rc.Close()
 	data, err := io.ReadAll(io.LimitReader(rc, maxProject+1))
 	if err == nil && len(data) > maxProject {
-		err = errors.New("the VBA project is larger than " + strconv.Itoa(maxProject>>20) + " MiB")
+		err = errTooLarge
 	}
 	return data, err
 }
@@ -306,7 +336,7 @@ var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 // values are not read: a part that keeps its data in them (the schema of
 // a document library, say) gives little or nothing. At most about room
 // bytes are given; cut says there was more.
-func customXML(pkg *opc.Package, name string, room int64) (text string, cut bool, err error) {
+func customXML(pkg *opc.Package, name string, room int64, lost *warn.Lost) (text string, cut bool, err error) {
 	var s xmlscan.Scanner
 	c, err := pkg.Scan(name, &s, scanOptions)
 	if err != nil {
@@ -327,7 +357,7 @@ func customXML(pkg *opc.Package, name string, room int64) (text string, cut bool
 			if value == "" {
 				continue
 			}
-			local := clean.Name(string(s.Local()))
+			local := lost.Name(string(s.Local()))
 			if int64(sb.Len()+len(local)+len(value)+3) > room {
 				return sb.String(), true, s.Err()
 			}

@@ -40,6 +40,7 @@ var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 type presentation struct {
 	pkg  *opc.Package
 	opts *gofastcore.Options
+	lost warn.Lost // what the fixed bounds left out of what slides share
 
 	width, height float64        // the size of a slide in points; zero if the file does not say
 	paperHeight   float64        // the height of a notes page or handout, in points; zero if not said
@@ -173,7 +174,7 @@ type slideRef struct {
 }
 
 // maxSlides bounds the slides of a presentation that are listed at all.
-const maxSlides = 1 << 16
+const maxSlides = warn.MaxSlides
 
 // Deck is a presentation opened for reading a slide at a time. The list
 // of slides and the presentation's own settings are read when it is
@@ -186,6 +187,7 @@ type Deck struct {
 	external int   // links from the presentation to things outside the file
 	pages    sync.Pool
 	extra    stored.Source // the VBA project and custom XML data
+	lost     warn.Lost     // what the fixed bounds left out of the list of slides
 }
 
 // Open reads the presentation in main. It does not fail: what could not
@@ -227,7 +229,9 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 				}
 			case s.Depth() != 2 && !(s.Depth() == 3 && s.Is(ns.Pres, "sldId")):
 				s.Skip()
-			case s.Is(ns.Pres, "sldId") && len(d.refs) < maxSlides:
+			case s.Is(ns.Pres, "sldId") && len(d.refs) >= maxSlides:
+				d.lost.Add(warn.CapSlides, 1)
+			case s.Is(ns.Pres, "sldId"):
 				var ref slideRef
 				if id, ok := s.Attr(ns.Rel, "id"); ok {
 					if rel, found := byID[string(id)]; found && !rel.External {
@@ -337,6 +341,9 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		external += t.External
 		programs += t.Programs
 	}
+	out = append(out, d.lost.Warnings()...)
+	out = append(out, d.p.lost.Warnings()...)
+	out = append(out, warn.Package(d.p.pkg)...)
 	if programs > 0 {
 		add(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent,
 			strconv.Itoa(programs)+" actions that start a program or run a macro; none was run")
@@ -354,10 +361,12 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		add(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
 	}
 	sort.Strings(damaged)
-	for i, name := range damaged {
-		if i == 0 || name != damaged[i-1] {
-			add(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(d.p.pkg.Written(name)))
-		}
+	var names warn.Names
+	for _, name := range damaged {
+		names.AddOnce(clean.Label(d.p.pkg.Written(name)))
+	}
+	if msg := names.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
+		add(gofastcore.SeverityWarning, warn.PartDamaged, msg)
 	}
 	if d.p.exceeded.Load() && len(tallies) == 0 {
 		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached before any slide was read")

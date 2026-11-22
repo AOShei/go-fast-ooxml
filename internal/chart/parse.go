@@ -5,6 +5,7 @@ import (
 
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -48,6 +49,7 @@ func (r *reader) classic(c *Chart) []series {
 			if len(list) < maxSeries {
 				list = append(list, r.series(false))
 			} else {
+				r.lost.Add(warn.CapChartSeries, 1)
 				s.Skip()
 			}
 		case s.Space() == ns.Chart2012 && strings.HasPrefix(string(s.Local()), "filtered") && strings.HasSuffix(string(s.Local()), "Series"):
@@ -55,14 +57,20 @@ func (r *reader) classic(c *Chart) []series {
 			// extension: c15:filteredBarSeries/c15:ser.
 			fd := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= fd {
-				if s.Kind() == xmlscan.Start && s.Is(ns.Chart2012, "ser") && len(list) < maxSeries {
-					list = append(list, r.series(true))
+				if s.Kind() == xmlscan.Start && s.Is(ns.Chart2012, "ser") {
+					if len(list) < maxSeries {
+						list = append(list, r.series(true))
+					} else {
+						r.lost.Add(warn.CapChartSeries, 1)
+						s.Skip()
+					}
 				}
 			}
 		case s.Is(ns.Chart, "catAx"), s.Is(ns.Chart, "valAx"), s.Is(ns.Chart, "dateAx"), s.Is(ns.Chart, "serAx"):
-			if len(axes) < 16 {
+			if len(axes) < maxAxes {
 				axes = append(axes, r.axis())
 			} else {
+				r.lost.Add(warn.CapChartAxes, 1)
 				s.Skip()
 			}
 		case s.Is(ns.Chart, "txPr"), s.Is(ns.Chart, "spPr"), s.Is(ns.Chart, "printSettings"), s.Is(ns.Chart, "userShapes"), s.Is(ns.Chart, "externalData"):
@@ -122,6 +130,12 @@ func (r *reader) title(space xmlscan.Space) string {
 	s := &r.s
 	var b strings.Builder
 	paras := 0
+	cut := false
+	defer func() {
+		if cut {
+			r.lost.Add(warn.CapChartTitle, 1)
+		}
+	}()
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
 		if s.Kind() != xmlscan.Start {
@@ -140,9 +154,7 @@ func (r *reader) title(space xmlscan.Space) string {
 					switch {
 					case s.Is(ns.Draw, "t"):
 						r.buf = s.AppendText(r.buf[:0])
-						if b.Len() < maxTitle {
-							b.Write(r.buf)
-						}
+						cut = r.titlePiece(&b, r.buf) || cut
 					case s.Is(ns.Draw, "br"):
 						b.WriteByte('\n')
 					}
@@ -156,9 +168,7 @@ func (r *reader) title(space xmlscan.Space) string {
 			}
 			paras++
 			r.buf = s.AppendText(r.buf[:0])
-			if b.Len() < maxTitle {
-				b.Write(r.buf)
-			}
+			cut = r.titlePiece(&b, r.buf) || cut
 		case s.Is(space, "txPr"), s.Is(space, "spPr"), s.Is(space, "f"):
 			s.Skip()
 		}
@@ -166,6 +176,19 @@ func (r *reader) title(space xmlscan.Space) string {
 	t, n := clean.String([]byte(b.String()), clean.Prose)
 	r.removed += n
 	return t
+}
+
+// titlePiece adds a piece of a title to b, unless b already holds
+// maxTitle bytes, and reports whether it was left out.
+func (r *reader) titlePiece(b *strings.Builder, piece []byte) bool {
+	if len(piece) == 0 {
+		return false
+	}
+	if b.Len() >= maxTitle {
+		return true
+	}
+	b.Write(piece)
+	return false
 }
 
 // axis reads an axis (c:catAx, c:valAx, c:dateAx, c:serAx), whose Start
@@ -254,6 +277,7 @@ func (r *reader) dim() dim {
 					if len(d.levels) < maxLevels {
 						d.levels = append(d.levels, r.points(ns.Chart, false, ""))
 					} else {
+						r.lost.Add(warn.CapChartLevels, 1)
 						s.Skip()
 					}
 				}
@@ -300,23 +324,33 @@ func (r *reader) newer(c *Chart) []series {
 				var levels [][]string
 				ld := s.Depth()
 				for s.Next() != xmlscan.EOF && s.Depth() >= ld {
-					if s.Kind() == xmlscan.Start && s.Is(ns.ChartEx, "lvl") && len(levels) < maxLevels {
-						levels = append(levels, r.points(ns.ChartEx, numeric, ""))
+					if s.Kind() == xmlscan.Start && s.Is(ns.ChartEx, "lvl") {
+						if len(levels) < maxLevels {
+							levels = append(levels, r.points(ns.ChartEx, numeric, ""))
+						} else {
+							r.lost.Add(warn.CapChartLevels, 1)
+							s.Skip()
+						}
 					}
 				}
 				if string(typ) == "cat" && !numeric {
 					d.cats = dim{levels: levels}
-				} else if len(d.vals) < 8 {
+				} else if len(d.vals) < maxValues {
 					d.vals = append(d.vals, dim{levels: levels})
+				} else {
+					r.lost.Add(warn.CapChartValues, 1)
 				}
 			}
 			if len(byID) < maxSeries {
 				byID[id] = d
+			} else {
+				r.lost.Add(warn.CapChartSeries, 1)
 			}
 		case s.Is(ns.ChartEx, "title") && s.Depth() == depth+2:
 			c.Title = r.title(ns.ChartEx)
 		case s.Is(ns.ChartEx, "series"):
 			if len(list) >= maxSeries {
+				r.lost.Add(warn.CapChartSeries, 1)
 				s.Skip()
 				continue
 			}
@@ -371,8 +405,10 @@ func (r *reader) newer(c *Chart) []series {
 					s.Skip()
 				}
 			}
-			if len(axes) < 16 {
+			if len(axes) < maxAxes {
 				axes = append(axes, a)
+			} else {
+				r.lost.Add(warn.CapChartAxes, 1)
 			}
 		case s.Is(ns.ChartEx, "txPr"), s.Is(ns.ChartEx, "spPr"), s.Is(ns.ChartEx, "externalData"):
 			s.Skip()

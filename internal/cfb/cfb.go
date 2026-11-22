@@ -30,6 +30,8 @@ var (
 	ErrDamaged = errors.New("cfb: damaged compound file")
 	// ErrNotFound: no stream or storage of that name.
 	ErrNotFound = errors.New("cfb: not found")
+	// ErrTooLarge: the file has more directory entries than are read.
+	ErrTooLarge = errors.New("cfb: more directory entries than are read")
 )
 
 var signature = []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
@@ -167,7 +169,7 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 		}
 		for at := int64(0); at+128 <= sectorSize; at += 128 {
 			if len(f.entries) >= maxEntries {
-				return nil, fmt.Errorf("%w: more than %d directory entries", ErrDamaged, maxEntries)
+				return nil, fmt.Errorf("%w: more than %d", ErrTooLarge, maxEntries)
 			}
 			raw := buf[at : at+128]
 			e := entry{kind: raw[66], left: le.Uint32(raw[68:]), right: le.Uint32(raw[72:]), child: le.Uint32(raw[76:]),

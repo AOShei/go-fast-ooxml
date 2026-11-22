@@ -63,7 +63,7 @@ type sheetRef struct {
 }
 
 // maxSheets bounds the sheets of a workbook that are listed at all.
-const maxSheets = 1 << 16
+const maxSheets = warn.MaxSheets
 
 // Book is a workbook opened for reading a sheet at a time. What the sheets
 // share (the list of them, the styles, the shared strings, the theme) is
@@ -90,6 +90,11 @@ type Book struct {
 	calculated  []calcField
 	extra       stored.Source // the VBA project and custom XML data
 	raw         []byte
+
+	// What the fixed bounds left out: of the stored part, and of the
+	// workbook as a whole (sheets not listed, what formulas take from
+	// other workbooks).
+	lost, docLost warn.Lost
 }
 
 // SheetInfo is a sheet as the workbook lists it.
@@ -148,7 +153,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		// What formulas take from other workbooks, before the names'
 		// formulas are read.
 		for _, l := range b.linkParts {
-			loadBin(l.target, func(r *xlsb.Reader) { readLink(r, &wb.formulas.Links[l.index]) })
+			loadBin(l.target, func(r *xlsb.Reader) { readLink(r, &wb.formulas.Links[l.index], &b.docLost) })
 		}
 		b.binaryNames(names)
 	} else {
@@ -182,7 +187,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		case ns.IsRel(rel.Type, ns.RelTheme):
 			load(rel.Target, func(s *xmlscan.Scanner) { wb.theme = theme.Read(s) })
 		case ns.IsRel(rel.Type, ns.RelPerson):
-			load(rel.Target, func(s *xmlscan.Scanner) { wb.persons = readPersons(s) })
+			load(rel.Target, func(s *xmlscan.Scanner) { wb.persons = readPersons(s, &b.docLost) })
 		}
 	}
 	for _, rel := range rels {
@@ -192,9 +197,9 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		bin := binary(pkg, rel.Target)
 		switch {
 		case ns.IsRel(rel.Type, ns.RelStyles) && bin:
-			loadBin(rel.Target, func(r *xlsb.Reader) { wb.styles = readBinaryStyles(r) })
+			loadBin(rel.Target, func(r *xlsb.Reader) { wb.styles = readBinaryStyles(r, &b.docLost) })
 		case ns.IsRel(rel.Type, ns.RelStyles):
-			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s) })
+			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, &b.docLost) })
 		case ns.IsRel(rel.Type, ns.RelSharedStrings):
 			var full bool
 			var n int
@@ -226,7 +231,9 @@ func (b *Book) readBook(main string, byID map[string]opc.Rel, load func(string, 
 				if v, ok := s.Attr(xmlscan.NoSpace, "date1904"); ok {
 					wb.date1904 = isTrue(v)
 				}
-			case s.Depth() == 3 && s.Is(ns.Sheet, "sheet") && len(b.refs) < maxSheets:
+			case s.Depth() == 3 && s.Is(ns.Sheet, "sheet") && len(b.refs) >= maxSheets:
+				b.docLost.Add(warn.CapSheets, 1)
+			case s.Depth() == 3 && s.Is(ns.Sheet, "sheet"):
 				var ref sheetRef
 				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
 					ref.name, _ = clean.String(v, clean.Prose)
@@ -308,7 +315,7 @@ func (b *Book) Read(ctx context.Context, index int) *unit.Result {
 func (sh *sheet) result() *unit.Result {
 	return &unit.Result{Part: sh.part, Tally: unit.Tally{
 		Unread: sh.unread, Damaged: sh.damaged, Macros: sh.macros, Rels: append(sh.list[:len(sh.list):len(sh.list)], sh.charts...),
-		Limited: sh.budget || sh.cut != "" && sh.cut != "cancelled",
+		Limited: sh.budget || sh.capped || sh.cut != "" && sh.cut != "cancelled",
 	}}
 }
 
@@ -322,6 +329,8 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	if b.stringsFull {
 		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the shared strings are cut off at 4 GiB; cells that use later ones are empty")
 	}
+	out = append(out, b.docLost.Warnings()...)
+	out = append(out, warn.Package(b.wb.pkg)...)
 	unread := map[string]int{}
 	if b.unreadNames > 0 {
 		unread[unreadFormula] += b.unreadNames
@@ -351,10 +360,12 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		add(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
 	}
 	sort.Strings(damaged)
-	for i, name := range damaged {
-		if i == 0 || name != damaged[i-1] {
-			add(gofastcore.SeverityWarning, warn.PartDamaged, clean.Label(b.wb.pkg.Written(name)))
-		}
+	var names warn.Names
+	for _, name := range damaged {
+		names.AddOnce(clean.Label(b.wb.pkg.Written(name)))
+	}
+	if msg := names.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
+		add(gofastcore.SeverityWarning, warn.PartDamaged, msg)
 	}
 	if b.removed > 0 {
 		add(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(b.removed)+" in shared strings")
@@ -434,6 +445,9 @@ func (sh *sheet) limits() {
 	if sh.cut != "" && sh.cut != "cancelled" && sh.cut != "stopped" {
 		sh.part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, sh.cut+"; the sheet is cut off there")
 	}
+	if sh.lost.Say(&sh.part) {
+		sh.capped = true
+	}
 }
 
 // finish completes the part: what it lacks, what was found while its
@@ -502,7 +516,11 @@ func (sh *sheet) content() (sawImage bool) {
 func (sh *sheet) chartContent() (sawImage bool) {
 	var blocks []placed
 	for _, rel := range sh.list {
-		if rel.External || !ns.IsRel(rel.Type, ns.RelDrawing) || len(blocks) > 1<<16 {
+		if rel.External || !ns.IsRel(rel.Type, ns.RelDrawing) {
+			continue
+		}
+		if len(blocks) > warn.MaxDrawings {
+			sh.lost.Add(warn.CapDrawings, 1)
 			continue
 		}
 		var saw bool

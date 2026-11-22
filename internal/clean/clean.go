@@ -117,9 +117,12 @@ func Append(dst, b []byte, flags Flags) ([]byte, int) {
 	return dst, removed
 }
 
-// maxLabel bounds a label. Names and messages are short; a longer one is
-// a file trying to be expensive.
-const maxLabel = 512
+// MaxLabel bounds a label. Names and messages are short; a longer one is
+// a file trying to be expensive. Excel allows names of 255 characters,
+// which UTF-8 may write in up to 1,020 bytes: such a name is whole.
+const MaxLabel = 1024
+
+const maxLabel = MaxLabel
 
 // printable returns the length of the run of printable ASCII (0x20 to
 // 0x7E) that b begins with.
@@ -150,16 +153,23 @@ func printable(b []byte) int {
 // controls as much as it controls its content.
 func Label(s string) string { return bounded(s, maxLabel) }
 
-// maxAddress bounds an address. Addresses run longer than names: one with
+// MaxAddress bounds an address. Addresses run longer than names: one with
 // a query or a token in it is often over a thousand bytes, and one cut
 // short leads nowhere. This is more than servers accept.
-const maxAddress = 8 << 10
+const MaxAddress = 8 << 10
+
+const maxAddress = MaxAddress
 
 // Address is Label for the target of a link: the same cleaning, with room
 // for the length addresses have. A caller that puts an address into the
 // document counts it against the text the document may hold, since one
 // address may be linked to any number of times.
 func Address(s string) string { return bounded(s, maxAddress) }
+
+// LabelCut and AddressCut report whether Label, or Address, cuts s to
+// its bound, as the callers that keep what they return as content say.
+func LabelCut(s string) bool   { return len(strings.TrimSpace(s)) > maxLabel }
+func AddressCut(s string) bool { return len(strings.TrimSpace(s)) > maxAddress }
 
 func bounded(s string, limit int) string {
 	plain := len(s) <= limit

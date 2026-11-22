@@ -87,13 +87,15 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		pg.role, pg.name = roleSlide, ref.target
 		pg.number = strconv.Itoa(index + p.first)
 		pg.index(rels)
+		pg.lost.Take() // what an earlier slide left, should it have stopped short
 		pg.read(colors)
 		if pg.found != nil && *pg.found != colors && pg.failure == nil && !pg.exceeded && !pg.full {
 			// Read again with the colours the slide turned out to have:
 			// its text is taken a second time, so the first is given
-			// back.
+			// back, and what the bounds left out is counted again.
 			room.Return(pg.text.Taken)
 			pg.text.Taken = 0
+			pg.lost.Take()
 			colors = *pg.found
 			pg.read(colors)
 		}
@@ -141,6 +143,10 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 			case !room.Take(bytes):
 				pg.full = true
 			default:
+				if above != nil {
+					pg.lost.Merge(l.master.lost)
+				}
+				pg.lost.Merge(l.lost)
 				blocks = appendRepeated(blocks, above)
 				// A layout often repeats what its master has, in the same
 				// place; a reader sees it once.
@@ -203,6 +209,9 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, cut+"; the tables of the slide are cut off there")
 		res.Limited = true
 	}
+	if pg.lost.Say(part) {
+		res.Limited = true
+	}
 	hasText, hasImage := false, sawImage
 	for i := range part.Blocks {
 		if part.Blocks[i].Kind == gofastcore.KindImage {
@@ -237,6 +246,10 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 	room, full := pg.text.Budget, pg.full
 	pg.text.Budget = nil
 	defer func() { pg.text.Budget, pg.full = room, full }()
+	// What the bounds leave out of it is its own, said on the slides
+	// that show it.
+	before := pg.lost.Take()
+	defer func() { l.lost = pg.lost.Take(); pg.lost.Merge(before) }()
 	pg.name, pg.number = l.name, ""
 	pg.index(rels)
 	pg.pal = dml.Palette{Theme: l.theme, Map: l.cmap}
@@ -264,6 +277,7 @@ func (pg *page) sheet(l *layout, rels []opc.Rel, master bool) {
 		again = true
 	}
 	if again && pg.failure == nil && !pg.exceeded {
+		pg.lost.Take() // counted again
 		pg.read(colors)
 	}
 	if pg.failure != nil {
@@ -375,17 +389,27 @@ func (pg *page) comments(name string, out []gofastcore.Block) []gofastcore.Block
 		}
 		modern := s.Space() == ns.Pres2018
 		switch {
-		case (s.Is(ns.Pres, "cm") || modern && (string(s.Local()) == "cm" || string(s.Local()) == "reply")) && len(stack) < 64:
+		case (s.Is(ns.Pres, "cm") || modern && (string(s.Local()) == "cm" || string(s.Local()) == "reply")) && len(stack) >= warn.MaxCommentDepth:
+			pg.lost.Add(warn.CapCommentDepth, 1)
+		case s.Is(ns.Pres, "cm") || modern && (string(s.Local()) == "cm" || string(s.Local()) == "reply"):
 			o := open{depth: s.Depth(), modern: modern}
-			if v, ok := s.Attr(xmlscan.NoSpace, "authorId"); ok && len(v) <= 64 {
-				o.author = append([]byte(nil), v...)
+			if v, ok := s.Attr(xmlscan.NoSpace, "authorId"); ok {
+				if len(v) <= 64 {
+					o.author = append([]byte(nil), v...)
+				} else {
+					pg.lost.Add(warn.CapCommentAuthorID, 1)
+				}
 			}
 			date, ok := s.Attr(xmlscan.NoSpace, "dt")
 			if !ok {
 				date, ok = s.Attr(xmlscan.NoSpace, "created")
 			}
-			if ok && len(date) <= 64 {
-				o.date = append([]byte(nil), date...)
+			if ok {
+				if len(date) <= 64 {
+					o.date = append([]byte(nil), date...)
+				} else {
+					pg.lost.Add(warn.CapCommentDate, 1)
+				}
 			}
 			stack = append(stack, o)
 			for len(held) < len(stack) {
@@ -430,7 +454,7 @@ func (pg *page) comments(name string, out []gofastcore.Block) []gofastcore.Block
 }
 
 // maxAuthors bounds the authors of comments that are kept.
-const maxAuthors = 1 << 16
+const maxAuthors = warn.MaxCommentAuthors
 
 // authorNames returns the names of the authors of comments, by the
 // identifier comments refer to them with.
@@ -445,8 +469,12 @@ func (p *presentation) authorNames() map[string]string {
 					}
 					id, ok1 := s.Attr(xmlscan.NoSpace, "id")
 					who, ok2 := s.Attr(xmlscan.NoSpace, "name")
-					if ok1 && ok2 && len(id) <= 64 && len(authors) < maxAuthors {
+					switch {
+					case !ok1 || !ok2 || len(id) > 64:
+					case len(authors) < maxAuthors:
 						authors[string(id)], _ = clean.String(who, clean.Prose)
+					default:
+						p.lost.Add(warn.CapCommentAuthors, 1)
 					}
 				}
 			})

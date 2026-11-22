@@ -221,9 +221,7 @@ func (f *File) open(first bool) (*session, error) {
 		for _, name := range meta.Damaged {
 			warn(gofastcore.SeverityWarning, WarnPropertiesDamaged, clean.Label(name))
 		}
-		if meta.Truncated > 0 {
-			warn(gofastcore.SeverityWarning, WarnPropertyTruncated, fmt.Sprintf("%d values", meta.Truncated))
-		}
+		f.opened = append(f.opened, meta.Warnings()...)
 		if meta.Removed > 0 {
 			warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", meta.Removed))
 		}
@@ -570,9 +568,9 @@ func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
 	}
 	doc := gofastcore.New(f.source.Format)
 	doc.Source, doc.Metadata = f.source, f.meta
-	doc.Warnings = append(doc.Warnings, f.opened...)
+	warnAll(doc, f.opened)
 	if asked > len(selected) {
-		doc.Warnings = append(doc.Warnings, f.capped(asked, len(selected)))
+		warnAll(doc, []gofastcore.Warning{f.capped(asked, len(selected))})
 	}
 	pictures := once{}
 	var tallies []*unit.Tally
@@ -588,7 +586,7 @@ func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
 		return nil, err
 	}
 	doc.Children = f.embedded(ctx, sess, tallies)
-	doc.Warnings = append(doc.Warnings, sess.src.Summary(tallies)...)
+	warnAll(doc, sess.src.Summary(tallies))
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -740,12 +738,22 @@ func (f *File) Rows(ctx context.Context, number, band int) iter.Seq2[gofastcore.
 // that is not read, damaged supporting parts, references to things
 // outside the file). It is complete once every part has been read.
 func (f *File) Warnings() []gofastcore.Warning {
-	out := append([]gofastcore.Warning(nil), f.opened...)
+	var doc gofastcore.Document
+	warnAll(&doc, f.opened)
 	if selected, asked, err := f.selection(); err == nil && asked > len(selected) {
-		out = append(out, f.capped(asked, len(selected)))
+		warnAll(&doc, []gofastcore.Warning{f.capped(asked, len(selected))})
 	}
 	sess, _, tallies := f.known()
-	return append(out, sess.src.Summary(tallies)...)
+	warnAll(&doc, sess.src.Summary(tallies))
+	return doc.Warnings
+}
+
+// warnAll adds ws to doc through Document.Warn, which bounds how many a
+// document keeps.
+func warnAll(doc *gofastcore.Document, ws []gofastcore.Warning) {
+	for _, w := range ws {
+		doc.Warn(w.Severity, w.Code, w.Message)
+	}
 }
 
 // Children extracts the files embedded in the parts read so far (a

@@ -7,9 +7,9 @@ import (
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/formula"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -38,9 +38,9 @@ type sharedFormula struct {
 
 // Bounds on what a sheet keeps of formulas.
 const (
-	maxFormula = 32 << 10 // Excel's own limit is 8,192 characters
-	maxShared  = 1 << 20
-	maxLinks   = 1 << 18
+	maxFormula = warn.MaxFormula // Excel's own limit is 8,192 characters
+	maxShared  = warn.MaxSharedFormulas
+	maxLinks   = warn.MaxLinks
 	// A link over a range of more cells than this is kept as a range
 	// and looked up, not spread over its cells.
 	linkSpread = 1 << 12
@@ -56,10 +56,10 @@ func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
 	var twoD, rowInput bool
 	if string(typ) == "dataTable" {
 		if v, ok := s.Attr(xmlscan.NoSpace, "r1"); ok {
-			r1 = clean.Label(string(v))
+			r1 = sh.lost.Label(string(v))
 		}
 		if v, ok := s.Attr(xmlscan.NoSpace, "r2"); ok {
-			r2 = clean.Label(string(v))
+			r2 = sh.lost.Label(string(v))
 		}
 		v, _ := s.Attr(xmlscan.NoSpace, "dt2D")
 		twoD = isTrue(v)
@@ -67,7 +67,7 @@ func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
 		rowInput = isTrue(v)
 	}
 	sh.fbuf = s.AppendText(sh.fbuf[:0])
-	text := verbatim(sh.fbuf)
+	text := verbatim(sh.fbuf, &sh.lost)
 	switch string(typ) {
 	case "shared":
 		if !shared {
@@ -79,6 +79,8 @@ func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
 			}
 			if len(sh.shared) < maxShared {
 				sh.shared[si] = sharedFormula{text, row, col}
+			} else {
+				sh.lost.Add(warn.CapSharedFormulas, 1)
 			}
 			return text
 		}
@@ -104,9 +106,10 @@ func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
 // verbatim makes formula text fit for the output: valid UTF-8, no control
 // characters but line breaks and tabs, of bounded length; nothing else is
 // changed.
-func verbatim(b []byte) string {
+func verbatim(b []byte, lost *warn.Lost) string {
 	if len(b) > maxFormula {
 		b = b[:maxFormula]
+		lost.Add(warn.CapFormula, 1)
 	}
 	s := strings.ToValidUTF8(string(b), "�")
 	if strings.IndexFunc(s, func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\t' }) < 0 {
@@ -132,12 +135,12 @@ func (sh *sheet) keepDetail(c *cell, typ byte, raw []byte, f string, date bool) 
 			d.typ = gofastcore.CellDate
 		}
 		if v := bytes.TrimSpace(raw); string(v) != c.text {
-			d.value = clean.Label(string(v))
+			d.value = sh.lost.Label(string(v))
 		}
 	case 'd':
 		d.typ = gofastcore.CellDate
 		if v := bytes.TrimSpace(raw); string(v) != c.text {
-			d.value = clean.Label(string(v))
+			d.value = sh.lost.Label(string(v))
 		}
 	case 'b':
 		d.typ = gofastcore.CellBool
@@ -194,7 +197,11 @@ type link struct {
 func (sh *sheet) readLinks(s *xmlscan.Scanner) {
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "hyperlink") || len(sh.links)+len(sh.linkAt) >= maxLinks {
+		if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "hyperlink") {
+			continue
+		}
+		if len(sh.links)+len(sh.linkAt) >= maxLinks {
+			sh.lost.Add(warn.CapLinks, 1)
 			continue
 		}
 		ref, ok := s.Attr(xmlscan.NoSpace, "ref")
@@ -212,7 +219,7 @@ func (sh *sheet) readLinks(s *xmlscan.Scanner) {
 			}
 		}
 		if v, ok := s.Attr(xmlscan.NoSpace, "location"); ok && href == "" && len(v) > 0 {
-			href = "#" + clean.Address(string(v))
+			href = "#" + sh.lost.Address(string(v))
 		}
 		sh.addLink(at, href)
 	}

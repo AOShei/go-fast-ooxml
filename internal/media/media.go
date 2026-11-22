@@ -15,7 +15,6 @@ import (
 	"path"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 )
@@ -26,7 +25,7 @@ import (
 // The error is opc.ErrBudget if the decompression budget ran out, and nil
 // otherwise: a picture that cannot be read is still named.
 func Image(pkg *opc.Package, name string, mode gofastcore.ImageMode) (*gofastcore.Image, error) {
-	img := &gofastcore.Image{ID: clean.Label(pkg.Written(name)), MIME: clean.Label(pkg.ContentType(name))}
+	img := &gofastcore.Image{ID: pkg.Label(pkg.Written(name)), MIME: pkg.Label(pkg.ContentType(name))}
 	if !pkg.Has(name) {
 		return img, nil
 	}
@@ -89,7 +88,7 @@ func Embedded(ctx context.Context, pkg *opc.Package, opts *gofastcore.Options, r
 			continue
 		}
 		seen[rel.Target] = true
-		name, mime, size := clean.Label(path.Base(pkg.Written(rel.Target))), clean.Label(pkg.ContentType(rel.Target)), pkg.Size(rel.Target)
+		name, mime, size := pkg.Label(path.Base(pkg.Written(rel.Target))), pkg.Label(pkg.ContentType(rel.Target)), pkg.Size(rel.Target)
 		if opts.Child == nil {
 			// Listed, not read: there is nobody to read it.
 			out = append(out, opts.ExtractChild(ctx, name, mime, nil, size))

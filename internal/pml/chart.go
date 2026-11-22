@@ -39,6 +39,7 @@ func (pg *page) chart(sh *props, g *group) {
 	pg.charts = append(pg.charts, c.Rels...)
 	pg.place(sh, g)
 	at := len(pg.blocks)
+	pg.lost.NameOver(sh.nameOver) // the chart takes the shape's name
 	blocks, taken, cut := c.Blocks(pg.text.Budget, sh.name)
 	pg.text.Taken += taken
 	for i := range blocks {
@@ -46,9 +47,7 @@ func (pg *page) chart(sh *props, g *group) {
 		blocks[i].Loc.BBox = bbox(sh)
 	}
 	pg.blocks = append(pg.blocks, blocks...)
-	if c.Cut && pg.cut == "" {
-		pg.cut = "a chart holds more points than are read"
-	}
+	pg.lost.Merge(&c.Lost)
 	if cut {
 		s.Abort(warn.ErrText)
 	}
@@ -84,6 +83,7 @@ func (pg *page) diagram(sh *props, g *group) {
 		return
 	}
 	pg.text.Removed += d.Removed
+	pg.lost.Merge(&d.Lost)
 	pg.place(sh, g)
 	frame := sh.xfrm.Local().Then(g.m)
 	at := len(pg.blocks)

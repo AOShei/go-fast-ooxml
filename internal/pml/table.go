@@ -20,7 +20,7 @@ type cellNote struct {
 type anchor struct{ row, col int32 }
 
 // maxColumns bounds the columns of a table.
-const maxColumns = 1 << 14
+const maxColumns = warn.MaxTableColumns
 
 // table reads a table (the a:tbl whose Start token is current) into a
 // table block.
@@ -81,7 +81,12 @@ func (pg *page) table(sh *props) {
 				if s.Kind() != xmlscan.Start {
 					continue
 				}
-				if !s.Is(ns.Draw, "tc") || len(row) >= maxColumns {
+				if !s.Is(ns.Draw, "tc") {
+					s.Skip()
+					continue
+				}
+				if len(row) >= maxColumns {
+					pg.lost.Add(warn.CapSlideTableColumns, 1)
 					s.Skip()
 					continue
 				}

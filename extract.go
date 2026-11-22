@@ -59,9 +59,12 @@ const (
 	// WarnPropertiesDamaged: a document-properties part could not be read
 	// to its end; the properties read before the damage are kept.
 	WarnPropertiesDamaged = "ooxml.properties_damaged"
-	// WarnPropertyTruncated: a property value was longer than 64 KiB and
-	// was cut there, or there were more than 256 custom properties and the
-	// rest were left out.
+	// WarnPropertyTruncated was raised for a property value cut at 64 KiB,
+	// and for custom properties past 256.
+	//
+	// Deprecated: those cuts are now limit.exceeded
+	// (gofastcore.WarnLimitExceeded), severity error, as every other bound
+	// reports what it cuts; this code is no longer raised.
 	WarnPropertyTruncated = "ooxml.property_truncated"
 	// WarnControlCharsRemoved: control characters with no meaning as text
 	// were removed from extracted strings.

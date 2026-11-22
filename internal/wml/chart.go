@@ -1,7 +1,6 @@
 package wml
 
 import (
-	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/chart"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/diagram"
@@ -13,12 +12,12 @@ import (
 // token is current): a caption with its title and tables of its data,
 // after the paragraph the drawing is in. name is the name the drawing
 // gives it.
-func (p *parser) chart(name string) {
+func (p *parser) chart(name string, nameOver int64) {
 	s := &p.s
 	id, _ := s.Attr(ns.Rel, "id")
 	rel, found := p.rels[string(id)]
 	if !found || rel.External || !ns.IsRel(rel.Type, ns.RelChart, ns.RelChartEx) || !p.r.pkg.Has(rel.Target) {
-		p.r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, "the chart "+clean.Label(string(id)))
+		p.r.missing.Add("the chart " + clean.Label(string(id)))
 		return
 	}
 	c, err := chart.Read(p.r.pkg, rel.Target)
@@ -27,10 +26,9 @@ func (p *parser) chart(name string) {
 		return
 	}
 	p.r.removed += c.Removed
+	p.r.lost.NameOver(nameOver) // the chart takes the drawing's name
 	p.r.charts = append(p.r.charts, c.Rels...)
-	if c.Cut {
-		p.r.doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnLimitExceeded, "a chart holds more points than are read; its data is cut off")
-	}
+	p.r.lost.Merge(&c.Lost)
 	blocks, _, cut := c.Blocks(p.r.text, name)
 	if len(blocks) > 0 {
 		p.produced++
@@ -49,7 +47,7 @@ func (p *parser) diagram() {
 	id, _ := s.Attr(ns.Rel, "dm")
 	rel, found := p.rels[string(id)]
 	if !found || rel.External || !ns.IsRel(rel.Type, ns.RelDiagram) || !p.r.pkg.Has(rel.Target) {
-		p.r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, "the diagram "+clean.Label(string(id)))
+		p.r.missing.Add("the diagram " + clean.Label(string(id)))
 		return
 	}
 	d, err := diagram.Read(p.r.pkg, rel.Target, p.rels, &p.r.drawn)
@@ -58,6 +56,7 @@ func (p *parser) diagram() {
 		return
 	}
 	p.r.removed += d.Removed
+	p.r.lost.Merge(&d.Lost)
 	blocks, _, cut := d.Blocks(p.r.text)
 	if len(blocks) > 0 {
 		p.produced++

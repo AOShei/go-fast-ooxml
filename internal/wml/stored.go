@@ -9,6 +9,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -19,7 +20,7 @@ import (
 // declares nothing about their display.
 
 // maxVariables bounds the document variables read.
-const maxVariables = 1 << 14
+const maxVariables = warn.MaxVariables
 
 // findStored names what the stored part is read from: the settings part,
 // if it has document variables, and the package's VBA project and custom
@@ -61,13 +62,17 @@ func (b *Body) readStored(ctx context.Context) *unit.Result {
 			p.Damaged = append(p.Damaged, b.settings)
 		} else {
 			n := 0
-			for s.Next() != xmlscan.EOF && !p.Full() && n < maxVariables {
+			for s.Next() != xmlscan.EOF && !p.Full() {
 				if s.Kind() != xmlscan.Start || !s.Is(ns.Word, "docVar") || s.Depth() != 3 {
+					continue
+				}
+				if n >= maxVariables {
+					p.Lost.Add(warn.CapVariables, 1)
 					continue
 				}
 				n++
 				name, _ := s.Attr(ns.Word, "name")
-				label := clean.Name(string(name))
+				label := p.Lost.Name(string(name))
 				val, _ := s.Attr(ns.Word, "val")
 				value, _ := clean.String(val, clean.Prose)
 				text := label + ": " + value

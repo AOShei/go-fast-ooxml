@@ -24,14 +24,15 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // Limits on what a diagram may make the reader hold.
 const (
-	maxPoints = 1 << 16
-	maxCxns   = 1 << 17
-	maxDepth  = 64
+	maxPoints = warn.MaxDiagramNodes
+	maxCxns   = warn.MaxDiagramLinks
+	maxDepth  = warn.MaxDiagramDepth
 )
 
 // Item is a paragraph of a node's text.
@@ -53,6 +54,8 @@ type Diagram struct {
 	// the nodes and says what is declared about their display.
 	Drawn   bool
 	Removed int // control characters taken out
+	// Lost counts what the reader's fixed bounds left out.
+	Lost warn.Lost
 }
 
 type point struct {
@@ -136,6 +139,7 @@ func (d *Diagram) model(s *xmlscan.Scanner) (points []point, cxns []cxn, drawing
 		switch {
 		case s.Is(ns.Diagram, "pt"):
 			if len(points) >= maxPoints {
+				d.Lost.Add(warn.CapDiagramNodes, 1)
 				s.Skip()
 				continue
 			}
@@ -197,6 +201,7 @@ func (d *Diagram) model(s *xmlscan.Scanner) (points []point, cxns []cxn, drawing
 			points = append(points, p)
 		case s.Is(ns.Diagram, "cxn"):
 			if len(cxns) >= maxCxns {
+				d.Lost.Add(warn.CapDiagramLinks, 1)
 				continue
 			}
 			x := cxn{typ: "parOf"}
@@ -351,7 +356,11 @@ func (d *Diagram) arrange(points []point, cxns []cxn, shapes map[string]drawn) {
 	seen := map[string]bool{}
 	var walk func(id string, level int)
 	walk = func(id string, level int) {
-		if seen[id] || level > maxDepth {
+		if seen[id] {
+			return
+		}
+		if level > maxDepth {
+			d.Lost.Add(warn.CapDiagramDepth, 1)
 			return
 		}
 		seen[id] = true

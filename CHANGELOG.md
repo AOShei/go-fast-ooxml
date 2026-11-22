@@ -5,6 +5,59 @@ What changes for someone who uses the library. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0 a
 minor version may change the API.
 
+## [Unreleased]
+
+To be released as 0.1.1. Requires `go-fast-core` v0.1.1.
+
+### Fixed
+
+- **What a fixed bound leaves out is said.** Some fifty fixed bounds
+  (a slide table's 16,384 columns, a 64 KiB field code, 16,384 document
+  variables or defined names, a 64-byte list label, a chart's 1,024
+  series, SmartArt's 65,536 nodes, a sheet's comments, links, drop-down
+  lists and drawing parts, pivot caches, VBA modules) cut content with no
+  warning. Each now says what it left out with `limit.exceeded`, severity
+  error, once per part with a count; what belongs to no part is said on
+  the document. `SECURITY.md` lists them.
+- **Fields nested more than 64 deep** no longer unbalance the fields
+  around them: their ends had closed the outer fields early, so later
+  text could be read as a field's code, or a link given to the wrong
+  text.
+- A field code over 64 KiB is cut at 64 KiB wherever it comes from; one
+  that was a single long piece was kept whole, and the nested code that
+  took an outer one past the bound was dropped.
+- A VBA project larger than 256 MiB is `limit.exceeded`, not
+  `ooxml.part_damaged`. An encrypted file whose container has more than
+  65,536 entries is refused with `ErrLimitExceeded`, not `ErrMalformed`.
+- Data after the end of the archive past the first 1 MiB is said with
+  `limit.exceeded` as well as in `input.trailing_data`.
+- **Names and labels cut at their bound are said** where they reach the
+  output: authors, names of sheets, shapes, tables, pictures, embedded
+  files, VBA modules and defined names, a cell's stored value. A
+  paragraph identifier longer than 32 bytes, which was dropped, is
+  said too. Each cut gives how many bytes it left out. The bound on a
+  name rises from 512 bytes to 1,024, so that a name of 255 characters,
+  the most Excel allows, is whole in any script.
+
+### Changed
+
+- **Cut document properties are `limit.exceeded`**, severity error, in
+  place of `ooxml.property_truncated` (severity warning): a value cut at
+  64 KiB, custom properties past 256, and a custom property's name, now
+  cut at 1,024 bytes (it was 256). `WarnPropertyTruncated` is kept,
+  deprecated, and no longer raised.
+
+- **`ooxml.part_damaged` is one warning**, with how many parts and the
+  first eight, in place of one per part: "2 parts could not be read to
+  their end (a, b)". Drawings in a Word document that name a chart or
+  diagram the document does not have are likewise one warning, where
+  there was one per drawing.
+- A chart cut at about two million points is `limit.exceeded` at
+  severity error, once per part, where it was severity warning once per
+  chart.
+- The document's warnings are added through `Document.Warn`, which keeps
+  at most 1,000 (core v0.1.1).
+
 ## [0.1.0] - 2026-11-21
 
 The first release. Requires `go-fast-core` v0.1.0.
@@ -141,4 +194,5 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.1.0...main
 [0.1.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.0

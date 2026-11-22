@@ -55,9 +55,9 @@ func (sh *sheet) declared() []declaredTable {
 				// The name the workbook shows; name is the one formulas
 				// use, and is the same unless it was changed by hand.
 				if v, ok := s.Attr(xmlscan.NoSpace, "displayName"); ok && len(v) > 0 {
-					t.name = clean.Name(string(v))
+					t.name = sh.lost.Name(string(v))
 				} else if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
-					t.name = clean.Name(string(v))
+					t.name = sh.lost.Name(string(v))
 				}
 				if n, ok := intAttr(s, "headerRowCount"); ok {
 					t.headerRows = min(n, 1)
@@ -86,7 +86,7 @@ func (sh *sheet) declared() []declaredTable {
 }
 
 // maxPivots bounds the pivot tables read from a sheet.
-const maxPivots = 1 << 10
+const maxPivots = warn.MaxPivotTables
 
 // pivots adds the sheet's pivot tables to its declared tables. Each says
 // which cells it fills; what they show is in the cells, written when the
@@ -94,7 +94,11 @@ const maxPivots = 1 << 10
 func (sh *sheet) pivots(out []declaredTable) []declaredTable {
 	n := 0
 	for _, rel := range sh.list {
-		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) || n >= maxPivots {
+		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) {
+			continue
+		}
+		if n >= maxPivots {
+			sh.lost.Add(warn.CapPivotTables, 1)
 			continue
 		}
 		n++
@@ -111,7 +115,7 @@ func (sh *sheet) pivots(out []declaredTable) []declaredTable {
 				switch {
 				case s.Is(ns.Sheet, "pivotTableDefinition"):
 					if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
-						t.name = clean.Name(string(v))
+						t.name = sh.lost.Name(string(v))
 					}
 				case s.Is(ns.Sheet, "location"):
 					ref, _ := s.Attr(xmlscan.NoSpace, "ref")
@@ -135,24 +139,28 @@ func (sh *sheet) pivots(out []declaredTable) []declaredTable {
 }
 
 // readPersons reads the people who wrote threaded comments, by id.
-func readPersons(s *xmlscan.Scanner) map[string]string {
+func readPersons(s *xmlscan.Scanner, lost *warn.Lost) map[string]string {
 	persons := map[string]string{}
 	for s.Next() != xmlscan.EOF {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Threaded, "person") || len(persons) >= maxAuthors {
+		if s.Kind() != xmlscan.Start || !s.Is(ns.Threaded, "person") {
+			continue
+		}
+		if len(persons) >= maxAuthors {
+			lost.Add(warn.CapCommentAuthorsSheet, 1)
 			continue
 		}
 		id, ok1 := s.Attr(xmlscan.NoSpace, "id")
 		name, ok2 := s.Attr(xmlscan.NoSpace, "displayName")
 		if ok1 && ok2 && len(id) <= 64 {
-			persons[string(id)] = clean.Name(string(name))
+			persons[string(id)] = lost.Name(string(name))
 		}
 	}
 	return persons
 }
 
 const (
-	maxAuthors  = 1 << 12
-	maxComments = 1 << 18
+	maxAuthors  = warn.MaxSheetCommentAuthors
+	maxComments = warn.MaxComments
 )
 
 // comments reads the comments on the sheet's cells as note blocks. A
@@ -165,6 +173,7 @@ func (sh *sheet) comments() []placed {
 	plain := false // the comments being read are records, whose text is not escaped
 	add := func(row, col int32, raw []byte, author, date string) {
 		if len(out) >= maxComments {
+			sh.lost.Add(warn.CapComments, 1)
 			return
 		}
 		clean := cellText
@@ -209,7 +218,7 @@ func (sh *sheet) comments() []placed {
 					author = sh.wb.persons[string(v)]
 				}
 				if v, has := s.Attr(xmlscan.NoSpace, "dT"); has {
-					date = clean.Label(string(v))
+					date = sh.lost.Label(string(v))
 				}
 				raw := sh.raw[:0]
 				depth := s.Depth()
@@ -246,7 +255,9 @@ func (sh *sheet) comments() []placed {
 				case s.Is(ns.Sheet, "author"):
 					sh.raw = s.AppendText(sh.raw[:0])
 					if len(authors) < maxAuthors {
-						authors = append(authors, clean.Name(string(sh.raw)))
+						authors = append(authors, sh.lost.Name(string(sh.raw)))
+					} else {
+						sh.lost.Add(warn.CapCommentAuthorsSheet, 1)
 					}
 				case s.Is(ns.Sheet, "comment"):
 					ref, _ := s.Attr(xmlscan.NoSpace, "ref")
@@ -298,6 +309,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 	sh.load(target, func(s *xmlscan.Scanner) {
 		var row, col int32 // the cell the current anchor starts at
 		var alt, name string
+		var nameOver int64
 		var unseen bool   // the current shape is marked hidden
 		var ink dml.Color // the colour its style gives its text
 		choice := -1      // blocks there were when the current choice of alternatives began
@@ -335,7 +347,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					}
 				}
 			case s.Is(ns.SheetDraw, "sp"), s.Is(ns.SheetDraw, "pic"), s.Is(ns.SheetDraw, "graphicFrame"):
-				alt, name, unseen, ink = "", "", false, dml.Color{}
+				alt, name, nameOver, unseen, ink = "", "", 0, false, dml.Color{}
 			case s.Is(ns.SheetDraw, "cNvPr"):
 				if v, ok := s.Attr(xmlscan.NoSpace, "descr"); ok && len(v) > 0 {
 					alt, _ = clean.String(v, clean.Prose)
@@ -344,7 +356,7 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					unseen = isTrue(v)
 				}
 				if v, ok := s.Attr(xmlscan.NoSpace, "name"); ok {
-					name = clean.Name(string(v))
+					name, nameOver = clean.Name(string(v)), warn.Over(string(v))
 				}
 			case s.Is(ns.Draw2010, "compatExt"):
 				// The stand-in Excel writes for a form control kept in the
@@ -402,7 +414,11 @@ func (sh *sheet) drawing(target string, out []placed) ([]placed, bool) {
 					continue
 				}
 				var cut bool
+				before := len(out)
 				out, cut = sh.chart(rel.Target, out, row, col, name, unseen)
+				if len(out) > before {
+					sh.lost.NameOver(nameOver) // the chart takes the drawing's name
+				}
 				if cut {
 					s.Abort(warn.ErrText)
 				}

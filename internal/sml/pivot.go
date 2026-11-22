@@ -8,6 +8,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -26,7 +27,7 @@ type calcField struct {
 }
 
 // maxCalculated bounds the calculated fields kept from a workbook.
-const maxCalculated = 1 << 12
+const maxCalculated = warn.MaxCalculated
 
 // pivotCache is a cache the workbook lists.
 type pivotCache struct {
@@ -37,9 +38,9 @@ type pivotCache struct {
 const (
 	relPivotCache   = "pivotCacheDefinition"
 	relPivotRecords = "pivotCacheRecords"
-	maxCaches       = 1 << 10
-	maxCacheFields  = 1 << 14
-	maxSharedItems  = 1 << 20
+	maxCaches       = warn.MaxPivotCaches
+	maxCacheFields  = warn.MaxPivotFields
+	maxSharedItems  = warn.MaxPivotItems
 )
 
 // readCaches reads pivotCaches in the workbook part: the parts of the
@@ -47,7 +48,11 @@ const (
 func (b *Book) readCaches(s *xmlscan.Scanner, byID map[string]opc.Rel) {
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "pivotCache") || len(b.caches) >= maxCaches {
+		if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "pivotCache") {
+			continue
+		}
+		if len(b.caches) >= maxCaches {
+			b.lost.Add(warn.CapPivotCaches, 1)
 			continue
 		}
 		id, _ := s.Attr(ns.Rel, "id")
@@ -160,11 +165,15 @@ func (b *Book) xmlSource(target string) (src cacheSource, ok bool) {
 		case s.Is(ns.Sheet, "cacheField"):
 			// A calculated field has a formula; what it holds of
 			// values is not wanted here.
-			if f, ok := s.Attr(xmlscan.NoSpace, "formula"); ok && len(b.calculated) < maxCalculated {
+			if f, ok := s.Attr(xmlscan.NoSpace, "formula"); ok {
 				formula, _ := clean.String(f, clean.Prose)
 				n, _ := s.Attr(xmlscan.NoSpace, "name")
-				if formula != "" {
-					b.calculated = append(b.calculated, calcField{name: clean.Name(string(n)), formula: strings.TrimPrefix(formula, "=")})
+				switch {
+				case formula == "":
+				case len(b.calculated) >= maxCalculated:
+					b.lost.Add(warn.CapCalculated, 1)
+				default:
+					b.calculated = append(b.calculated, calcField{name: b.lost.Name(string(n)), formula: strings.TrimPrefix(formula, "=")})
 				}
 			}
 			s.Skip()
@@ -240,19 +249,19 @@ type cacheField struct {
 }
 
 // anyCacheFields is cacheFields for a definition in XML or in records.
-func (b *Book) anyCacheFields(target string) ([]cacheField, string, error) {
+func (b *Book) anyCacheFields(target string, lost *warn.Lost) ([]cacheField, string, error) {
 	if binary(b.wb.pkg, target) {
-		return b.binaryFields(target)
+		return b.binaryFields(target, lost)
 	}
-	return b.cacheFields(target)
+	return b.cacheFields(target, lost)
 }
 
 // cacheTable reads a cache whose source is gone: a table with the names
 // of its fields in the header row and a row for each record, taking from
 // room as it goes. A cache that keeps no records gives the values each
 // field takes, a column each. cut reports that the budget ran out.
-func (b *Book) cacheTable(c pivotCache, room *gofastcore.TextBudget) (block gofastcore.Block, ok, cut, damaged bool) {
-	fields, records, err := b.anyCacheFields(c.target)
+func (b *Book) cacheTable(c pivotCache, room *gofastcore.TextBudget, lost *warn.Lost) (block gofastcore.Block, ok, cut, damaged bool) {
+	fields, records, err := b.anyCacheFields(c.target, lost)
 	if err != nil {
 		damaged = true
 	}
@@ -290,7 +299,7 @@ func (b *Book) cacheTable(c pivotCache, room *gofastcore.TextBudget) (block gofa
 		if binary(b.wb.pkg, records) {
 			cut, err = b.binaryRecords(records, fields, add)
 		} else {
-			cut, err = b.cacheRecords(records, fields, add)
+			cut, err = b.cacheRecords(records, fields, add, lost)
 		}
 		if err != nil {
 			damaged = true
@@ -318,7 +327,7 @@ func (b *Book) cacheTable(c pivotCache, room *gofastcore.TextBudget) (block gofa
 
 // cacheFields reads the fields of a cache's definition, and names its
 // records part.
-func (b *Book) cacheFields(target string) (fields []cacheField, records string, err error) {
+func (b *Book) cacheFields(target string, lost *warn.Lost) (fields []cacheField, records string, err error) {
 	rels, _ := b.wb.pkg.Rels(target)
 	byID := map[string]opc.Rel{}
 	for _, rel := range rels {
@@ -344,6 +353,7 @@ func (b *Book) cacheFields(target string) (fields []cacheField, records string, 
 			}
 		case s.Is(ns.Sheet, "cacheField"):
 			if len(fields) >= maxCacheFields {
+				lost.Add(warn.CapPivotFields, 1)
 				s.Skip()
 				continue
 			}
@@ -360,11 +370,16 @@ func (b *Book) cacheFields(target string) (fields []cacheField, records string, 
 					s.Skip() // groups of values, formulas: not values records name
 					continue
 				}
-				if s.Depth() != depth+2 || items >= maxSharedItems {
+				if s.Depth() != depth+2 {
+					continue
+				}
+				if items >= maxSharedItems {
+					lost.Add(warn.CapPivotItems, 1)
+					s.Skip()
 					continue
 				}
 				items++
-				f.items = append(f.items, b.cacheValue(&s))
+				f.items = append(f.items, b.cacheValue(&s, lost))
 			}
 			fields = append(fields, f)
 		case s.Is(ns.Sheet, "extLst"):
@@ -376,7 +391,7 @@ func (b *Book) cacheFields(target string) (fields []cacheField, records string, 
 
 // cacheValue reads a value of a cache (s, n, b, d, e, m), whose Start
 // token is current, as text.
-func (b *Book) cacheValue(s *xmlscan.Scanner) string {
+func (b *Book) cacheValue(s *xmlscan.Scanner, lost *warn.Lost) string {
 	v, _ := s.Attr(xmlscan.NoSpace, "v")
 	switch string(s.Local()) {
 	case "m":
@@ -393,7 +408,7 @@ func (b *Book) cacheValue(s *xmlscan.Scanner) string {
 		}
 	case "d":
 		// ISO 8601 already; a date at midnight is a date.
-		return strings.TrimSuffix(clean.Label(string(v)), "T00:00:00")
+		return strings.TrimSuffix(lost.Label(string(v)), "T00:00:00")
 	}
 	t, _ := clean.String(v, clean.Prose)
 	return t
@@ -401,7 +416,7 @@ func (b *Book) cacheValue(s *xmlscan.Scanner) string {
 
 // cacheRecords reads a records part, handing each record to add as a
 // row, until add reports false. cut reports that it did.
-func (b *Book) cacheRecords(target string, fields []cacheField, add func([]string) bool) (cut bool, err error) {
+func (b *Book) cacheRecords(target string, fields []cacheField, add func([]string) bool, lost *warn.Lost) (cut bool, err error) {
 	var s xmlscan.Scanner
 	closer, err := b.wb.pkg.Scan(target, &s, scanOptions)
 	if err != nil {
@@ -426,7 +441,7 @@ func (b *Book) cacheRecords(target string, fields []cacheField, add func([]strin
 						row[i] = fields[i].items[v]
 					}
 				} else {
-					row[i] = b.cacheValue(&s)
+					row[i] = b.cacheValue(&s, lost)
 				}
 			}
 			i++

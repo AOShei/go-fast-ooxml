@@ -5,6 +5,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -36,13 +37,13 @@ func (st *styleSheet) style(i int) *cellStyle {
 
 // Limits on a styles part. Excel itself stops at 64,000 styles.
 const (
-	maxStyles  = 1 << 17
-	maxFormats = 1 << 13
+	maxStyles  = warn.MaxCellStyles
+	maxFormats = warn.MaxNumberFormats
 )
 
 // readStyles reads a styles part: its number formats, the fonts as far as
 // a symbol font goes, and the cell formats that combine them.
-func readStyles(s *xmlscan.Scanner) *styleSheet {
+func readStyles(s *xmlscan.Scanner, lost *warn.Lost) *styleSheet {
 	codes := map[int]string{}
 	var fonts []symbol.Font
 	var xfs []xf
@@ -58,7 +59,11 @@ func readStyles(s *xmlscan.Scanner) *styleSheet {
 		switch string(s.Local()) {
 		case "numFmts":
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-				if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "numFmt") || len(codes) >= maxFormats {
+				if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "numFmt") {
+					continue
+				}
+				if len(codes) >= maxFormats {
+					lost.Add(warn.CapNumberFormats, 1)
 					continue
 				}
 				id, ok := intAttr(s, "numFmtId")
@@ -83,11 +88,18 @@ func readStyles(s *xmlscan.Scanner) *styleSheet {
 				}
 				if len(fonts) < maxStyles {
 					fonts = append(fonts, font)
+				} else {
+					lost.Add(warn.CapCellStyles, 1)
 				}
 			}
 		case "cellXfs":
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-				if s.Kind() != xmlscan.Start || s.Depth() != depth+1 || len(xfs) >= maxStyles {
+				if s.Kind() != xmlscan.Start || s.Depth() != depth+1 {
+					continue
+				}
+				if len(xfs) >= maxStyles {
+					lost.Add(warn.CapCellStyles, 1)
+					s.Skip()
 					continue
 				}
 				var x xf
