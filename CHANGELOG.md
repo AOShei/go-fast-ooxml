@@ -5,9 +5,9 @@ What changes for someone who uses the library. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0 a
 minor version may change the API.
 
-## [Unreleased]
+## [0.1.1] - 2026-11-22
 
-To be released as 0.1.1. Requires `go-fast-core` v0.1.1.
+Requires `go-fast-core` v0.1.1.
 
 ### Fixed
 
@@ -194,5 +194,5 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.1.0...main
+[0.1.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.1
 [0.1.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.0
