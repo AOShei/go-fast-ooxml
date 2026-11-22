@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"strings"
 	"testing"
 
@@ -197,8 +198,8 @@ func TestChartPointBounds(t *testing.T) {
 		strings.Repeat(`<c:ser><c:val><c:numRef><c:numCache><c:ptCount val="999999999"/><c:pt idx="999999998"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>`, 20) +
 		`</c:lineChart></c:plotArea></c:chart></c:chartSpace>`
 	c := read(t, xml)
-	if !c.Cut {
-		t.Error("not reported as cut")
+	if c.Lost.Count(warn.CapChartTotal) != 1 || c.Lost.Count(warn.CapChartPoints) != 20 {
+		t.Errorf("not reported as cut: %v", c.Lost.Warnings())
 	}
 	cells := 0
 	for _, tb := range c.Tables {

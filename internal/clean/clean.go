@@ -161,6 +161,11 @@ const maxAddress = 8 << 10
 // address may be linked to any number of times.
 func Address(s string) string { return bounded(s, maxAddress) }
 
+// LabelCut and AddressCut report whether Label, or Address, cuts s to
+// its bound, as the callers that keep what they return as content say.
+func LabelCut(s string) bool   { return len(strings.TrimSpace(s)) > maxLabel }
+func AddressCut(s string) bool { return len(strings.TrimSpace(s)) > maxAddress }
+
 func bounded(s string, limit int) string {
 	plain := len(s) <= limit
 	for i := 0; plain && i < len(s); i++ {

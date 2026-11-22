@@ -18,7 +18,9 @@ import (
 
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"sync"
 )
 
 // Errors returned by this package. The extractor maps them to the shared
@@ -83,6 +85,36 @@ type Package struct {
 	recovered *Recovery            // set if the directory was rebuilt from the members' headers
 	trailing  []byte               // what follows the end of the archive, up to maxTrailing
 	afterEnd  int64                // how many bytes follow it in all
+
+	cutMu sync.Mutex
+	cut   map[string]int64 // by relationships part: external targets cut to their bound
+}
+
+// cutTargets records that the relationships part name has n external
+// targets longer than an address is kept. A part read again says the
+// same, and is counted once.
+func (p *Package) cutTargets(name string, n int64) {
+	if n == 0 {
+		return
+	}
+	p.cutMu.Lock()
+	defer p.cutMu.Unlock()
+	if p.cut == nil {
+		p.cut = map[string]int64{}
+	}
+	p.cut[name] = max(p.cut[name], n)
+}
+
+// CutTargets returns how many external targets of the relationships read
+// so far were cut to the length an address is kept to.
+func (p *Package) CutTargets() int64 {
+	p.cutMu.Lock()
+	defer p.cutMu.Unlock()
+	n := int64(0)
+	for _, k := range p.cut {
+		n += k
+	}
+	return n
 }
 
 // Open reads the archive's directory and the content-types table.
@@ -176,7 +208,7 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 func (p *Package) Trailing() (data []byte, total int64) { return p.trailing, p.afterEnd }
 
 // maxTrailing bounds what is read of the data after the archive's end.
-const maxTrailing = 1 << 20
+const maxTrailing = warn.MaxTrailing
 
 // trailing finds the archive's end-of-directory record as archive/zip
 // does, the last one in the final 64 KiB whose comment fits in the file,
@@ -537,6 +569,8 @@ func (p *Package) RelsWith(source string, s *xmlscan.Scanner) ([]Rel, error) {
 	}
 	defer c.Close()
 	var rels []Rel
+	cut := int64(0) // external targets cut to their bound
+	defer func() { p.cutTargets(name, cut) }()
 	for {
 		switch s.Next() {
 		case xmlscan.Start:
@@ -549,6 +583,9 @@ func (p *Package) RelsWith(source string, s *xmlscan.Scanner) ([]Rel, error) {
 			mode, _ := s.Attr(xmlscan.NoSpace, "TargetMode")
 			r := Rel{ID: string(id), Type: string(typ), External: string(mode) == "External"}
 			if r.External {
+				if clean.AddressCut(string(target)) {
+					cut++
+				}
 				r.Target = clean.Address(string(target))
 			} else {
 				r.Target = Resolve(source, string(target))

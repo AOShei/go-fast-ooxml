@@ -6,6 +6,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -79,10 +80,17 @@ func (r *reader) noteMark(kind int) string {
 	return placeholder + strconv.Itoa(len(r.noteMarks)-1)
 }
 
+// maxNoteSections bounds the sections whose note numbering is kept.
+const maxNoteSections = warn.MaxNoteSections
+
 // endSection records the note properties of a section that has ended.
 func (r *reader) endSection(props [2]notePr) {
-	if len(r.sections) < 1<<16 {
+	if len(r.sections) < maxNoteSections {
 		r.sections = append(r.sections, props)
+	} else if props != ([2]notePr{}) {
+		// A section past the bound numbers its notes as the document
+		// does: a loss only where it says otherwise.
+		r.lost.Add(warn.CapNoteSections, 1)
 	}
 }
 

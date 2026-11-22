@@ -54,11 +54,35 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Nesting of XML elements | 512 | fixed | The part is cut off |
 | A record of a binary workbook (`.xlsb`) | 16 MiB, read as its bytes arrive, not all at once from its stated size | fixed | The part is cut off |
 | A formula of a binary workbook turned back into text | 32 KiB of text, 4,096 operands waiting for their operator | fixed | The formula is not read back, and is counted in `ooxml.unread_content` |
-| What a binary workbook's formulas name outside their sheet | 65,536 links, each with 65,536 sheets and 65,536 names; 65,536 tables of 16,384 columns | fixed | Those past it are not read, and a formula that names one is not read back |
+| What a binary workbook's formulas name outside their sheet | 65,536 links, each with 65,536 sheets and 65,536 names; 65,536 tables of 16,384 columns | fixed | Those past it are not read, and said with `limit.exceeded`; a formula that names one is not read back |
 | Code of a VBA project, decompressed | what is left of the text and decompression budgets | | The module is cut off; what it decompresses to is charged to the decompression budget too |
-| Data after the end of the archive | 1 MiB read, and only what follows within the archive's last 64 KiB is found | fixed | The rest is not read; `input.trailing_data` says how many bytes there are |
+| Data after the end of the archive | 1 MiB read, and only what follows within the archive's last 64 KiB is found | fixed | The rest is not read; `input.trailing_data` says how many bytes there are, and `limit.exceeded` how many were not read |
 
 A zero in a limit means its default and a negative number means none.
+
+### Fixed bounds
+
+The reader also keeps to fixed bounds on what it holds, set far beyond
+what Office writes. A file that goes past one keeps what fits, and what
+the bound left out is said with `limit.exceeded`, severity error, once
+for each bound on the part it concerns, with how many were left out
+(on the document, for what belongs to no part):
+
+| Format | Bound |
+|---|---|
+| Word | a field code, 64 KiB; fields nested 64 deep (deeper ones are read as part of the field around them); a list label, 64 bytes; 65,536 sections whose note numbering is kept; 16,384 document variables |
+| PowerPoint | 65,536 slides; 16,384 columns of a table; replies nested 64 deep; 65,536 comment authors; 256 placeholders of a layout or master; a comment's author identifier and date, 64 bytes each |
+| Excel | 65,536 sheets; 1,048,576 rows and 16,384 columns; of a sheet: 262,144 comments, 4,096 comment authors, 262,144 hyperlinks, 16,384 drop-down lists over 262,144 ranges, 262,144 merged ranges, 4,096 declared tables, 1,024 pivot tables, 16 drawing parts, 1,048,576 shared formulas; a formula, 32 KiB; 16,384 defined names; 131,072 cell formats and fonts, 8,192 number formats; 1,024 pivot caches, each of 16,384 fields of 1,048,576 values; 4,096 calculated fields; of a binary workbook: 65,536 links to other workbooks, each of 65,536 sheets and names, 65,536 references to sheets, 65,536 tables of 16,384 columns |
+| Charts | 1,024 series, each of 8 sets of values; points at an index past 1,048,576; about two million points in all; 16 levels of categories; 16 axes and 16 kinds of plot; a title, 4 KiB |
+| SmartArt | 65,536 nodes, 131,072 connections, 64 levels |
+| Stored data | 1,024 custom XML parts; 16 VBA projects found by their content type; a VBA project, 256 MiB, of 65,536 entries and 4,096 modules; the name of a defined name or document variable, 512 bytes |
+| All | a link's address, 8 KiB; data after the end of the archive, 1 MiB |
+
+Names of authors, parts and the like that are not content are held to
+512 bytes without a warning; a custom property whose name or value is
+cut is counted in `ooxml.property_truncated`. A compound file (an
+encrypted file's container) with more than 65,536 entries is refused
+with `ErrLimitExceeded`.
 
 A document can embed thousands of files. The limits on decompressed
 bytes, on text and on password checks are therefore the document's and

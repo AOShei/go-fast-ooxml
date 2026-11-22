@@ -844,7 +844,7 @@ func TestPowerPointDamagedAndMissingParts(t *testing.T) {
 			damaged += w.Message + ";"
 		}
 	}
-	if damaged != "ppt/notesSlides/notesSlide4.xml;" {
+	if damaged != "1 part could not be read to its end (ppt/notesSlides/notesSlide4.xml);" {
 		t.Errorf("damaged parts: %q", damaged)
 	}
 

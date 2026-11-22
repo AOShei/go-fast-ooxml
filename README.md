@@ -6,7 +6,8 @@ the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
-**Status: complete for the first release (0.1.0), which is not tagged yet.**
+**Status: released as v0.1.0.** Changes since are in
+[`CHANGELOG.md`](CHANGELOG.md).
 What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
 | Format | State |
@@ -115,6 +116,21 @@ with warnings that say what could not.
   each time a link is written: one address may be linked to any number of
   times. An address is kept whole up to 8 KiB. The other limits are in
   [`SECURITY.md`](SECURITY.md).
+- **What a fixed bound leaves out is said.** Besides the limits a caller
+  sets, the reader keeps to fixed bounds, far beyond what Office writes:
+  16,384 columns of a slide's table, 64 KiB of a field code, 16,384
+  defined names, 1,024 series of a chart (the list is in `SECURITY.md`).
+  A file that goes past one keeps what fits, and the part says what was
+  left out with `limit.exceeded`, severity error, once for each bound,
+  with how many: "table cells past column 16384 were not read (3 cells)".
+  What belongs to no part (sheets past the 65,536th, links to other
+  workbooks) is said on the document.
+- **A warning that could repeat is said once.** Parts that could not be
+  read to their end, and drawings that name a chart or diagram the file
+  does not have, are one `ooxml.part_damaged` warning each, with how many
+  and the first eight: "12 parts could not be read to their end (a, b,
+  …, and 4 more)". Core keeps at most 1,000 warnings on a part or a
+  document and counts the rest in `warnings.omitted`.
 
 **A part at a time.** `Open` gives a `File`, which reads a part when it is
 asked for: the body of a Word document, a sheet, a slide.

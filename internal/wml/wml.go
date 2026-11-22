@@ -72,6 +72,11 @@ type reader struct {
 	opts *gofastcore.Options
 	doc  *gofastcore.Document
 	part *gofastcore.Part
+	lost warn.Lost // what the fixed bounds left out of the document
+	// Parts that could not be read to their end, and charts and diagrams
+	// named by a relationship the part does not have: each said once,
+	// however often it is met.
+	damaged, missing warn.Names
 
 	styles    *styles
 	numbering *numbering
@@ -148,7 +153,10 @@ func Extract(ctx context.Context, pkg *opc.Package, main string, opts *gofastcor
 		case ns.IsRel(rel.Type, ns.RelStyles):
 			stylesPart = rel.Target
 		case ns.IsRel(rel.Type, ns.RelNumbering):
-			r.load(rel.Target, func(s *xmlscan.Scanner) { r.numbering = readNumbering(s) })
+			r.load(rel.Target, func(s *xmlscan.Scanner) {
+				r.numbering = readNumbering(s)
+				r.lost.Add(warn.CapListLabel, int64(r.numbering.cut))
+			})
 		}
 	}
 	if stylesPart != "" {
@@ -278,7 +286,7 @@ func (r *reader) noteErr(name string, err error) {
 	case errors.Is(err, warn.ErrText):
 		r.textCut = true
 	default:
-		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, clean.Label(name))
+		r.damaged.AddOnce(clean.Label(name))
 	}
 }
 
@@ -571,7 +579,7 @@ func (r *reader) embedded(rels []opc.Rel) {
 	children, damaged, err := media.Embedded(r.ctx, r.pkg, r.opts, rels, r.children, !r.budget && !r.text.Spent())
 	r.doc.Children = append(r.doc.Children, children...)
 	for _, name := range damaged {
-		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, clean.Label(name))
+		r.damaged.AddOnce(clean.Label(name))
 	}
 	r.noteErr("", err)
 }
@@ -594,6 +602,13 @@ func (r *reader) finish() {
 	}
 	if r.textCut {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, warn.TextCut("document"))
+	}
+	r.lost.Say(part)
+	if msg := r.damaged.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
+		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, msg)
+	}
+	if msg := r.missing.Message("drawing names a chart or diagram the document does not have", "drawings name a chart or diagram the document does not have"); msg != "" {
+		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, msg)
 	}
 	if !hasText && !part.Has(gofastcore.WarnPartFailed) {
 		switch {
@@ -696,11 +711,15 @@ func (b *Body) Read(ctx context.Context, index int) *unit.Result {
 // the body made, and names the parts the stored part could not read.
 func (b *Body) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	var out []gofastcore.Warning
+	var damaged warn.Names
 	for _, t := range tallies {
 		out = append(out, t.Warnings...)
 		for _, name := range t.Damaged {
-			out = append(out, gofastcore.Warning{Code: WarnPartDamaged, Severity: gofastcore.SeverityWarning, Message: clean.Label(name)})
+			damaged.AddOnce(clean.Label(name))
 		}
 	}
-	return out
+	if msg := damaged.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
+		out = append(out, gofastcore.Warning{Code: WarnPartDamaged, Severity: gofastcore.SeverityWarning, Message: msg})
+	}
+	return append(out, warn.Package(b.pkg.CutTargets())...)
 }

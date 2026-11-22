@@ -19,9 +19,7 @@ func (sh *sheet) chart(name string, out []placed, row, col int32, frame string, 
 	}
 	sh.removed += c.Removed
 	sh.charts = append(sh.charts, c.Rels...)
-	if c.Cut {
-		sh.part.Warn(gofastcore.SeverityWarning, gofastcore.WarnLimitExceeded, "a chart holds more points than are read; its data is cut off")
-	}
+	sh.lost.Merge(&c.Lost)
 	blocks, _, cut := c.Blocks(sh.room, frame)
 	for _, b := range blocks {
 		if unseen {
@@ -45,6 +43,7 @@ func (sh *sheet) diagram(name string, rels map[string]opc.Rel, pal *dml.Palette,
 		return out, false
 	}
 	sh.removed += d.Removed
+	sh.lost.Merge(&d.Lost)
 	blocks, _, cut := d.Blocks(sh.room)
 	for _, b := range blocks {
 		if unseen {

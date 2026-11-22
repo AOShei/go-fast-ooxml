@@ -183,6 +183,7 @@ type layout struct {
 	staticBytes int
 	repeats     []bool            // of a layout: which of static the master has too
 	styles      [3]*dml.ListStyle // a master's text styles
+	lost        *warn.Lost        // what the fixed bounds left out of it, said on every slide that shows it
 }
 
 // sheet returns the layout or master in the named part, reading it the
@@ -307,10 +308,11 @@ type page struct {
 	damaged  []string
 	external int
 	programs int
-	exceeded bool   // the decompression budget ran out
-	cut      string // why the part was cut short, if it was
-	cells    int64  // table cells taken from the shared allowance
-	failure  error  // why the part itself could not be read
+	exceeded bool      // the decompression budget ran out
+	cut      string    // why the part was cut short, if it was
+	cells    int64     // table cells taken from the shared allowance
+	lost     warn.Lost // what the fixed bounds left out of the part
+	failure  error     // why the part itself could not be read
 	// Of a notes master or handout: whether its header [0] and footer [1]
 	// are shown, and the blocks of each, as pairs of from and to.
 	hf      [2]bool
@@ -446,9 +448,6 @@ func (pg *page) part() {
 		}
 	}
 }
-
-// maxAnimated bounds the animated shapes that are kept.
-const maxAnimated = 1 << 14
 
 // items reads the shapes in the element whose Start token is current: a
 // shape tree, a group, or one of two alternative forms of a shape.
@@ -693,6 +692,8 @@ func (pg *page) sp(g *group) {
 		}
 		if len(pg.phs) < maxPlaceholders {
 			pg.phs = append(pg.phs, ph)
+		} else {
+			pg.lost.Add(warn.CapPlaceholders, 1)
 		}
 		return
 	}
@@ -703,7 +704,7 @@ func (pg *page) sp(g *group) {
 
 // maxPlaceholders bounds the placeholders kept from a layout or master.
 // Each placeholder of a slide is looked up among them.
-const maxPlaceholders = 256
+const maxPlaceholders = warn.MaxPlaceholders
 
 // isSlideTitle and the like say what a placeholder's text is.
 func kindOf(t phType) (kind gofastcore.Kind, level uint8, joined bool) {

@@ -12,6 +12,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xlsb"
 )
 
@@ -97,6 +98,7 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 			wb.date1904 = f.U32()&1 != 0
 		case xlsb.BundleSh:
 			if len(b.refs) >= maxSheets {
+				b.docLost.Add(warn.CapSheets, 1)
 				continue
 			}
 			state := f.U32()
@@ -122,6 +124,9 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 			f.U8() // the keyboard shortcut of a macro
 			sheet := f.I32()
 			buf = f.String(buf[:0])
+			if clean.LabelCut(string(buf)) {
+				b.lost.Add(warn.CapName, 1)
+			}
 			name := clean.Name(string(buf))
 			if flags&0x20 != 0 && name != "" {
 				name = "_xlnm." + name // a name Excel gives a meaning to: Print_Area
@@ -131,6 +136,7 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 			fb.Names = append(fb.Names, name)
 		case xlsb.SupSelf, xlsb.SupSame, xlsb.SupAddin, xlsb.SupBookSrc:
 			if len(fb.Links) >= maxLinksOut {
+				b.docLost.Add(warn.CapExternalLinks, 1)
 				continue
 			}
 			l := xlsb.Link{Kind: xlsb.LinkSelf}
@@ -151,13 +157,21 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 			fb.Links = append(fb.Links, l)
 		case xlsb.PlaceholderName:
 			// A name used through the link before it.
-			if n := len(fb.Links); n > 0 && fb.Links[n-1].Kind != xlsb.LinkOther && len(fb.Links[n-1].Names) < maxExternNames {
+			if n := len(fb.Links); n > 0 && fb.Links[n-1].Kind != xlsb.LinkOther {
+				if len(fb.Links[n-1].Names) >= maxExternNames {
+					b.docLost.Add(warn.CapExternalNames, 1)
+					continue
+				}
 				buf = f.String(buf[:0])
 				fb.Links[n-1].Names = append(fb.Links[n-1].Names, xlsb.ExternName{Name: clean.Name(string(buf))})
 			}
 		case xlsb.ExternSheet:
 			n := f.U32()
-			for i := uint32(0); i < n && f.Left() >= 12 && len(fb.XTI) < 1<<16; i++ {
+			for i := uint32(0); i < n && f.Left() >= 12; i++ {
+				if len(fb.XTI) >= maxSheetRefs {
+					b.docLost.Add(warn.CapSheetRefs, int64(n-i))
+					break
+				}
 				fb.XTI = append(fb.XTI, xlsb.XTI{Link: f.I32(), First: f.I32(), Last: f.I32()})
 			}
 		case xlsb.PivotCacheID:
@@ -178,8 +192,9 @@ func (b *Book) readBinaryBook(r *xlsb.Reader, byID map[string]opc.Rel) []binName
 // Bounds on what a binary workbook's links give formulas: the links, and
 // the sheets and names of each.
 const (
-	maxLinksOut    = 1 << 16
-	maxExternNames = 1 << 16
+	maxLinksOut    = warn.MaxExternalLinks
+	maxExternNames = warn.MaxExternalNames
+	maxSheetRefs   = warn.MaxSheetRefs
 )
 
 // linkPart is a link to another file whose part says what it is.
@@ -191,7 +206,7 @@ type linkPart struct {
 // readLink reads the part of a link to another file (External Link) into
 // what formulas take from it: whether it is a workbook, and the sheets and
 // names of one.
-func readLink(r *xlsb.Reader, l *xlsb.Link) {
+func readLink(r *xlsb.Reader, l *xlsb.Link, lost *warn.Lost) {
 	var buf []byte
 	for r.Next() {
 		f := xlsb.NewFields(r.Data())
@@ -202,7 +217,11 @@ func readLink(r *xlsb.Reader, l *xlsb.Link) {
 			}
 		case xlsb.SupTabs:
 			n := f.U32()
-			for i := uint32(0); i < n && !f.Short && len(l.Sheets) < maxSheets; i++ {
+			for i := uint32(0); i < n && !f.Short; i++ {
+				if len(l.Sheets) >= maxSheets {
+					lost.Add(warn.CapExternalSheets, int64(n-i))
+					break
+				}
 				buf = f.String(buf[:0])
 				name, _ := clean.String(buf, clean.Prose)
 				l.Sheets = append(l.Sheets, name)
@@ -211,6 +230,8 @@ func readLink(r *xlsb.Reader, l *xlsb.Link) {
 			if len(l.Names) < maxExternNames {
 				buf = f.String(buf[:0])
 				l.Names = append(l.Names, xlsb.ExternName{Name: clean.Name(string(buf))})
+			} else {
+				lost.Add(warn.CapExternalNames, 1)
 			}
 		case xlsb.SupNameBits:
 			// The sheet the name before is local to (ExternalNameProperties).
@@ -224,7 +245,7 @@ func readLink(r *xlsb.Reader, l *xlsb.Link) {
 }
 
 // maxBookTables bounds the tables a binary workbook's formulas may name.
-const maxBookTables = 1 << 16
+const maxBookTables = warn.MaxBookTables
 
 // binaryTables reads the tables the sheets of a binary workbook declare,
 // for formulas that name their columns: their numbers, names and columns.
@@ -238,6 +259,10 @@ func (b *Book) binaryTables() map[uint32]xlsb.Table {
 		rels, _ := pkg.Rels(ref.target)
 		for _, rel := range rels {
 			if rel.External || !ns.IsRel(rel.Type, ns.RelTable) || !binary(pkg, rel.Target) || !pkg.Has(rel.Target) {
+				continue
+			}
+			if len(out) >= maxBookTables {
+				b.docLost.Add(warn.CapBookTables, 1)
 				continue
 			}
 			// A part that cannot be read to its end gives what it has; its
@@ -262,6 +287,9 @@ func (b *Book) binaryTables() map[uint32]xlsb.Table {
 						}
 						in = !f.Short
 					case xlsb.BeginListCol:
+						if in && len(t.Columns) >= maxCols {
+							b.docLost.Add(warn.CapTableColumns, 1)
+						}
 						if in && len(t.Columns) < maxCols {
 							f.Skip(24) // its number, total, formats and query field
 							buf = f.String(buf[:0])
@@ -294,7 +322,7 @@ func (b *Book) binaryNames(names []binName) {
 			b.unreadNames++
 			continue
 		}
-		f := strings.TrimSpace(verbatim([]byte(text)))
+		f := strings.TrimSpace(verbatim([]byte(text), &b.lost))
 		if f == "" {
 			continue // a formula of nothing: as readNames leaves it out
 		}
@@ -307,7 +335,7 @@ func (b *Book) binaryNames(names []binName) {
 
 // readBinaryStyles reads a binary styles part: the number formats, the
 // fonts as far as a symbol font goes, and the cell formats.
-func readBinaryStyles(r *xlsb.Reader) *styleSheet {
+func readBinaryStyles(r *xlsb.Reader, lost *warn.Lost) *styleSheet {
 	codes := map[int]string{}
 	var fonts []symbol.Font
 	var xfs []xf
@@ -318,6 +346,7 @@ func readBinaryStyles(r *xlsb.Reader) *styleSheet {
 		switch r.ID() {
 		case xlsb.Fmt:
 			if len(codes) >= maxFormats {
+				lost.Add(warn.CapNumberFormats, 1)
 				continue
 			}
 			id := int(f.U16())
@@ -330,7 +359,11 @@ func readBinaryStyles(r *xlsb.Reader) *styleSheet {
 		case xlsb.EndFonts:
 			inFonts = false
 		case xlsb.Font:
-			if !inFonts || len(fonts) >= maxStyles {
+			if !inFonts {
+				continue
+			}
+			if len(fonts) >= maxStyles {
+				lost.Add(warn.CapCellStyles, 1)
 				continue
 			}
 			f.Skip(21) // size, flags, weight, position, underline, family, character set, colour, scheme
@@ -341,7 +374,11 @@ func readBinaryStyles(r *xlsb.Reader) *styleSheet {
 		case xlsb.EndCellXFs:
 			inXFs = false
 		case xlsb.XF:
-			if !inXFs || len(xfs) >= maxStyles {
+			if !inXFs {
+				continue
+			}
+			if len(xfs) >= maxStyles {
+				lost.Add(warn.CapCellStyles, 1)
 				continue
 			}
 			f.U16() // the cell style it is based on
@@ -504,6 +541,9 @@ func (sh *sheet) readBin(r *xlsb.Reader) {
 				height := f.U16()
 				flags := f.U16()
 				row = -1
+				if rw >= maxRows && !f.Short {
+					sh.lost.Add(warn.CapSheetRows, 1)
+				}
 				if rw >= 0 && rw < maxRows && !f.Short {
 					row = rw
 					if row < sh.nextRow {
@@ -543,8 +583,12 @@ func (sh *sheet) readBin(r *xlsb.Reader) {
 				sh.hiddenCols = append(sh.hiddenCols, span{lo, min(hi, maxCols-1)})
 			}
 		case xlsb.MergeCell:
-			if r, ok := binRect(&f); ok && (r.r1 > r.r0 || r.c1 > r.c0) && len(sh.merges) < maxMerges {
-				sh.merges = append(sh.merges, r)
+			if r, ok := binRect(&f); ok && (r.r1 > r.r0 || r.c1 > r.c0) {
+				if len(sh.merges) < maxMerges {
+					sh.merges = append(sh.merges, r)
+				} else {
+					sh.lost.Add(warn.CapMerges, 1)
+				}
 			}
 		case xlsb.HLink:
 			if sh.wb.opts.Spans {
@@ -556,14 +600,10 @@ func (sh *sheet) readBin(r *xlsb.Reader) {
 			}
 		case xlsb.ListPart:
 			buf = f.String(buf[:0])
-			if target, ok := sh.relTarget(buf, ns.RelTable); ok && len(sh.tables) < maxTables {
-				sh.tables = append(sh.tables, target)
-			}
+			sh.addTable(sh.relTarget(buf, ns.RelTable))
 		case xlsb.Drawing:
 			buf = f.String(buf[:0])
-			if target, ok := sh.relTarget(buf, ns.RelDrawing); ok && len(sh.drawings) < 16 {
-				sh.drawings = append(sh.drawings, target)
-			}
+			sh.addDrawing(sh.relTarget(buf, ns.RelDrawing))
 		}
 	}
 	// A part that ends inside its data: the row read so far is kept, as
@@ -617,6 +657,9 @@ func (sh *sheet) binCell(id int, f *xlsb.Fields, row int32, col *int32) bool {
 	}
 	formula := id >= xlsb.FmlaString && id <= xlsb.FmlaError
 	sh.raw = raw
+	if !f.Short && *col >= maxCols && len(raw) > 0 {
+		sh.lost.Add(warn.CapSheetCols, 1)
+	}
 	if f.Short || *col < 0 || *col >= maxCols || len(raw) == 0 {
 		// A record cut short in a damaged file, whose value may be part
 		// of one; a cell off the sheet; or a formula whose result is an
@@ -665,7 +708,7 @@ func (sh *sheet) formulaAt(rgce, extra []byte, row, col int32) string {
 		sh.unread[unreadFormula]++
 		return ""
 	}
-	return verbatim([]byte(text))
+	return verbatim([]byte(text), &sh.lost)
 }
 
 // sharedText is the formula of cell c, which uses the shared formula s
@@ -695,6 +738,8 @@ func (sh *sheet) binShared(id int, f *xlsb.Fields) {
 	}
 	if len(sh.formulasAt) < maxShared {
 		sh.formulasAt[base] = s
+	} else {
+		sh.lost.Add(warn.CapSharedFormulas, 1)
 	}
 	if p := sh.pend; p != nil && p.base == base {
 		sh.settle(&s)
@@ -738,6 +783,7 @@ func appendNumber(dst []byte, v float64) []byte {
 // element.
 func (sh *sheet) binLink(f *xlsb.Fields) {
 	if len(sh.links)+len(sh.linkAt) >= maxLinks {
+		sh.lost.Add(warn.CapLinks, 1)
 		return
 	}
 	at, ok := binRect(f)
@@ -751,6 +797,9 @@ func (sh *sheet) binLink(f *xlsb.Fields) {
 		href = rel.Target // cleaned when the relationships were read
 	}
 	if href == "" && len(location) > 0 {
+		if clean.AddressCut(string(location)) {
+			sh.lost.Add(warn.CapAddress, 1)
+		}
 		href = "#" + clean.Address(string(location))
 	}
 	sh.addLink(at, href)
@@ -760,16 +809,24 @@ func (sh *sheet) binLink(f *xlsb.Fields) {
 // dataValidation element: only lists are kept.
 func (sh *sheet) binValidation(f *xlsb.Fields) {
 	flags := f.U32()
-	if flags&0xF != 3 || len(sh.lists) >= maxChoiceLists {
+	if flags&0xF != 3 {
+		return
+	}
+	if len(sh.lists) >= maxChoiceLists {
+		sh.lost.Add(warn.CapChoiceLists, 1)
 		return
 	}
 	v := choiceList{arrow: flags&0x200 == 0}
 	n := f.U32()
 	for i := uint32(0); i < n && !f.Short; i++ {
 		r, ok := binRect(f)
-		if ok && sh.listRanges < maxChoiceRanges {
+		switch {
+		case !ok:
+		case sh.listRanges < maxChoiceRanges:
 			v.ranges = append(v.ranges, r)
 			sh.listRanges++
+		default:
+			sh.lost.Add(warn.CapChoiceRanges, 1)
 		}
 	}
 	for range 4 { // the titles and messages of its prompt and its error
@@ -843,6 +900,8 @@ func (sh *sheet) binComments(target string, add func(row, col int32, raw []byte,
 			case xlsb.CommentAuthor:
 				if len(authors) < maxAuthors {
 					authors = append(authors, clean.Name(string(f.String(nil))))
+				} else {
+					sh.lost.Add(warn.CapCommentAuthorsSheet, 1)
 				}
 			case xlsb.BeginComment:
 				i := f.I32()
@@ -904,7 +963,7 @@ func (sh *sheet) readOwn(chunks bool) (opened bool, err error) {
 
 // binMacroCode is macroCode for a binary macro sheet: its formulas, one
 // cell to a line.
-func (b *Book) binMacroCode(target string, room int64) (code string, damaged bool) {
+func (b *Book) binMacroCode(target string, room int64, lost *warn.Lost) (code string, damaged bool) {
 	var sb strings.Builder
 	line := func(row, col int32, f string) {
 		if f == "" {
@@ -916,7 +975,7 @@ func (b *Book) binMacroCode(target string, room int64) (code string, damaged boo
 		}
 		sb.WriteString(cellName(row, col))
 		sb.WriteString("\t=")
-		sb.WriteString(strings.ReplaceAll(verbatim([]byte(f)), "\n", " "))
+		sb.WriteString(strings.ReplaceAll(verbatim([]byte(f), lost), "\n", " "))
 	}
 	err := records(b.wb.pkg, target, func(r *xlsb.Reader) {
 		row := int32(-1)
@@ -944,6 +1003,8 @@ func (b *Book) binMacroCode(target string, room int64) (code string, damaged boo
 				s := binFormula{rgce: bytes.Clone(rgce), extra: bytes.Clone(extra), array: id == xlsb.ArrFmla}
 				if len(shared) < maxShared {
 					shared[pos{at.r0, at.c0}] = s
+				} else {
+					lost.Add(warn.CapSharedFormulas, 1)
 				}
 				if pend != nil && *pend == (pos{at.r0, at.c0}) {
 					text, _ := xlsb.Formula(s.rgce, s.extra, b.wb.formulas, xlsb.Place{Row: pend.row, Col: pend.col})

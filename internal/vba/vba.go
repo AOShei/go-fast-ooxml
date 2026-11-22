@@ -50,6 +50,8 @@ type Project struct {
 	// Damaged says some of the project could not be read: what was read
 	// up to the damage is kept.
 	Damaged bool
+	// Unlisted counts the modules past maxModules, which are not read.
+	Unlisted int
 }
 
 // maxModules bounds the modules read from one project.
@@ -143,11 +145,15 @@ const (
 func (p *Project) parseDir(dir []byte) (mods []module, damaged bool) {
 	var cur *module
 	end := func() {
-		if cur != nil && cur.stream != "" && len(mods) < maxModules {
+		switch {
+		case cur == nil || cur.stream == "":
+		case len(mods) < maxModules:
 			if cur.name == "" {
 				cur.name = cur.stream
 			}
 			mods = append(mods, *cur)
+		default:
+			p.Unlisted++
 		}
 		cur = nil
 	}

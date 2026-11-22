@@ -46,9 +46,7 @@ func (pg *page) chart(sh *props, g *group) {
 		blocks[i].Loc.BBox = bbox(sh)
 	}
 	pg.blocks = append(pg.blocks, blocks...)
-	if c.Cut && pg.cut == "" {
-		pg.cut = "a chart holds more points than are read"
-	}
+	pg.lost.Merge(&c.Lost)
 	if cut {
 		s.Abort(warn.ErrText)
 	}
@@ -84,6 +82,7 @@ func (pg *page) diagram(sh *props, g *group) {
 		return
 	}
 	pg.text.Removed += d.Removed
+	pg.lost.Merge(&d.Lost)
 	pg.place(sh, g)
 	frame := sh.xfrm.Local().Then(g.m)
 	at := len(pg.blocks)

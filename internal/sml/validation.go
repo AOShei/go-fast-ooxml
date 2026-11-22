@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -18,10 +19,10 @@ type choiceList struct {
 }
 
 const (
-	maxChoiceLists = 1 << 14
+	maxChoiceLists = warn.MaxChoiceLists
 	// The ranges of all the lists of a sheet: a list can be for thousands
 	// of ranges, as a sheet copied down many times has.
-	maxChoiceRanges = 1 << 18
+	maxChoiceRanges = warn.MaxChoiceRanges
 )
 
 // readValidation reads a dataValidations element, or one of the newer
@@ -30,7 +31,12 @@ const (
 // nothing to choose from.
 func (sh *sheet) readValidation(s *xmlscan.Scanner) {
 	typ, _ := s.Attr(xmlscan.NoSpace, "type")
-	if string(typ) != "list" || len(sh.lists) >= maxChoiceLists {
+	if string(typ) != "list" {
+		s.Skip()
+		return
+	}
+	if len(sh.lists) >= maxChoiceLists {
+		sh.lost.Add(warn.CapChoiceLists, 1)
 		s.Skip()
 		return
 	}
@@ -71,7 +77,8 @@ func (sh *sheet) readValidation(s *xmlscan.Scanner) {
 func (sh *sheet) appendRanges(dst []rect, sqref []byte) []rect {
 	for _, ref := range bytes.Fields(sqref) {
 		if sh.listRanges >= maxChoiceRanges {
-			break
+			sh.lost.Add(warn.CapChoiceRanges, 1)
+			continue
 		}
 		if r, ok := parseRange(ref); ok {
 			dst = append(dst, r)

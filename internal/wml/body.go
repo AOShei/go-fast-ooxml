@@ -38,6 +38,7 @@ type parser struct {
 	href      string     // target of the hyperlink being read, when links are asked for
 	hrefDepth int        // depth of its element
 	fields    []field    // the fields being read, innermost last
+	deep      int        // fields begun past maxFieldDepth and not yet ended
 	fieldHref string     // target of the HYPERLINK field whose result is being read
 	cell      *cellProps // properties of the table cell being read, if any
 	row       *rowProps
@@ -57,12 +58,13 @@ type field struct {
 	inCode bool   // its separator, or its end, has not come yet
 	nested bool   // it began in the code of the field around it
 	href   string // where its result leads, for a HYPERLINK field
+	cut    bool   // its code was longer than maxFieldCode
 }
 
 // Bounds on the fields kept track of.
 const (
-	maxFieldDepth = 64
-	maxFieldCode  = 1 << 16
+	maxFieldDepth = warn.MaxFieldDepth
+	maxFieldCode  = warn.MaxFieldCode
 )
 
 // inCode reports whether the parser is in the code of a field, where
@@ -84,19 +86,32 @@ func (p *parser) fieldChar() {
 	typ, _ := p.s.Attr(ns.Word, "fldCharType")
 	switch string(typ) {
 	case "begin":
-		nested := p.inCode()
-		if len(p.fields) < maxFieldDepth {
-			p.fields = append(p.fields, field{inCode: true, nested: nested})
+		// A field nested deeper than the bound is not kept apart: its
+		// code and its result are read as the field around it reads
+		// them, and its end ends it, not that one.
+		if p.deep > 0 || len(p.fields) >= maxFieldDepth {
+			p.deep++
+			p.r.lost.Add(warn.CapFieldDepth, 1)
+			return
 		}
+		nested := p.inCode()
+		p.fields = append(p.fields, field{inCode: true, nested: nested})
 	case "separate":
+		if p.deep > 0 {
+			return
+		}
 		if n := len(p.fields); n > 0 && p.fields[n-1].inCode {
 			f := &p.fields[n-1]
 			f.inCode = false
 			if p.r.opts.Spans {
-				f.href = fieldLink(f.code)
+				f.href = p.fieldLink(f.code)
 			}
 		}
 	case "end":
+		if p.deep > 0 {
+			p.deep--
+			return
+		}
 		n := len(p.fields)
 		if n == 0 {
 			return
@@ -106,12 +121,20 @@ func (p *parser) fieldChar() {
 		code := bytes.TrimSpace(f.code)
 		switch {
 		case len(code) == 0:
-		case f.nested && n > 1 && p.fields[n-2].inCode:
-			outer := &p.fields[n-2]
-			if len(outer.code)+len(code)+4 <= maxFieldCode {
-				outer.code = append(append(append(outer.code, "{ "...), code...), " }"...)
+			if f.cut {
+				p.r.lost.Add(warn.CapFieldCode, 1)
 			}
+		case f.nested && n > 1 && p.fields[n-2].inCode:
+			// The code of a nested field is part of the code of the one
+			// around it, and is cut with it.
+			outer := &p.fields[n-2]
+			outer.code = append(append(append(outer.code, "{ "...), code...), " }"...)
+			outer.cut = outer.cut || f.cut
+			cutCode(outer)
 		default:
+			if f.cut {
+				p.r.lost.Add(warn.CapFieldCode, 1)
+			}
 			p.fieldNote(code)
 		}
 	}
@@ -122,6 +145,19 @@ func (p *parser) fieldChar() {
 			break
 		}
 	}
+}
+
+// cutCode cuts the code of f to maxFieldCode bytes, at the start of a
+// character, if it is longer, and marks it cut.
+func cutCode(f *field) {
+	if len(f.code) <= maxFieldCode {
+		return
+	}
+	n := maxFieldCode
+	for n > 0 && !utf8.RuneStart(f.code[n]) {
+		n--
+	}
+	f.code, f.cut = f.code[:n], true
 }
 
 // fieldNote keeps the code of a field as a note after the paragraph: every
@@ -502,7 +538,7 @@ func (p *parser) paragraph(emit func(gofastcore.Block)) {
 		if s.Is(ns.Word, "fldSimple") {
 			// A field written in one piece: its code is an attribute.
 			if code, ok := s.Attr(ns.Word, "instr"); ok {
-				if target := fieldLink(code); target != "" && p.r.opts.Spans {
+				if target := p.fieldLink(code); target != "" && p.r.opts.Spans {
 					p.href, p.hrefDepth = target, s.Depth()
 				}
 				p.fieldNote(bytes.TrimSpace(code))
@@ -864,10 +900,15 @@ func (p *parser) run(deleted bool) {
 			p.fieldChar()
 		case "instrText", "delInstrText":
 			n := len(p.fields)
-			if n > 0 && p.fields[n-1].inCode && (s.Is(ns.Word, "delInstrText") == deleted) && len(p.fields[n-1].code) < maxFieldCode {
-				p.fields[n-1].code = s.AppendText(p.fields[n-1].code)
-			} else {
+			switch {
+			case n == 0 || !p.fields[n-1].inCode || s.Is(ns.Word, "delInstrText") != deleted:
 				s.Skip()
+			case p.fields[n-1].cut:
+				s.Skip()
+			default:
+				f := &p.fields[n-1]
+				f.code = s.AppendText(f.code)
+				cutCode(f)
 			}
 		default:
 			// Marks with no text of their own.
@@ -925,7 +966,7 @@ func (p *parser) run(deleted bool) {
 
 // fieldLink returns the target of a HYPERLINK field from its code, such as
 // HYPERLINK "https://example.org" or HYPERLINK \l "bookmark", or "".
-func fieldLink(code []byte) string {
+func (p *parser) fieldLink(code []byte) string {
 	fields := strings.Fields(string(code))
 	if len(fields) < 2 || !strings.EqualFold(fields[0], "HYPERLINK") {
 		return ""
@@ -938,6 +979,9 @@ func fieldLink(code []byte) string {
 		case strings.HasPrefix(f, `\`):
 			// another switch, with or without a value
 		case strings.HasPrefix(f, `"`):
+			if clean.AddressCut(strings.Trim(f, `"`)) {
+				p.r.lost.Add(warn.CapAddress, 1)
+			}
 			target := clean.Address(strings.Trim(f, `"`))
 			if target == "" {
 				continue

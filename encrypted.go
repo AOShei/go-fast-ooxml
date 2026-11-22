@@ -94,6 +94,9 @@ func (f *File) unlock(ctx context.Context) error {
 	}
 	const legacy = "compound file: a legacy binary Office format (.doc, .xls, .ppt), which this library does not read"
 	cf, err := cfb.Open(f.r, f.size)
+	if errors.Is(err, cfb.ErrTooLarge) {
+		return fmt.Errorf("gofastooxml: a compound file, the container of legacy binary and of encrypted Office files, with %s: %w", clean.Label(err.Error()), gofastcore.ErrLimitExceeded)
+	}
 	if err != nil {
 		// Too damaged to say what it holds.
 		return fmt.Errorf("gofastooxml: a compound file, the container of legacy binary and of encrypted Office files, that cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)

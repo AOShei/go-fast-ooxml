@@ -24,7 +24,7 @@
   "input.external_reference": 194,
   "input.repaired": 33,
   "input.trailing_data": 5,
-  "limit.exceeded": 2,
+  "limit.exceeded": 4,
   "ooxml.control_characters_removed": 7,
   "ooxml.decrypted": 5,
   "ooxml.formula_no_value": 28,

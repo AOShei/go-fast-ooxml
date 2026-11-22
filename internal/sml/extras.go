@@ -86,7 +86,7 @@ func (sh *sheet) declared() []declaredTable {
 }
 
 // maxPivots bounds the pivot tables read from a sheet.
-const maxPivots = 1 << 10
+const maxPivots = warn.MaxPivotTables
 
 // pivots adds the sheet's pivot tables to its declared tables. Each says
 // which cells it fills; what they show is in the cells, written when the
@@ -94,7 +94,11 @@ const maxPivots = 1 << 10
 func (sh *sheet) pivots(out []declaredTable) []declaredTable {
 	n := 0
 	for _, rel := range sh.list {
-		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) || n >= maxPivots {
+		if rel.External || !ns.IsRel(rel.Type, ns.RelPivotTable) {
+			continue
+		}
+		if n >= maxPivots {
+			sh.lost.Add(warn.CapPivotTables, 1)
 			continue
 		}
 		n++
@@ -135,10 +139,14 @@ func (sh *sheet) pivots(out []declaredTable) []declaredTable {
 }
 
 // readPersons reads the people who wrote threaded comments, by id.
-func readPersons(s *xmlscan.Scanner) map[string]string {
+func readPersons(s *xmlscan.Scanner, lost *warn.Lost) map[string]string {
 	persons := map[string]string{}
 	for s.Next() != xmlscan.EOF {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Threaded, "person") || len(persons) >= maxAuthors {
+		if s.Kind() != xmlscan.Start || !s.Is(ns.Threaded, "person") {
+			continue
+		}
+		if len(persons) >= maxAuthors {
+			lost.Add(warn.CapCommentAuthorsSheet, 1)
 			continue
 		}
 		id, ok1 := s.Attr(xmlscan.NoSpace, "id")
@@ -151,8 +159,8 @@ func readPersons(s *xmlscan.Scanner) map[string]string {
 }
 
 const (
-	maxAuthors  = 1 << 12
-	maxComments = 1 << 18
+	maxAuthors  = warn.MaxSheetCommentAuthors
+	maxComments = warn.MaxComments
 )
 
 // comments reads the comments on the sheet's cells as note blocks. A
@@ -165,6 +173,7 @@ func (sh *sheet) comments() []placed {
 	plain := false // the comments being read are records, whose text is not escaped
 	add := func(row, col int32, raw []byte, author, date string) {
 		if len(out) >= maxComments {
+			sh.lost.Add(warn.CapComments, 1)
 			return
 		}
 		clean := cellText
@@ -247,6 +256,8 @@ func (sh *sheet) comments() []placed {
 					sh.raw = s.AppendText(sh.raw[:0])
 					if len(authors) < maxAuthors {
 						authors = append(authors, clean.Name(string(sh.raw)))
+					} else {
+						sh.lost.Add(warn.CapCommentAuthorsSheet, 1)
 					}
 				case s.Is(ns.Sheet, "comment"):
 					ref, _ := s.Attr(xmlscan.NoSpace, "ref")

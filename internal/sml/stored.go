@@ -9,6 +9,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/stored"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -27,20 +28,27 @@ type definedName struct {
 }
 
 // maxNames bounds the defined names kept from a workbook.
-const maxNames = 1 << 14
+const maxNames = warn.MaxNames
 
 // readNames reads definedNames in the workbook part.
 func (b *Book) readNames(s *xmlscan.Scanner) {
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-		if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "definedName") || len(b.names) >= maxNames {
+		if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "definedName") {
+			continue
+		}
+		if len(b.names) >= maxNames {
+			b.lost.Add(warn.CapNames, 1)
 			continue
 		}
 		v, _ := s.Attr(xmlscan.NoSpace, "name")
+		if clean.LabelCut(string(v)) {
+			b.lost.Add(warn.CapName, 1)
+		}
 		name := clean.Name(string(v))
 		local, isLocal := intAttr(s, "localSheetId")
 		b.raw = s.AppendText(b.raw[:0])
-		f := verbatim(b.raw)
+		f := verbatim(b.raw, &b.lost)
 		if name == "" || f == "" {
 			continue
 		}
@@ -72,6 +80,7 @@ func (b *Book) storedIndex() int {
 // XML data.
 func (b *Book) readStored(ctx context.Context) *unit.Result {
 	p := stored.NewPart(ctx, b.storedIndex()+1)
+	p.Lost.Merge(&b.lost)
 	res := &unit.Result{}
 	formula := func(name, text, what string) gofastcore.Block {
 		return gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text,
@@ -89,7 +98,7 @@ func (b *Book) readStored(ctx context.Context) *unit.Result {
 		if ref.kind != ns.RelMacrosheet && ref.kind != ns.RelIntlMacrosheet || ref.target == "" {
 			continue
 		}
-		code, damaged := b.macroCode(ref.target, p.Room().Left())
+		code, damaged := b.macroCode(ref.target, p.Room().Left(), &p.Lost)
 		if damaged {
 			p.Damaged = append(p.Damaged, ref.target)
 		}
@@ -108,7 +117,7 @@ func (b *Book) readStored(ctx context.Context) *unit.Result {
 		if c.gone == "" {
 			continue
 		}
-		block, ok, full, damaged := b.cacheTable(c, p.Room())
+		block, ok, full, damaged := b.cacheTable(c, p.Room(), &p.Lost)
 		if damaged {
 			p.Damaged = append(p.Damaged, c.target)
 		}
@@ -135,9 +144,9 @@ func (b *Book) readStored(ctx context.Context) *unit.Result {
 // macroCode returns the formulas of a macro sheet, one cell to a line
 // ("A1\t=ECHO(FALSE)"), as Excel shows them when it shows formulas, up to
 // about room bytes. damaged says the part could not be read to its end.
-func (b *Book) macroCode(target string, room int64) (string, bool) {
+func (b *Book) macroCode(target string, room int64, lost *warn.Lost) (string, bool) {
 	if binary(b.wb.pkg, target) {
-		return b.binMacroCode(target, room)
+		return b.binMacroCode(target, room, lost)
 	}
 	var sb strings.Builder
 	damaged := false
@@ -158,7 +167,7 @@ func (b *Book) macroCode(target string, room int64) (string, bool) {
 			ref = append(ref[:0], v...)
 		case s.Is(ns.Sheet, "f"):
 			b.raw = s.AppendText(b.raw[:0])
-			if f := verbatim(b.raw); f != "" {
+			if f := verbatim(b.raw, lost); f != "" {
 				if sb.Len() > 0 {
 					sb.WriteByte('\n')
 				}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -20,7 +21,7 @@ import (
 const maxLevels = 9
 
 // maxLabelText bounds the template of a list label.
-const maxLabelText = 64
+const maxLabelText = warn.MaxListLabel
 
 // level is the definition of one level of a list.
 type level struct {
@@ -53,6 +54,7 @@ type num struct {
 type numbering struct {
 	abstracts map[int]*abstractNum
 	nums      map[int]*num
+	cut       int // labels longer than maxLabelText, cut there
 }
 
 // counter is the running state of one list definition.
@@ -85,7 +87,7 @@ func readNumbering(s *xmlscan.Scanner) *numbering {
 				switch {
 				case s.Is(ns.Word, "lvl"):
 					if i, ok := intAttr(s, "ilvl"); ok && i < maxLevels {
-						readLevel(s, &a.levels[i])
+						n.cut += readLevel(s, &a.levels[i])
 					} else {
 						s.Skip()
 					}
@@ -128,7 +130,7 @@ func readNumbering(s *xmlscan.Scanner) *numbering {
 								inst.override[i].start, inst.override[i].hasStart = v, true
 							}
 						case s.Is(ns.Word, "lvl"):
-							readLevel(s, &inst.override[i].level)
+							n.cut += readLevel(s, &inst.override[i].level)
 						default:
 							s.Skip()
 						}
@@ -168,7 +170,7 @@ func intAttr(s *xmlscan.Scanner, name string) (int, bool) {
 	return atoi(v)
 }
 
-func readLevel(s *xmlscan.Scanner, l *level) {
+func readLevel(s *xmlscan.Scanner, l *level) (cut int) {
 	*l = level{start: 1, format: "decimal", restart: -1, set: true}
 	depth := s.Depth()
 	for s.Next() != xmlscan.EOF && s.Depth() >= depth {
@@ -200,6 +202,7 @@ func readLevel(s *xmlscan.Scanner, l *level) {
 			v, _ := s.Attr(ns.Word, "val")
 			if len(v) > maxLabelText {
 				v = bytes.ToValidUTF8(v[:maxLabelText], nil)
+				cut = 1
 			}
 			l.text, _ = clean.String(v, clean.Ligatures)
 		case s.Is(ns.Word, "lvlRestart"):
@@ -218,6 +221,7 @@ func readLevel(s *xmlscan.Scanner, l *level) {
 			s.Skip()
 		}
 	}
+	return cut
 }
 
 // levelFor returns the definition of a level of a list instance, and the

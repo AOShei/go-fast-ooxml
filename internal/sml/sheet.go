@@ -13,14 +13,15 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // The size of a sheet: 1,048,576 rows and 16,384 columns. A cell placed
 // outside it is not a cell.
 const (
-	maxRows = 1 << 20
-	maxCols = 1 << 14
+	maxRows = warn.MaxRows
+	maxCols = warn.MaxCols
 )
 
 // cell is one cell that shows something. Empty cells are not kept.
@@ -49,7 +50,9 @@ type sheet struct {
 	list []opc.Rel
 
 	s          xmlscan.Scanner
-	bin        bool // the sheet's part is records (binary.go), not XML
+	bin        bool      // the sheet's part is records (binary.go), not XML
+	lost       warn.Lost // what the fixed bounds left out of the sheet
+	capped     bool      // and some was
 	cells      []cell
 	unsorted   bool
 	nextRow    int32 // the row after the last one read: a row before it is out of order
@@ -173,7 +176,11 @@ func (sh *sheet) read() {
 		case "mergeCells":
 			depth := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-				if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "mergeCell") || len(sh.merges) >= maxMerges {
+				if s.Kind() != xmlscan.Start || !s.Is(ns.Sheet, "mergeCell") {
+					continue
+				}
+				if len(sh.merges) >= maxMerges {
+					sh.lost.Add(warn.CapMerges, 1)
 					continue
 				}
 				if v, ok := s.Attr(xmlscan.NoSpace, "ref"); ok {
@@ -220,16 +227,12 @@ func (sh *sheet) read() {
 		case "tableParts":
 			depth := s.Depth()
 			for s.Next() != xmlscan.EOF && s.Depth() >= depth {
-				if s.Kind() == xmlscan.Start && s.Is(ns.Sheet, "tablePart") && len(sh.tables) < maxTables {
-					if target, ok := sh.target(ns.RelTable); ok {
-						sh.tables = append(sh.tables, target)
-					}
+				if s.Kind() == xmlscan.Start && s.Is(ns.Sheet, "tablePart") {
+					sh.addTable(sh.target(ns.RelTable))
 				}
 			}
 		case "drawing":
-			if target, ok := sh.target(ns.RelDrawing); ok && len(sh.drawings) < 16 {
-				sh.drawings = append(sh.drawings, target)
-			}
+			sh.addDrawing(sh.target(ns.RelDrawing))
 			s.Skip()
 		default:
 			s.Skip()
@@ -238,10 +241,32 @@ func (sh *sheet) read() {
 }
 
 const (
-	maxMerges  = 1 << 18
-	maxTables  = 1 << 12
+	maxMerges  = warn.MaxMerges
+	maxTables  = warn.MaxTables
 	maxVarying = 1 << 12
 )
+
+// addTable keeps the part of a declared table of the sheet, if ok.
+func (sh *sheet) addTable(target string, ok bool) {
+	switch {
+	case !ok:
+	case len(sh.tables) < maxTables:
+		sh.tables = append(sh.tables, target)
+	default:
+		sh.lost.Add(warn.CapTableParts, 1)
+	}
+}
+
+// addDrawing keeps the drawing part of the sheet, if ok.
+func (sh *sheet) addDrawing(target string, ok bool) {
+	switch {
+	case !ok:
+	case len(sh.drawings) < warn.MaxDrawingParts:
+		sh.drawings = append(sh.drawings, target)
+	default:
+		sh.lost.Add(warn.CapDrawingParts, 1)
+	}
+}
 
 // target returns the part that the current element's r:id names, if the
 // relationship is of the given kind and stays inside the package.
@@ -287,6 +312,7 @@ func (sh *sheet) readData() {
 			}
 		}
 		if row >= maxRows {
+			sh.lost.Add(warn.CapSheetRows, 1)
 			s.Skip()
 			continue
 		}
@@ -420,6 +446,9 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 			break
 		}
 		if col >= maxCols {
+			if value && len(raw) > 0 {
+				sh.lost.Add(warn.CapSheetCols, 1)
+			}
 			continue
 		}
 		if !value || len(raw) == 0 {

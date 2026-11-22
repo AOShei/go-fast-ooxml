@@ -36,8 +36,9 @@ type Result struct {
 	// Damaged names property parts that could not be read to the end.
 	// What was read before the damage is kept.
 	Damaged []string
-	// Truncated counts property values cut at the size bound, and custom
-	// properties left out because there were too many.
+	// Truncated counts property values cut at the size bound, custom
+	// property names cut at theirs, and custom properties left out
+	// because there were too many.
 	Truncated int
 }
 
@@ -197,6 +198,7 @@ func readCustom(s *xmlscan.Scanner, res *Result) {
 		raw, _ := s.Attr(xmlscan.NoSpace, "name")
 		if len(raw) > maxCustomName {
 			raw = raw[:maxCustomName]
+			res.Truncated++
 		}
 		name, removed := clean.String(raw, clean.Trim)
 		res.Removed += removed
