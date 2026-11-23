@@ -1,0 +1,22 @@
+[package]
+name = "rskreuzberg"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rskreuzberg"
+path = "../rsooxml/src/main.rs"
+
+[features]
+default = ["kz"]
+kz = ["dep:kreuzberg"]
+native = []
+
+[dependencies]
+kreuzberg = { version = "4.10", default-features = false, features = ["office", "excel"], optional = true }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

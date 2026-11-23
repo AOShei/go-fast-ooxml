@@ -1,0 +1,20 @@
+[package]
+name = "rsooxml"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["native"]
+native = ["dep:calamine", "dep:docx-rs", "dep:pptx-to-md"]
+kz = []
+
+[dependencies]
+calamine = { version = "0.38", optional = true }
+docx-rs = { version = "0.4", optional = true }
+pptx-to-md = { version = "2", optional = true }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

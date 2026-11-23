@@ -62,6 +62,36 @@ other formats, a legacy `.xls`, a document type declaration and a cipher
 other than AES. None makes it crash or hang. The same holds for 5,810 more
 from other projects' test suites ([`bench/README.md`](bench/README.md)).
 
+### A batch of files in one process
+
+On 1,980 Word, Excel and PowerPoint files from Common Crawl, read in one
+process against the Rust and Python libraries for these formats
+([`bench/batch`](bench/batch/README.md)):
+
+| Batch | Workers | This library | Fastest other |
+|---|---|---|---|
+| All 1,980 files | 1 | 4.31 s, 111 MB | kreuzberg: 11.3 s, 2.9 GB |
+|  | 24 | 0.58 s, 275 MB | kreuzberg: 3.81 s, 11.7 GB |
+| 1,411 Word files | 1 | 1.69 s, 35 MB | kreuzberg: 1.75 s, 116 MB |
+| 499 Excel files | 1 | 2.44 s, 105 MB | calamine: 4.30 s, 1.6 GB |
+| 70 PowerPoint files | 1 | 0.12 s, 52 MB | kreuzberg: 0.10 s, 27 MB |
+
+### Memory against speed: GOGC
+
+The library leaves Go's garbage collector as it is set. A program that has
+memory to spare can make the collector run less often, with the `GOGC`
+environment variable or `debug.SetGCPercent`, and bound the heap with
+`debug.SetMemoryLimit`. On the batch of all 1,980 files:
+
+| GOGC | One worker | 24 workers |
+|---|---|---|
+| 100 (Go's default) | 4.31 s, 111 MB | 0.58 s, 275 MB |
+| 200 | 4.06 s, 112 MB | 0.50 s, 466 MB |
+| 400 | 3.94 s, 141 MB | 0.47 s, 790 MB |
+
+The more workers, the more a larger setting saves, and the more memory it
+costs. On one of the large generated files, `GOGC=400` saves 6 to 8%.
+
 ## Using it
 
 ```go

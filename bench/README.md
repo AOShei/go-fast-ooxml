@@ -43,6 +43,8 @@ test whose tool is missing skips itself.
 | `encrypted.txt` | `go test -run '^$' -bench 'Encrypted\|Extract/large.xlsx' -count 3 .` | What encryption adds: the check of a password, and the large workbook encrypted beside the same workbook unencrypted, in one run |
 | `xmlscan.txt` | `go test -run '^$' -bench . -count 3 ./internal/xmlscan` | The library's XML tokenizer against `encoding/xml` on the XML of the large generated files. Compare the two within one run: the ratio holds when the machine is busy, the absolute numbers do not |
 
+| `batch/` | `bench/batch/bench.sh` | 1,980 files from Common Crawl read in one process, against Rust (kreuzberg, calamine, docx-rs, pptx-to-md) and Python tools, with the garbage collector at three settings: [`batch/README.md`](batch/README.md), [`batch/results.md`](batch/results.md) |
+
 Timings come from one machine and compare tools on that machine only.
 
 ## Reproducing
