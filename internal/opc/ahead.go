@@ -41,7 +41,7 @@ func (p *Package) ScanPart(name string, s *xmlscan.Scanner, opts *xmlscan.Option
 		return nil, err
 	}
 	s.Reset(rc, p.Window(name, opts))
-	return rc, nil
+	return released{rc, s}, nil
 }
 
 // OpenPart is Open for a part that may be large, read as ScanPart reads
@@ -68,7 +68,7 @@ func (p *Package) ScanChunks(name string, s *xmlscan.Scanner, opts *xmlscan.Opti
 		return nil, err
 	}
 	s.Reset(c, opts)
-	return c, nil
+	return released{c, s}, nil
 }
 
 // Chunks is Open for a part read in chunks, as ScanChunks reads it.

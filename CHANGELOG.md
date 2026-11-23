@@ -56,6 +56,10 @@ minor version may change the API.
   from 2.33 to 1.15 GB and CPU time by 13% (one worker); with 24
   workers, the 1,980 Word, Excel and PowerPoint files take 0.59 s rather
   than 0.66. The output is the same.
+- A part's scanner window is handed back when the part is read, and
+  taken by the next part read, of the same document or another. On the
+  Word batch, allocation falls from 1.15 to 0.96 GB more and CPU time by
+  2–3%. The pool is that of go-fast-odf.
 
 ## [0.2.0] - 2026-11-23
 

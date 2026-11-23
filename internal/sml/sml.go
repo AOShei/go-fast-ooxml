@@ -499,7 +499,7 @@ func (sh *sheet) finish(sawImage bool) {
 func (sh *sheet) content() (sawImage bool) {
 	opened, err := sh.readOwn(false)
 	sh.failed(err)
-	sh.s = xmlscan.Scanner{} // its window is no longer needed
+	sh.s.Release() // its window is no longer needed
 	if !opened {
 		return false
 	}
