@@ -520,8 +520,27 @@ func (p *Package) Scan(name string, s *xmlscan.Scanner, opts *xmlscan.Options) (
 	if err != nil {
 		return nil, err
 	}
-	s.Reset(rc, opts)
+	s.Reset(rc, p.Window(name, opts))
 	return rc, nil
+}
+
+// Window returns opts with a window for a part read whole: one that holds
+// the size the archive declares for it, in steps of 4 KiB, up to the
+// scanner's default. A part of a kilobyte needs no 64 KiB window, and
+// most parts of a document are a few kilobytes. Text longer than the
+// window is handed over in pieces, so a part larger than it declares is
+// read as it is with any window.
+func (p *Package) Window(name string, opts *xmlscan.Options) *xmlscan.Options {
+	size := p.Size(name)
+	if size < 0 || size >= xmlscan.DefaultBufferSize || (opts != nil && opts.BufferSize > 0) {
+		return opts
+	}
+	var o xmlscan.Options
+	if opts != nil {
+		o = *opts
+	}
+	o.BufferSize = int(size+1+4095) &^ 4095
+	return &o
 }
 
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
