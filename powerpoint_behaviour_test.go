@@ -680,7 +680,7 @@ func TestPowerPointContentThatIsNotRead(t *testing.T) {
 	want := []string{
 		"input.active_content: 1 actions that start a program or run a macro; none was run",
 		"input.external_reference: 1 links to pictures, media or files outside the presentation; nothing was fetched",
-		"ooxml.unread_content: 1 audio or video clip",
+		"input.unread_content: 1 audio or video clip",
 	}
 	if strings.Join(codes, "\n") != strings.Join(want, "\n") {
 		t.Errorf("warnings:\n %s\nwant:\n %s", strings.Join(codes, "\n "), strings.Join(want, "\n "))
@@ -840,7 +840,7 @@ func TestPowerPointDamagedAndMissingParts(t *testing.T) {
 	}
 	damaged := ""
 	for _, w := range doc.Warnings {
-		if w.Code == gofastooxml.WarnPartDamaged {
+		if w.Code == gofastcore.WarnInputStreamDamaged {
 			damaged += w.Message + ";"
 		}
 	}

@@ -357,7 +357,7 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 			kinds = append(kinds, strconv.Itoa(n)+" "+kind)
 		}
 		sort.Strings(kinds)
-		add(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
+		add(gofastcore.SeverityWarning, gofastcore.WarnInputUnreadContent, strings.Join(kinds, ", "))
 	}
 	sort.Strings(damaged)
 	var names warn.Names
@@ -365,10 +365,10 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		names.AddOnce(clean.Label(b.wb.pkg.Written(name)))
 	}
 	if msg := names.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
-		add(gofastcore.SeverityWarning, warn.PartDamaged, msg)
+		add(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged, msg)
 	}
 	if b.removed > 0 {
-		add(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(b.removed)+" in shared strings")
+		add(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(b.removed)+" in shared strings")
 	}
 	if b.budget && len(tallies) == 0 {
 		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached before any sheet was read")
@@ -470,13 +470,13 @@ func (sh *sheet) finish(sawImage bool) {
 		}
 	}
 	if sh.noValue > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.FormulaNoValue, strconv.Itoa(sh.noValue)+" formulas are stored without a result; their cells are empty")
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTableFormulaNoValue, strconv.Itoa(sh.noValue)+" formulas are stored without a result; their cells are empty")
 	}
 	if sh.split > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.RegionSplit, strconv.Itoa(sh.split)+" areas too thinly filled to be tables were written a row at a time")
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTableRegionSplit, strconv.Itoa(sh.split)+" areas too thinly filled to be tables were written a row at a time")
 	}
 	if sh.removed > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(sh.removed))
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(sh.removed))
 	}
 	if sh.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))

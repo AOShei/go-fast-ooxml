@@ -187,8 +187,8 @@ func (f *File) unlock(ctx context.Context) error {
 	if err != nil {
 		return fail(err)
 	}
-	f.body, f.bodySize = pkg, pkg.Size()
-	f.opened = append(f.opened, gofastcore.Warning{Code: WarnDecrypted, Severity: gofastcore.SeverityInfo,
+	f.body, f.bodySize, f.decrypted = pkg, pkg.Size(), true
+	f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputDecrypted, Severity: gofastcore.SeverityInfo,
 		Message: fmt.Sprintf("encrypted (%s); decrypted with %s", describe(info), with)})
 	intact, checked, err := info.Intact(ctx, encrypted, encrypted.Size(), key)
 	if err != nil {

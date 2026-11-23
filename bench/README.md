@@ -403,7 +403,7 @@ sheet of another workbook (`bug66682.xlsb`); LibreOffice gives it as
 
 The paired tests showed that the `.xlsx` reader counted a formula whose
 result is empty text as stored without a result
-(`ooxml.formula_no_value`); it has one, and 32 fewer documents of the soak
+(`table.formula_no_value`); it has one, and 32 fewer documents of the soak
 set carry the warning.
 
 ## Fuzz campaign

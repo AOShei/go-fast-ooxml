@@ -8,16 +8,18 @@ const (
 	DefaultMaxSpinCount	= 1_000_000
 )
 const (
-	WarnPropertiesDamaged	= "ooxml.properties_damaged"
-	WarnPropertyTruncated	= "ooxml.property_truncated"
-	WarnControlCharsRemoved	= "ooxml.control_characters_removed"
-	WarnUnreadContent	= wml.WarnUnreadContent
-	WarnPartDamaged	= wml.WarnPartDamaged
 	WarnTableFlattened	= wml.WarnTableFlattened
-	WarnFormulaNoValue	= warn.FormulaNoValue
-	WarnRegionSplit	= warn.RegionSplit
-	WarnDecrypted	= "ooxml.decrypted"
 	WarnIntegrityMismatch	= "ooxml.integrity_mismatch"
+)
+const (
+	WarnPropertiesDamaged	= gofastcore.WarnInputStreamDamaged
+	WarnPropertyTruncated	= "ooxml.property_truncated"
+	WarnControlCharsRemoved	= gofastcore.WarnTextControlCharactersRemoved
+	WarnUnreadContent	= gofastcore.WarnInputUnreadContent
+	WarnPartDamaged	= gofastcore.WarnInputStreamDamaged
+	WarnFormulaNoValue	= gofastcore.WarnTableFormulaNoValue
+	WarnRegionSplit	= gofastcore.WarnTableRegionSplit
+	WarnDecrypted	= gofastcore.WarnInputDecrypted
 )
 func Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error)
 func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error)

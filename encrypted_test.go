@@ -30,14 +30,20 @@ func withoutDecrypted(t testing.TB, doc *gofastcore.Document) (string, []gofastc
 	t.Helper()
 	copy := *doc
 	copy.Source.Size = 0
+	copy.Metadata.Encrypted = false
 	var said []gofastcore.Warning
 	copy.Warnings = nil
+	decrypted := false
 	for _, w := range doc.Warnings {
-		if w.Code == gofastooxml.WarnDecrypted || w.Code == gofastooxml.WarnIntegrityMismatch {
+		if w.Code == gofastcore.WarnInputDecrypted || w.Code == gofastooxml.WarnIntegrityMismatch {
 			said = append(said, w)
+			decrypted = decrypted || w.Code == gofastcore.WarnInputDecrypted
 		} else {
 			copy.Warnings = append(copy.Warnings, w)
 		}
+	}
+	if doc.Metadata.Encrypted != decrypted {
+		t.Errorf("Metadata.Encrypted is %v, and input.decrypted was raised: %v", doc.Metadata.Encrypted, decrypted)
 	}
 	return asJSON(t, &copy), said
 }
@@ -85,7 +91,7 @@ func TestEncryptedFilesGiveTheSameDocument(t *testing.T) {
 			if how.Standard {
 				scheme = "standard"
 			}
-			if len(said) != 1 || said[0].Code != gofastooxml.WarnDecrypted || said[0].Severity != gofastcore.SeverityInfo ||
+			if len(said) != 1 || said[0].Code != gofastcore.WarnInputDecrypted || said[0].Severity != gofastcore.SeverityInfo ||
 				!strings.Contains(said[0].Message, scheme) || !strings.Contains(said[0].Message, "the password given") {
 				t.Errorf("%s: warnings %v", name, said)
 			}
@@ -150,7 +156,7 @@ func TestEncryptedFixtures(t *testing.T) {
 			// row of a table is its header.
 			ooxmltest.CompareBlocks(t, doc, expected(t, f), ooxmltest.CompareOptions{Display: true, NoHeaderRows: strings.Contains(f.Producer, "LibreOffice")})
 			_, said := withoutDecrypted(t, doc)
-			if len(said) != 1 || said[0].Code != gofastooxml.WarnDecrypted {
+			if len(said) != 1 || said[0].Code != gofastcore.WarnInputDecrypted {
 				t.Errorf("warnings: %v", said)
 			}
 			if _, err := extract(t, data, nil); !errors.Is(err, gofastcore.ErrPasswordRequired) {
@@ -475,7 +481,7 @@ func TestEncryptedFileThroughTheHandle(t *testing.T) {
 		if f.Format() != "xlsx" || f.NumParts() != 12 || len(f.Sheets()) != 12 || f.Source().Size != int64(len(data)) {
 			t.Errorf("%+v: %s, %d parts, source %+v", how, f.Format(), f.NumParts(), f.Source())
 		}
-		if said := f.Warnings(); len(said) != 1 || said[0].Code != gofastooxml.WarnDecrypted {
+		if said := f.Warnings(); len(said) != 1 || said[0].Code != gofastcore.WarnInputDecrypted {
 			t.Errorf("%+v: warnings %v", how, said)
 		}
 		var wg sync.WaitGroup
@@ -663,5 +669,53 @@ func TestPasswordChecksOfEmbeddedFilesShareAnAllowance(t *testing.T) {
 		if read, _, over := count(doc); read != 10 || over != 20 {
 			t.Errorf("reading %d of one file handle: %d read, %d over the allowance", pass, read, over)
 		}
+	}
+}
+
+// Metadata.Encrypted is set, and input.decrypted raised, for every file
+// that was decrypted, whatever opened it: the password given, the one
+// Excel uses when none is set, or a private key. No other file has
+// either.
+func TestEncryptedIsSetWhenDecrypted(t *testing.T) {
+	type item struct {
+		name, password string
+		data           []byte
+	}
+	var items []item
+	for _, f := range ooxmltest.LoadManifest(t, "encrypted.json") {
+		items = append(items, item{f.Name, f.Password, f.Read(t, false)})
+	}
+	for _, f := range ooxmltest.LoadManifest(t, "corpus.json") {
+		if data, err := os.ReadFile(f.AbsPath(t)); err == nil {
+			items = append(items, item{f.Name, corpusPasswords[f.Name], data})
+		}
+	}
+	plain := ooxmltest.Docx(para(run(text("Encrypted by the test.")))).Bytes()
+	items = append(items,
+		item{"written here", "", plain},
+		item{"written here, agile", "secret", ooxmltest.Encrypt(plain, "secret", ooxmltest.Encryption{SpinCount: 1000})},
+		item{"written here, standard", "secret", ooxmltest.Encrypt(plain, "secret", ooxmltest.Encryption{Standard: true})},
+		item{"written here, Excel's password", "", ooxmltest.Encrypt(plain, "VelvetSweatshop", ooxmltest.Encryption{SpinCount: 1000})})
+	compound := []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
+	decrypted, plainRead := 0, 0
+	for _, it := range items {
+		doc, err := extract(t, it.data, &gofastcore.Options{Password: it.password})
+		if err != nil {
+			continue
+		}
+		raised := warned(doc, gofastcore.WarnInputDecrypted)
+		wasEncrypted := bytes.HasPrefix(it.data, compound)
+		if doc.Metadata.Encrypted != wasEncrypted || raised != wasEncrypted {
+			t.Errorf("%s: encrypted file %v; Metadata.Encrypted %v; input.decrypted %v", it.name, wasEncrypted, doc.Metadata.Encrypted, raised)
+		}
+		if wasEncrypted {
+			decrypted++
+		} else {
+			plainRead++
+		}
+	}
+	t.Logf("%d files decrypted, %d read unencrypted", decrypted, plainRead)
+	if decrypted < 6 {
+		t.Errorf("only %d encrypted files were opened", decrypted)
 	}
 }

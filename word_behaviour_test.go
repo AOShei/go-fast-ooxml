@@ -570,7 +570,7 @@ func TestWordDamageAndLimits(t *testing.T) {
 	pkg.Add("word/styles.xml", ooxmltest.CTStyles, `<w:styles`+ooxmltest.WordNS+`><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style><w:style`)
 	doc = word(t, pkg, nil)
 	expectBlocks(t, doc, `heading[1] "Still read"`)
-	if !warned(doc, gofastooxml.WarnPartDamaged) {
+	if !warned(doc, gofastcore.WarnInputStreamDamaged) {
 		t.Errorf("a damaged styles part was not reported: %+v", doc.Warnings)
 	}
 

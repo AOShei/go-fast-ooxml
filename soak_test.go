@@ -253,7 +253,7 @@ func TestSoak(t *testing.T) {
 		unlocked := false
 		if password, known := soakPasswords[filepath.Base(path)]; known && strings.HasPrefix(name, "soak/") {
 			opened, openErr := read(plain, &gofastcore.Options{Password: password})
-			if openErr != nil || !warned(opened, gofastooxml.WarnDecrypted) || warned(opened, gofastooxml.WarnIntegrityMismatch) {
+			if openErr != nil || !warned(opened, gofastcore.WarnInputDecrypted) || warned(opened, gofastooxml.WarnIntegrityMismatch) {
 				t.Errorf("%s: with its password: %v", name, openErr)
 			}
 			unlocked = openErr == nil

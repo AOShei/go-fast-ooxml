@@ -9,7 +9,6 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/wml"
 )
 
@@ -55,10 +54,44 @@ const (
 //	input.trailing_data       data follows the end of the zip archive; its
 //	                          text is in the stored part (after_end)
 //	structure.heading_level_clamped
+//	text.control_characters_removed
+//	                          control characters with no meaning as text
+//	                          were removed from extracted strings
+//	input.unread_content      the document holds content of a kind this
+//	                          version does not read: a sound or video
+//	                          clip, an Excel dialog sheet
+//	input.stream_damaged      a supporting part (styles, numbering, notes, a
+//	                          header) or the document properties could not
+//	                          be read to the end; what was read is used
+//	table.formula_no_value    cells hold formulas with no stored result
+//	table.region_split        an area of a sheet too thinly filled to be a
+//	                          table was written a row at a time
+//	input.decrypted           the file was encrypted and has been decrypted;
+//	                          the message names the scheme and what it was
+//	                          decrypted with (Metadata.Encrypted is set)
 const (
-	// WarnPropertiesDamaged: a document-properties part could not be read
-	// to its end; the properties read before the damage are kept.
-	WarnPropertiesDamaged = "ooxml.properties_damaged"
+	// WarnTableFlattened: a table whose declared grid is far larger than
+	// the cells it holds was written as lines of text, cells separated by
+	// tabs, instead of as a table. Raised while a Word document is read.
+	WarnTableFlattened = wml.WarnTableFlattened
+	// WarnIntegrityMismatch: the encrypted file carries a keyed hash of
+	// itself, and the file is not what that hash was made of: it was
+	// changed after it was encrypted, or damaged. What it decrypts to is
+	// extracted all the same.
+	WarnIntegrityMismatch = "ooxml.integrity_mismatch"
+)
+
+// Names of codes this library raised under its own prefix before
+// go-fast-core v0.1.2 made them shared. Each is now the shared code, so a
+// test such as w.Code == WarnPartDamaged still matches; the code strings
+// in the output changed with them. They will be removed in a later
+// release.
+const (
+	// WarnPropertiesDamaged was ooxml.properties_damaged.
+	//
+	// Deprecated: use gofastcore.WarnInputStreamDamaged; the message names
+	// the document properties.
+	WarnPropertiesDamaged = gofastcore.WarnInputStreamDamaged
 	// WarnPropertyTruncated was raised for a property value cut at 64 KiB,
 	// and for custom properties past 256.
 	//
@@ -66,48 +99,31 @@ const (
 	// (gofastcore.WarnLimitExceeded), severity error, as every other bound
 	// reports what it cuts; this code is no longer raised.
 	WarnPropertyTruncated = "ooxml.property_truncated"
-	// WarnControlCharsRemoved: control characters with no meaning as text
-	// were removed from extracted strings.
-	WarnControlCharsRemoved = "ooxml.control_characters_removed"
-
-	// The codes below are raised while a Word document is read, and the
-	// first two for workbooks and presentations as well.
-
-	// WarnUnreadContent: the document holds content of a kind this version
-	// does not read: a sound or video clip, an Excel dialog sheet.
-	WarnUnreadContent = wml.WarnUnreadContent
-	// WarnPartDamaged: a supporting part (styles, numbering, notes, a
-	// header) could not be read to its end; what was read is used.
-	WarnPartDamaged = wml.WarnPartDamaged
-	// WarnTableFlattened: a table whose declared grid is far larger than
-	// the cells it holds was written as lines of text, cells separated by
-	// tabs, instead of as a table.
-	WarnTableFlattened = wml.WarnTableFlattened
-
-	// The codes below are raised while an Excel workbook is read.
-
-	// WarnFormulaNoValue: cells hold formulas with no stored result. A
-	// program that writes a workbook without calculating it leaves them
-	// so. The cells are empty; formulas are not evaluated.
-	WarnFormulaNoValue = warn.FormulaNoValue
-	// WarnRegionSplit: an area of a sheet whose cells are spread so
-	// thinly that the rectangle around them is mostly empty was not
-	// written as one table. Each run of cells side by side in a row is a
-	// table of one row instead.
-	WarnRegionSplit = warn.RegionSplit
-
-	// The codes below are raised when an encrypted file is opened.
-
-	// WarnDecrypted: the file was encrypted and has been decrypted, with
-	// a private key given, the password given or the password Excel uses
-	// when none is set. The message names the scheme, and the
-	// certificates the key is encrypted for, if any.
-	WarnDecrypted = "ooxml.decrypted"
-	// WarnIntegrityMismatch: the encrypted file carries a keyed hash of
-	// itself, and the file is not what that hash was made of: it was
-	// changed after it was encrypted, or damaged. What it decrypts to is
-	// extracted all the same.
-	WarnIntegrityMismatch = "ooxml.integrity_mismatch"
+	// WarnControlCharsRemoved was ooxml.control_characters_removed.
+	//
+	// Deprecated: use gofastcore.WarnTextControlCharactersRemoved.
+	WarnControlCharsRemoved = gofastcore.WarnTextControlCharactersRemoved
+	// WarnUnreadContent was ooxml.unread_content.
+	//
+	// Deprecated: use gofastcore.WarnInputUnreadContent.
+	WarnUnreadContent = gofastcore.WarnInputUnreadContent
+	// WarnPartDamaged was ooxml.part_damaged.
+	//
+	// Deprecated: use gofastcore.WarnInputStreamDamaged.
+	WarnPartDamaged = gofastcore.WarnInputStreamDamaged
+	// WarnFormulaNoValue was ooxml.formula_no_value.
+	//
+	// Deprecated: use gofastcore.WarnTableFormulaNoValue.
+	WarnFormulaNoValue = gofastcore.WarnTableFormulaNoValue
+	// WarnRegionSplit was ooxml.region_split.
+	//
+	// Deprecated: use gofastcore.WarnTableRegionSplit.
+	WarnRegionSplit = gofastcore.WarnTableRegionSplit
+	// WarnDecrypted was ooxml.decrypted.
+	//
+	// Deprecated: use gofastcore.WarnInputDecrypted, or test
+	// Metadata.Encrypted.
+	WarnDecrypted = gofastcore.WarnInputDecrypted
 )
 
 // Extractor extracts Word, Excel and PowerPoint files. The zero value is
