@@ -39,8 +39,8 @@ var tenTo = [...]float64{1, 10, 100, 1000, 10000}
 // decimal w over that power is one the binary value v is the nearest to,
 // so v is within half a unit of its last binary place of it: far nearer
 // than half a unit of the fifteenth decimal digit. It has fifteen digits
-// at most, so it is the fifteen-digit decimal nearest to v, which is
-// what long finds.
+// at most, so it is the shortest decimal read back as v (no other decimal
+// of fifteen digits or fewer is), which is what long gives.
 func (x *decimal) short(v float64) bool {
 	if !(v < 1e15) {
 		return false // too large, an infinity or not a number
@@ -71,24 +71,49 @@ func (x *decimal) short(v float64) bool {
 }
 
 // long sets x to the fifteen significant digits of v by the general
-// conversion, which short avoids for most numbers.
+// conversion, which short avoids for most numbers. As LibreOffice does,
+// the digits are those of the shortest decimal that is read back as v,
+// rounded half up to fifteen: 664.5600532184905 is 664.560053218491,
+// although the binary value is a little under the decimal and rounded
+// itself would end in 490.
 func (x *decimal) long(v float64) {
 	x.n, x.exp = 0, 0
 	var buf [32]byte
-	s := strconv.AppendFloat(buf[:0], v, 'e', 14, 64) // d.dddddddddddddde±xx
+	s := strconv.AppendFloat(buf[:0], v, 'e', -1, 64) // d[.ddd]e±xx, at most 17 digits
 	x.d[0] = s[0]
 	n := 1
-	i := 2
+	i := 1
+	if i < len(s) && s[i] == '.' {
+		i++
+	}
 	for ; i < len(s) && s[i] != 'e'; i++ {
 		x.d[n] = s[i]
 		n++
+	}
+	e, _ := strconv.Atoi(string(s[i+1:]))
+	x.exp = e + 1
+	if n > 15 {
+		up := x.d[15] >= '5'
+		n = 15
+		if up {
+			j := n - 1
+			for ; j >= 0 && x.d[j] == '9'; j-- {
+				x.d[j] = '0'
+			}
+			if j < 0 {
+				// 9.99...95 and up: the digits carry into a new one.
+				x.d[0] = '1'
+				n = 1
+				x.exp++
+			} else {
+				x.d[j]++
+			}
+		}
 	}
 	for n > 0 && x.d[n-1] == '0' {
 		n--
 	}
 	x.n = n
-	e, _ := strconv.Atoi(string(s[i+1:]))
-	x.exp = e + 1
 }
 
 // fixed writes x rounded to frac decimals into buf: the digits of the
@@ -508,10 +533,8 @@ func closestFraction(n, d, limit int64) (int64, int64) {
 // appendElapsed renders a duration: a number of days as hours, minutes
 // and seconds that do not wrap at a day.
 func (s *section) appendElapsed(dst []byte, v float64) []byte {
-	if v < 0 {
-		dst = append(dst, '-')
-		v = -v
-	}
+	neg := v < 0
+	v = math.Abs(v)
 	// The value is rounded to the seconds shown, with their decimals, or
 	// to the second if none are shown; minutes and hours are then whole
 	// parts of that, not rounded again.
@@ -521,12 +544,20 @@ func (s *section) appendElapsed(dst []byte, v float64) []byte {
 	}
 	total := v * 86400 * scale
 	if total > 9e15 {
+		if neg {
+			dst = append(dst, '-')
+		}
 		return AppendGeneral(dst, v)
 	}
 	units := int64(math.Floor(total + 0.5))
 	if !s.hasSecs {
 		units = int64(math.Floor(v*86400 + 0.5))
 		scale = 1
+	}
+	// A duration that rounds to nothing has no sign, as LibreOffice
+	// shows it: -1e-12 days is 0:00:00, not -0:00:00.
+	if neg && units != 0 {
+		dst = append(dst, '-')
 	}
 	fracPart := units % int64(scale)
 	secs := units / int64(scale)
