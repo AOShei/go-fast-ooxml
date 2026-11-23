@@ -345,7 +345,7 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		macros = macros || t.Macros
 	}
 	if macros {
-		add(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "macro sheets (Excel 4.0 macros); what their cells show is read, the macros are not")
+		add(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "macro sheets (Excel 4.0 macros); what their cells show is read, their formulas are read as text into the stored part, and none of them is run")
 	}
 	if b.external > 0 {
 		add(gofastcore.SeverityWarning, gofastcore.WarnInputExternalReference,

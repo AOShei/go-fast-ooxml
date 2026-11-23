@@ -123,7 +123,7 @@ var caps = [numCaps]capInfo{
 	CapPivotCaches:         {"pivot caches past " + itoa(MaxPivotCaches) + " were not read", "cache", "caches"},
 	CapPivotFields:         {"fields of a pivot cache past " + itoa(MaxPivotFields) + " were not read", "field", "fields"},
 	CapPivotItems:          {"values of a pivot cache field past " + itoa(MaxPivotItems) + " were not read", "value", "values"},
-	CapCalculated:          {"calculated fields and items of a pivot cache past " + itoa(MaxCalculated) + " were not read", "formula", "formulas"},
+	CapCalculated:          {"calculated fields of a pivot cache past " + itoa(MaxCalculated) + " were not read", "formula", "formulas"},
 	CapExternalLinks:       {"links to other workbooks past " + itoa(MaxExternalLinks) + " were not read; formulas that use them are not read back", "link", "links"},
 	CapSheetRefs:           {"references of the workbook's formulas to other sheets past " + itoa(MaxSheetRefs) + " were not read; formulas that use them are not read back", "reference", "references"},
 	CapSharedFormulas:      {"shared formulas of a sheet past " + itoa(MaxSharedFormulas) + " were not kept; cells that use them give no formula", "formula", "formulas"},
