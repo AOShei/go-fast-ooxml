@@ -5,6 +5,17 @@ What changes for someone who uses the library. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0 a
 minor version may change the API.
 
+## [Unreleased]
+
+### Changed
+
+- Reading a workbook takes about 4% less time. A number is no longer
+  written as the parts of a fraction unless its format is one; a sheet
+  that keeps no formulas, types or links skips the look-up of each
+  cell's; and the cutter's scratch room is sized to the band, not to the
+  widest sheet there can be. From go-fast-msbin, which shares the code.
+  The output is the same.
+
 ## [0.3.0] - 2026-11-23
 
 ### Added
@@ -318,6 +329,7 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.2.0
 [0.1.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.1
