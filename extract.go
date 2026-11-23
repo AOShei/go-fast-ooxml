@@ -59,10 +59,16 @@ const (
 //	                          were removed from extracted strings
 //	input.unread_content      the document holds content of a kind this
 //	                          version does not read: a sound or video
-//	                          clip, an Excel dialog sheet
+//	                          clip, an Excel dialog sheet, a formula of a
+//	                          binary workbook that cannot be read back
 //	input.stream_damaged      a supporting part (styles, numbering, notes, a
-//	                          header) or the document properties could not
-//	                          be read to the end; what was read is used
+//	                          header), the document properties or an
+//	                          embedded file could not be read to the end,
+//	                          or a drawing names a chart or diagram the
+//	                          document does not have; what was read is used
+//	text.unmapped_glyphs      characters of a symbol font, or of macro code
+//	                          in a code page, with no character in Unicode
+//	                          appear as U+FFFD
 //	table.formula_no_value    cells hold formulas with no stored result
 //	table.region_split        an area of a sheet too thinly filled to be a
 //	                          table was written a row at a time
@@ -150,7 +156,8 @@ var _ gofastcore.Extractor = (*Extractor)(nil)
 
 // Formats lists the formats this library extracts, as they appear in
 // gofastcore.Source.Format. Macro-enabled files and templates are reported
-// as the format they are a variant of.
+// as the format they are a variant of, and a binary workbook (.xlsb) as
+// "xlsx".
 func (e *Extractor) Formats() []string { return []string{"docx", "xlsx", "pptx"} }
 
 // Extract reads a Word, Excel or PowerPoint file with default settings. It

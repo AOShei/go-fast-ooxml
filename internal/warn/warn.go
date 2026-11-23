@@ -1,7 +1,9 @@
-// Package warn holds the warning codes this library raises beyond the ones
-// every go-fast library shares (those are in gofastcore). Each states a
-// fact about the file. They are documented where the public package
-// declares them.
+// Package warn holds what the readers share in saying what a document
+// lost: the library's fixed bounds and the limit.exceeded warnings that
+// say what they left out, the gathering of warnings that would repeat
+// (Names), the end of a reading at the text limit (ErrText), and the
+// library's own code ooxml.table_flattened, documented where the public
+// package declares it.
 package warn
 
 import (

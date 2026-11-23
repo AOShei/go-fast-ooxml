@@ -34,9 +34,9 @@ var (
 )
 
 // Sniff reports whether data is a Word, Excel or PowerPoint package, from
-// the content type of its main part. It is the harness's own reading, used
-// to check manifests and as the first fuzz target; the library's package
-// reader replaces it in Phase 1.
+// the content type of its main part. It is the harness's own reading,
+// independent of the library's package reader, used to check the
+// manifests.
 func Sniff(data []byte) (format string, err error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {

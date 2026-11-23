@@ -1,11 +1,14 @@
 // Package gofastooxml extracts Word, Excel and PowerPoint files (Office Open
-// XML: .docx, .xlsx, .pptx and their macro and template variants) into the
-// shared go-fast document model, gofastcore.Document.
+// XML: .docx, .xlsx, .pptx and their macro and template variants, and
+// Excel's binary workbooks, .xlsb) into the shared go-fast document model,
+// gofastcore.Document.
 //
 // It uses the standard library and go-fast-core only.
 //
 // A Word document is one part; a workbook has a part for each sheet and a
-// presentation one for each slide. Headings, list items with their labels,
+// presentation one for each slide. What a file stores and shows nowhere
+// (the code of a VBA project, defined names, custom XML) is in one more
+// part, last, of kind gofastcore.PartStored. Headings, list items with their labels,
 // tables with merged cells, pictures, notes and comments are read as what
 // the file declares them to be. Everything the file holds is extracted;
 // where the file declares text not shown (hidden formatting, a hidden

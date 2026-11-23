@@ -176,7 +176,6 @@ func (pg *page) body(sh *props) (title bool) {
 	return false
 }
 
-// pic reads a picture (p:pic).
 // said counts what a picture says, its alternative text or its address,
 // against the text the document may hold, and reports whether there was
 // room; if not, the reading of the page ends.
@@ -189,6 +188,7 @@ func (pg *page) said(n int) bool {
 	return true
 }
 
+// pic reads a picture (p:pic).
 func (pg *page) pic(g *group) {
 	s := &pg.s
 	var sh props

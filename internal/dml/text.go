@@ -375,7 +375,6 @@ func (t *Text) bodyProps(s *xmlscan.Scanner) {
 	}
 }
 
-// level returns what a run at the given level inherits.
 // symbolFonts returns the symbol fonts that apply to a run's letters and
 // to its symbols, from its own properties or the level of the list it is
 // in. A symbol with no font of its own is in the letters' font.
@@ -389,6 +388,7 @@ func (t *Text) symbolFonts(rp *RunProps, level int) (font, sym symbol.Font) {
 	return font, sym
 }
 
+// level returns what a run at the given level inherits.
 func (t *Text) level(l int) *RunProps {
 	if !t.have[l] {
 		var rp RunProps

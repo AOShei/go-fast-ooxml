@@ -500,9 +500,7 @@ type budgetReader struct {
 }
 
 // Read hands on what the budget has room for and no more: where a part
-// is cut by the budget does not depend on how much each read asks for,
-// so a part read through a read-ahead (ScanAhead) is cut where it is
-// when read directly.
+// is cut by the budget does not depend on how much each read asks for.
 func (b *budgetReader) Read(buf []byte) (int, error) {
 	n, err := b.rc.Read(buf)
 	if n > 0 {

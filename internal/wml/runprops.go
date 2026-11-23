@@ -185,7 +185,7 @@ func (p *runProps) display() gofastcore.Display {
 	return d
 }
 
-// style returns the inline formatting to report for a run: what the run
+// inline returns the inline formatting to report for a run: what the run
 // itself or its character style sets, not what its paragraph's style
 // gives every run, which is not inline.
 func (p *runProps) inline() gofastcore.Style {

@@ -553,8 +553,8 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 	return sh.text.put(out), blank(result)
 }
 
-// blank is the reason a value that its format displays as nothing cannot
-// be seen.
+// blank is the display reason of a value that its format displays as
+// nothing.
 func blank(r numfmt.Result) gofastcore.Display {
 	if r == numfmt.Blank {
 		return gofastcore.DisplayHidden

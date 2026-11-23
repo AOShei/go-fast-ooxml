@@ -5,6 +5,17 @@ What changes for someone who uses the library. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0 a
 minor version may change the API.
 
+## [Unreleased]
+
+### Fixed
+
+- Two warning messages said less than is read. `input.active_content` on
+  Excel 4.0 macro sheets said the macros are not read; their formulas are
+  read as text into the stored part, and none is run. The
+  `limit.exceeded` message on the calculated entries of a pivot cache
+  named fields and items; only calculated fields are read and counted.
+  Codes and severities are unchanged.
+
 ## [0.2.0] - 2026-11-23
 
 Requires `go-fast-core` v0.1.2.
@@ -239,6 +250,7 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.2.0
 [0.1.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.1
 [0.1.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.0

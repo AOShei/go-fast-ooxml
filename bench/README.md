@@ -37,7 +37,7 @@ test whose tool is missing skips itself.
 | `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,598 files: how many were read, what the rest were, which warnings and display reasons occur |
 | `accuracy.json` | `go test -run TestBaselineAccuracy -update .` | How well each tool recovers the known text of each fixture: precision, recall, F1 and word order, scored by the same code that scores this library |
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
-| `word.txt` | `go test -run '^$' -bench 'Extract/large.docx' -count 3 .` | Word extraction on the large generated file, single-threaded |
+| `word.txt` | `go test -run '^$' -bench 'Extract/large.docx/single' -count 3 .` | Word extraction on the large generated file, single-threaded |
 | `excel.txt` | `go test -run '^$' -bench 'Extract/large.xlsx' -benchmem -count 3 .` | Excel extraction on the large generated workbook (2 million cells, 100 MB of XML), with one worker and with all |
 | `powerpoint.txt` | `go test -run '^$' -bench 'Extract/large.pptx' -benchmem -count 3 .` | PowerPoint extraction on the large generated presentation (1,500 slides), with one worker and with all |
 | `encrypted.txt` | `go test -run '^$' -bench 'Encrypted\|Extract/large.xlsx' -count 3 .` | What encryption adds: the check of a password, and the large workbook encrypted beside the same workbook unencrypted, in one run |
@@ -130,27 +130,30 @@ because something once went wrong with them, among them LibreOffice's
 collections of crash cases and fuzzer findings.
 
 Each file is read with one worker and with eight, with spans, with
-pictures, under a small cell limit and a small decompression budget, and a
-part at a time. For each: a valid document or a shared error; the same
+pictures, under a small cell and archive-member limit, a small
+decompression budget and a small text limit, and a part at a time; a file
+of the soak set whose project's tests give its password is opened with
+it. For each: a valid document or a shared error; the same
 document for one worker and eight; the same text with spans; a document
 that survives its JSON form; parts read one at a time equal to the
 document's. Nothing is asserted about what a file says.
 
 The run is also made under the race detector (`go test -race -run
 TestSoak`, three minutes): no data race in any of the readers. The test
-program stops itself if its heap passes a ceiling (4 GiB; it reaches 1.5),
+program stops itself if its heap passes a ceiling (4 GiB, 2 GiB under the
+race detector; it reaches 1.5),
 and does not write out a document of more than 64 MB of text to compare
 it: two files of the set are made to produce that much.
 
 | | Files |
 |---|---|
-| Read | 6,521 (3,328 Word, 1,920 Excel, 1,273 PowerPoint) |
-| Refused, each with a reason | 50 |
+| Read | 6,547 (3,328 Word, 1,946 Excel, 1,273 PowerPoint) |
+| Refused, each with a reason | 51 |
 | Crashes, hangs, invalid documents | 0 |
 
 | Refused because | Files |
 |---|---|
-| Needs a password | 24 (17 of them from the soak set; 13 of those are opened with the password their project's tests give) |
+| Needs a password | 25 (18 of them from the soak set; 14 of those are opened with the password their project's tests give) |
 | Not an archive at all | 9 |
 | An archive of another format (4 OpenDocument files named `.docx`, a package with only a theme, a plain zip) | 6 |
 | An archive without a readable directory, with too little left to read a document from | 5 |
@@ -167,10 +170,11 @@ slides. The count is small, and says little about how often it happens:
 a file cut in transit in someone's pipeline is not in anybody's test
 suite.
 
-Among the documents read, 36 have a part that failed (a sheet the
+Among the documents read, 39 have a part that failed (a sheet the
 workbook lists and does not contain, XML that breaks off, a member cut
-short) and 28 have a damaged part that is not the main one; each
-says so in its warnings. 269 documents have text the file declares hidden,
+short) and 34 have a supporting part or document properties that could
+not be read to the end (`input.stream_damaged`); each says so in its
+warnings. 270 documents have text the file declares hidden,
 and 6 text drawn with no ink.
 
 The run found one defect: asking for spans changed how consecutive
@@ -317,7 +321,7 @@ rows begin that agrees with the scanner on every damaged file, for a gain
 only on a very large sheet read through `Rows`.
 
 The bands are the same with one worker and with four, within the limits and
-with a limit on decompressed bytes that cuts sheets off, over the 1,863
+with a limit on decompressed bytes that cuts sheets off, over the 1,890
 workbooks of the corpus and the soak set (`TestRowsTheSameWithAnyWorkers`).
 For that the sheet is read in chunks of 256 KiB both ways, and the
 decompression budget is charged a chunk at a time as the scanner takes it,

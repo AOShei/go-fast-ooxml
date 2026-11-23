@@ -16,7 +16,8 @@ import (
 //   - its JSON form decodes back to an equal document;
 //   - its format is one this library produces;
 //   - a part without text carries exactly one of part.failed, part.no_text
-//     and part.image_only, and a part with text carries none of them.
+//     and part.image_only, and a part with text carries neither
+//     part.no_text nor part.image_only.
 //
 // Embedded documents are checked for the first two only, since another
 // extractor may have produced them.

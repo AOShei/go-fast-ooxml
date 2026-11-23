@@ -274,7 +274,8 @@ func (f *File) Close() error {
 }
 
 // Format returns the kind of file: "docx", "xlsx" or "pptx". A
-// macro-enabled file or a template is the format it is a variant of.
+// macro-enabled file or a template is the format it is a variant of; a
+// binary workbook (.xlsb) is "xlsx".
 func (f *File) Format() string { return f.source.Format }
 
 // Source returns what is known of where the document came from, as in

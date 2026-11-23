@@ -767,8 +767,8 @@ func tidy(dst []byte, start int) []byte {
 }
 
 // Builtin returns the code of a built-in format, by its number. The
-// numbers above 49 that Excel reserves for East Asian dates are given as a
-// date. Unknown numbers are General.
+// numbers Excel reserves for East Asian dates (27 to 36, 50 to 58) are
+// given as a date. Unknown numbers are General.
 func Builtin(id int) string {
 	if id >= 0 && id < len(builtins) && builtins[id] != "" {
 		return builtins[id]
