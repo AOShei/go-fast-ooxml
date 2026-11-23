@@ -85,7 +85,7 @@ func TestPowerPointSmartArt(t *testing.T) {
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("blocks:\n %s\nwant:\n %s", strings.Join(got, "\n "), strings.Join(want, "\n "))
 	}
-	if warned(doc, "ooxml.unread_content") {
+	if warned(doc, "input.unread_content") {
 		t.Errorf("warnings: %+v", doc.Warnings)
 	}
 }

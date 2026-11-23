@@ -5,6 +5,51 @@ What changes for someone who uses the library. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0 a
 minor version may change the API.
 
+## [Unreleased]
+
+Requires `go-fast-core` v0.1.2.
+
+### Changed
+
+- **Events every go-fast library can meet are raised with core's shared
+  codes**, at the severity core gives them (the same as before). The code
+  strings in the output change:
+
+  | Was | Now | Severity |
+  |---|---|---|
+  | `ooxml.control_characters_removed` | `text.control_characters_removed` | info |
+  | `ooxml.unread_content` | `input.unread_content` | warning |
+  | `ooxml.part_damaged` | `input.stream_damaged` | warning |
+  | `ooxml.properties_damaged` | `input.stream_damaged` | warning |
+  | `ooxml.formula_no_value` | `table.formula_no_value` | info |
+  | `ooxml.region_split` | `table.region_split` | info |
+  | `ooxml.decrypted` | `input.decrypted` | info |
+
+  The messages say what they said; damaged document properties now name
+  them: "the document properties (docProps/core.xml) could not be read
+  to their end; the properties read before the damage are kept".
+  `ooxml.table_flattened` and `ooxml.integrity_mismatch` stay this
+  library's own.
+
+### Added
+
+- **`Metadata.Encrypted` is set on a file that was decrypted**: by the
+  agile or the standard scheme, with the password given, the password
+  Excel uses when none is set, or a private key from `Options.Keys`. It is
+  set whenever `input.decrypted` is raised, and on no other file.
+
+### Deprecated
+
+- `WarnControlCharsRemoved`, `WarnUnreadContent`, `WarnPartDamaged`,
+  `WarnPropertiesDamaged`, `WarnFormulaNoValue`, `WarnRegionSplit` and
+  `WarnDecrypted`. Each is now the shared code's value
+  (`gofastcore.WarnTextControlCharactersRemoved`,
+  `WarnInputUnreadContent`, `WarnInputStreamDamaged`,
+  `WarnTableFormulaNoValue`, `WarnTableRegionSplit`,
+  `WarnInputDecrypted`), so `w.Code == gofastooxml.WarnPartDamaged` still
+  matches; use the core names. The deprecated names will be removed in a
+  later release.
+
 ## [0.1.1] - 2026-11-22
 
 Requires `go-fast-core` v0.1.1.
@@ -194,5 +239,6 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.1
 [0.1.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.1.0

@@ -69,7 +69,7 @@ func TestCertificateEncryptedFiles(t *testing.T) {
 			if got != want {
 				t.Errorf("%s, %s: the document differs from that of the file unencrypted", s.name, name)
 			}
-			if len(said) != 1 || said[0].Code != gofastooxml.WarnDecrypted || !strings.Contains(said[0].Message, "the key is encrypted for a password and for 2 certificates: CN=Alice; CN=Bob") {
+			if len(said) != 1 || said[0].Code != gofastcore.WarnInputDecrypted || !strings.Contains(said[0].Message, "the key is encrypted for a password and for 2 certificates: CN=Alice; CN=Bob") {
 				t.Errorf("%s, %s: warnings %v", s.name, name, said)
 				continue
 			}

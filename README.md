@@ -130,9 +130,17 @@ with warnings that say what could not.
   workbooks, document properties) is said on the document.
   `limit.exceeded` is the only code for a cut, so its absence means
   nothing was cut.
+- **An event every go-fast library can meet has the shared code.**
+  Control characters removed, content of a kind not read, a supporting
+  part or the document properties damaged, a formula with no stored
+  result, a sparse area of a sheet written a row at a time, a file
+  decrypted: `text.control_characters_removed`, `input.unread_content`,
+  `input.stream_damaged`, `table.formula_no_value`, `table.region_split`,
+  `input.decrypted` (go-fast-core v0.1.2). Only `ooxml.table_flattened`
+  and `ooxml.integrity_mismatch` are this library's own.
 - **A warning that could repeat is said once.** Parts that could not be
   read to their end, and drawings that name a chart or diagram the file
-  does not have, are one `ooxml.part_damaged` warning each, with how many
+  does not have, are one `input.stream_damaged` warning each, with how many
   and the first eight: "12 parts could not be read to their end (a, b,
   …, and 4 more)". Core keeps at most 1,000 warnings on a part or a
   document and counts the rest in `warnings.omitted`.
@@ -232,7 +240,8 @@ Both ways Office has of encrypting with a password are read: the one of
 Office 2007 ("standard": AES, SHA-1), which LibreOffice still writes, and
 the one of Office 2010 and later ("agile": AES-128, 192 or 256 with SHA-1,
 SHA-256, SHA-384 or SHA-512). The document is the one the file would give
-unencrypted, with an `ooxml.decrypted` warning that names the scheme.
+unencrypted, with `Metadata.Encrypted` set and an `input.decrypted`
+warning that names the scheme and what opened it.
 
 - **The password is verified before anything is decrypted.** Without one
   the error is `ErrPasswordRequired`; with one that does not open the file,
@@ -241,6 +250,8 @@ unencrypted, with an `ooxml.decrypted` warning that names the scheme.
   that is protected, but has no password to open it, is encrypted by Excel
   with a fixed password that Excel itself tries silently. Such a file
   opens with no password given, and the warning says that is how.
+  `Metadata.Encrypted` is set all the same: it says what the file was,
+  not who supplied the password.
 - **Nothing is held decrypted.** The package is decrypted piece by piece
   as the parts are read, also from several workers at once.
 - **A file that was changed after it was encrypted says so.** The agile
@@ -273,7 +284,7 @@ doc, err := gofastooxml.ExtractFile(ctx, "board.docx", &gofastcore.Options{Keys:
   file's verifier for the certificate is checked before anything is
   decrypted. The keys are RSA, the only kind the scheme uses. A key costs
   no rounds of hashing, and is tried before any password.
-- The `ooxml.decrypted` warning names the certificate that opened the
+- The `input.decrypted` warning names the certificate that opened the
   file. Opened with the password, it says what certificates the key is also
   encrypted for.
 - Opened with neither, the error wraps `ErrKeyRequired`, beside
@@ -329,7 +340,7 @@ Four things are not as displayed, on purpose:
 
 A formula gives its stored result. Formulas are not evaluated, and one
 stored without a result is an empty cell, reported as
-`ooxml.formula_no_value`.
+`table.formula_no_value`.
 
 **What a cell holds besides its text** is in `Table.Cells`, an entry for
 each cell that has something:
@@ -378,7 +389,7 @@ and columns; those boundaries are a reading of the layout, so such tables
 have `origin: inferred`. Every block has its place on the sheet in
 `loc.range`. An area whose cells are so scattered that the rectangle around
 them is nearly all empty is written as one table per run of adjacent cells,
-with `ooxml.region_split`. A table of more than about a million cells is
+with `table.region_split`. A table of more than about a million cells is
 written as several, each a run of its rows.
 
 **Limits.** Besides the limits of `gofastcore.Options`, `Extractor.MaxCells`
@@ -430,7 +441,7 @@ number of their link (`[1]Rates!A1`, `'[1]Q 2'!A1`, `[1]!Tax`), the
 functions of add-ins by the name the workbook lists, and the functions and
 commands of Excel 4 macro sheets (`GET.CELL`, `ALERT`), whose names are
 those of the specification's tables. A formula that still cannot be read
-back is left out and counted in `ooxml.unread_content` ("binary formulas
+back is left out and counted in `input.unread_content` ("binary formulas
 not read back"): wrong text would be worse than none. That is one through
 a DDE or OLE link, or that names a table, column, sheet or name the
 workbook does not have.
@@ -458,7 +469,7 @@ same names and places as in LibreOffice's `.xlsx`, except one that
 LibreOffice lays out again. Their calculated fields have the same
 formulas, except that LibreOffice quotes every field's name.
 
-**Not read:** dialog sheets (counted in `ooxml.unread_content`), and the
+**Not read:** dialog sheets (counted in `input.unread_content`), and the
 formulas of a pivot table's calculated items. Macro sheets and VBA
 projects are reported as `input.active_content`, and their code is read
 as text, never run.
@@ -509,7 +520,7 @@ about a million blocks are repeated in this way over a presentation, and a
 slide past that says so with `limit.exceeded`. What a limit leaves out is
 the same for any number of workers.
 
-**Not read:** sound and video clips, counted in `ooxml.unread_content`;
+**Not read:** sound and video clips, counted in `input.unread_content`;
 animations. An action that starts a program or
 runs a macro is reported as `input.active_content` and never run.
 

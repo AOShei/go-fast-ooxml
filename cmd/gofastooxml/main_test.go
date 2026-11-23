@@ -317,7 +317,7 @@ func TestPassword(t *testing.T) {
 		t.Fatalf("status %d: %s", status, stderr)
 	}
 	doc := documents(t, stdout)[0]
-	if doc.Source.Format != "docx" || !strings.Contains(doc.Text(), "Quarterly Report") || len(doc.Warnings) != 1 || doc.Warnings[0].Code != "ooxml.decrypted" {
+	if doc.Source.Format != "docx" || !strings.Contains(doc.Text(), "Quarterly Report") || len(doc.Warnings) != 1 || doc.Warnings[0].Code != "input.decrypted" {
 		t.Errorf("format %q, warnings %v", doc.Source.Format, doc.Warnings)
 	}
 	// Without the password, or with another, the file is not read, and

@@ -356,7 +356,7 @@ func TestXlsbFormulaNotReadBack(t *testing.T) {
 	}
 	found := false
 	for _, w := range doc.Warnings {
-		found = found || w.Code == "ooxml.unread_content" && strings.Contains(w.Message, "2 binary formulas not read back")
+		found = found || w.Code == "input.unread_content" && strings.Contains(w.Message, "2 binary formulas not read back")
 	}
 	if !found {
 		t.Errorf("warnings %+v", doc.Warnings)

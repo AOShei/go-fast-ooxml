@@ -234,7 +234,7 @@ func TestExcelSparseRegions(t *testing.T) {
 	}
 	doc := excel(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "D", Data: rows.String()}), nil)
 	part := &doc.Parts[0]
-	if len(part.Blocks) != 300 || !part.Has(gofastooxml.WarnRegionSplit) {
+	if len(part.Blocks) != 300 || !part.Has(gofastcore.WarnTableRegionSplit) {
 		t.Fatalf("%d blocks, warnings %+v", len(part.Blocks), part.Warnings)
 	}
 	if b := part.Blocks[299]; b.Loc.Range != "KN300:KN300" || b.Table.Rows[0][0] != "300" {
@@ -251,7 +251,7 @@ func TestExcelSparseRegions(t *testing.T) {
 		rows.WriteString(xlRow(i, cells...))
 	}
 	doc = excel(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "D", Data: rows.String()}), nil)
-	if len(doc.Parts[0].Blocks) != 1 || doc.Parts[0].Has(gofastooxml.WarnRegionSplit) {
+	if len(doc.Parts[0].Blocks) != 1 || doc.Parts[0].Has(gofastcore.WarnTableRegionSplit) {
 		t.Errorf("a dense block: %d blocks", len(doc.Parts[0].Blocks))
 	}
 }
@@ -449,7 +449,7 @@ func TestExcelFormulasWithoutResults(t *testing.T) {
 	data := xlRow(1, xlNum("A1", "1"), `<c r="B1"><f>A1*2</f></c>`, `<c r="C1"><f>A1*3</f><v></v></c>`, `<c r="D1" t="str"><f>"a"</f><v>a</v></c>`)
 	doc := excel(t, ooxmltest.Xlsx(ooxmltest.Sheet{Name: "F", Data: data}), nil)
 	expectSheets(t, doc, `sheet 1 "F"`, `  table A1:A1 inferred [["1"]]`, `  table D1:D1 inferred [["a"]]`)
-	if w := doc.Parts[0].Warnings; len(w) != 1 || w[0].Code != gofastooxml.WarnFormulaNoValue || !strings.HasPrefix(w[0].Message, "2 ") {
+	if w := doc.Parts[0].Warnings; len(w) != 1 || w[0].Code != gofastcore.WarnTableFormulaNoValue || !strings.HasPrefix(w[0].Message, "2 ") {
 		t.Errorf("warnings = %+v", w)
 	}
 }
@@ -539,7 +539,7 @@ func TestExcelShapesAndPictures(t *testing.T) {
 		`  table A31 chart=bar name=Chart 1 role=chart x_axis=Quarter header=1 [["" "North" "South"] ["Q1" "10" "7"] ["Q2" "12.5" "9"]]`,
 		`  paragraph A41 "The modern form."`,
 	)
-	if warned(doc, gofastooxml.WarnUnreadContent) {
+	if warned(doc, gofastcore.WarnInputUnreadContent) {
 		t.Errorf("the chart is reported as not read: %+v", doc.Warnings)
 	}
 	// Pictures not asked for are still known of.
@@ -715,7 +715,7 @@ func TestExcelOtherKindsOfSheet(t *testing.T) {
 	if !doc.Parts[1].Has(gofastcore.WarnPartNoText) || !doc.Parts[3].Has(gofastcore.WarnPartFailed) || !doc.Parts[4].Has(gofastcore.WarnPartFailed) {
 		t.Errorf("part warnings: %+v %+v %+v", doc.Parts[1].Warnings, doc.Parts[3].Warnings, doc.Parts[4].Warnings)
 	}
-	if warned(doc, gofastooxml.WarnUnreadContent) || !warned(doc, gofastcore.WarnInputExternalReference) {
+	if warned(doc, gofastcore.WarnInputUnreadContent) || !warned(doc, gofastcore.WarnInputExternalReference) {
 		t.Errorf("document warnings: %+v", doc.Warnings)
 	}
 }

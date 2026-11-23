@@ -180,7 +180,7 @@ func TestMissingChartsSaidOnce(t *testing.T) {
 	doc := capsExtract(t, ooxmltest.Docx(body.String()).Bytes())
 	var said []string
 	for _, w := range doc.AllWarnings() {
-		if w.Code == gofastooxml.WarnPartDamaged {
+		if w.Code == gofastcore.WarnInputStreamDamaged {
 			said = append(said, w.Message)
 		}
 	}

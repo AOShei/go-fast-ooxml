@@ -26,15 +26,6 @@ import (
 // Warning codes raised by this package beyond the shared ones in
 // gofastcore. Each states a fact.
 const (
-	// WarnUnreadContent: the document holds content of a kind this version
-	// does not read. Word's charts and diagrams are read; the code is the
-	// one the other formats give.
-	WarnUnreadContent = warn.UnreadContent
-	// WarnControlCharsRemoved: see the package gofastooxml.
-	WarnControlCharsRemoved = warn.ControlCharsRemoved
-	// WarnPartDamaged: a supporting part (styles, numbering, notes, a
-	// header) could not be read to its end; what was read is used.
-	WarnPartDamaged = warn.PartDamaged
 	// WarnTableFlattened: a table whose declared grid is far larger than
 	// the cells it holds was written as lines of text, cells separated by
 	// tabs, instead of as a table.
@@ -605,10 +596,10 @@ func (r *reader) finish() {
 	}
 	r.lost.Say(part)
 	if msg := r.damaged.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
-		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, msg)
+		r.doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged, msg)
 	}
 	if msg := r.missing.Message("drawing names a chart or diagram the document does not have", "drawings name a chart or diagram the document does not have"); msg != "" {
-		r.doc.Warn(gofastcore.SeverityWarning, WarnPartDamaged, msg)
+		r.doc.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged, msg)
 	}
 	if !hasText && !part.Has(gofastcore.WarnPartFailed) {
 		switch {
@@ -625,7 +616,7 @@ func (r *reader) finish() {
 			strconv.Itoa(r.inserted)+" insertions, "+strconv.Itoa(r.deleted)+" deletions; text is given with all changes accepted")
 	}
 	if r.removed > 0 {
-		part.Warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, strconv.Itoa(r.removed))
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(r.removed))
 	}
 	if r.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs,
@@ -719,7 +710,7 @@ func (b *Body) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		}
 	}
 	if msg := damaged.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
-		out = append(out, gofastcore.Warning{Code: WarnPartDamaged, Severity: gofastcore.SeverityWarning, Message: msg})
+		out = append(out, gofastcore.Warning{Code: gofastcore.WarnInputStreamDamaged, Severity: gofastcore.SeverityWarning, Message: msg})
 	}
 	return append(out, warn.Package(b.pkg)...)
 }

@@ -12,12 +12,7 @@ import (
 )
 
 const (
-	UnreadContent       = "ooxml.unread_content"
-	ControlCharsRemoved = "ooxml.control_characters_removed"
-	PartDamaged         = "ooxml.part_damaged"
-	TableFlattened      = "ooxml.table_flattened"
-	FormulaNoValue      = "ooxml.formula_no_value"
-	RegionSplit         = "ooxml.region_split"
+	TableFlattened = "ooxml.table_flattened"
 )
 
 // ErrText is what a reader ends a scan with when the document has taken

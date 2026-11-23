@@ -130,7 +130,7 @@ func TestExtractProperties(t *testing.T) {
 	if err := doc.Validate(); err != nil {
 		t.Error(err)
 	}
-	if warned(doc, gofastcore.WarnInputActiveContent) || warned(doc, gofastooxml.WarnPropertiesDamaged) {
+	if warned(doc, gofastcore.WarnInputActiveContent) || warned(doc, gofastcore.WarnInputStreamDamaged) {
 		t.Errorf("unexpected warnings: %+v", doc.Warnings)
 	}
 
@@ -166,7 +166,7 @@ func TestExtractReportsFactsAboutTheFile(t *testing.T) {
 	if doc.Metadata.Title != tagged || len(doc.Warnings) > 0 && doc.Warnings[0].Code == "text.hidden" {
 		t.Errorf("hidden characters in the title: kept=%v, warnings %+v", doc.Metadata.Title == tagged, doc.Warnings)
 	}
-	if doc.Metadata.Subject != "bellhere" || !warned(doc, gofastooxml.WarnControlCharsRemoved) {
+	if doc.Metadata.Subject != "bellhere" || !warned(doc, gofastcore.WarnTextControlCharactersRemoved) {
 		t.Errorf("control character: subject %q, warnings %+v", doc.Metadata.Subject, doc.Warnings)
 	}
 	if err := doc.Validate(); err != nil {
@@ -194,7 +194,7 @@ func TestExtractSurvivesDamagedProperties(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		if doc.Metadata.Title != "Kept" || !warned(doc, gofastooxml.WarnPropertiesDamaged) {
+		if doc.Metadata.Title != "Kept" || !warned(doc, gofastcore.WarnInputStreamDamaged) {
 			t.Errorf("%s: title %q, warnings %+v", name, doc.Metadata.Title, doc.Warnings)
 		}
 		if doc.Metadata.Subject != "" && name == "entity expansion bomb" {

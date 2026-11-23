@@ -358,7 +358,7 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 			kinds = append(kinds, strconv.Itoa(n)+" "+kind)
 		}
 		sort.Strings(kinds)
-		add(gofastcore.SeverityWarning, warn.UnreadContent, strings.Join(kinds, ", "))
+		add(gofastcore.SeverityWarning, gofastcore.WarnInputUnreadContent, strings.Join(kinds, ", "))
 	}
 	sort.Strings(damaged)
 	var names warn.Names
@@ -366,7 +366,7 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		names.AddOnce(clean.Label(d.p.pkg.Written(name)))
 	}
 	if msg := names.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
-		add(gofastcore.SeverityWarning, warn.PartDamaged, msg)
+		add(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged, msg)
 	}
 	if d.p.exceeded.Load() && len(tallies) == 0 {
 		add(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached before any slide was read")

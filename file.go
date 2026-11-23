@@ -40,21 +40,22 @@ import (
 // over one pass: one call of Document, Part or Children, or one run
 // through Parts or Rows. Passes that run at the same time share it.
 type File struct {
-	e        Extractor
-	opts     gofastcore.Options
-	r        io.ReaderAt // the file
-	size     int64
-	body     io.ReaderAt // the package: the file, or what it decrypts to
-	bodySize int64
-	closer   io.Closer
-	source   gofastcore.Source
-	meta     gofastcore.Metadata
-	opened   []gofastcore.Warning // warnings about the document known when it was opened
-	within   int64                // for a file embedded in a document: the bytes that document has left to decompress; 0 otherwise
-	parts    int
-	stored   int // the index of the stored part, or -1
-	noun     string
-	sheets   []Sheet
+	e         Extractor
+	opts      gofastcore.Options
+	r         io.ReaderAt // the file
+	size      int64
+	body      io.ReaderAt // the package: the file, or what it decrypts to
+	bodySize  int64
+	closer    io.Closer
+	source    gofastcore.Source
+	meta      gofastcore.Metadata
+	opened    []gofastcore.Warning // warnings about the document known when it was opened
+	decrypted bool                 // the file was encrypted, and unlock decrypted it
+	within    int64                // for a file embedded in a document: the bytes that document has left to decompress; 0 otherwise
+	parts     int
+	stored    int // the index of the stored part, or -1
+	noun      string
+	sheets    []Sheet
 
 	mu      sync.Mutex
 	sess    *session            // the reading in use
@@ -215,15 +216,17 @@ func (f *File) open(first bool) (*session, error) {
 	if first {
 		f.source = gofastcore.Source{Format: string(format), MIME: mime, Name: opts.Name, Size: f.size}
 		f.meta = meta.Metadata
+		f.meta.Encrypted = f.decrypted
 		warn := func(severity gofastcore.Severity, code, message string) {
 			f.opened = append(f.opened, gofastcore.Warning{Code: code, Severity: severity, Message: message})
 		}
 		for _, name := range meta.Damaged {
-			warn(gofastcore.SeverityWarning, WarnPropertiesDamaged, clean.Label(name))
+			warn(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged,
+				"the document properties ("+clean.Label(name)+") could not be read to their end; the properties read before the damage are kept")
 		}
 		f.opened = append(f.opened, meta.Warnings()...)
 		if meta.Removed > 0 {
-			warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", meta.Removed))
+			warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, fmt.Sprintf("%d in document properties", meta.Removed))
 		}
 		if rec := pkg.Recovered(); rec != nil {
 			message := fmt.Sprintf("the archive's directory cannot be read: the file is cut short or damaged. %d members were found by their own headers", rec.Members)

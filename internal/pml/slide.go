@@ -228,7 +228,7 @@ func (pg *page) slide(ctx context.Context, index int, ref slideRef) *unit.Result
 		}
 	}
 	if removed > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(removed))
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(removed))
 	}
 	if unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(unmapped))
