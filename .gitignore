@@ -42,3 +42,7 @@ __pycache__/
 *.swp
 *~
 .DS_Store
+
+# The batch comparison's builds
+/bench/batch/gooxml/gooxml
+/bench/batch/rust/target/

@@ -7,6 +7,15 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **A batch benchmark** (`bench/batch`): 1,980 Word, Excel and PowerPoint
+  files from Common Crawl read in one process, against kreuzberg,
+  calamine, docx-rs, pptx-to-md, markitdown, openpyxl, python-docx,
+  docx2txt and python-pptx, with one worker and 24, and with the garbage
+  collector at `GOGC` 100, 200 and 400. The README gives the results and
+  what `GOGC` trades.
+
 ### Fixed
 
 - **Text joined from many pieces no longer costs time with the square of
