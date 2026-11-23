@@ -60,6 +60,12 @@ minor version may change the API.
   taken by the next part read, of the same document or another. On the
   Word batch, allocation falls from 1.15 to 0.96 GB more and CPU time by
   2–3%. The pool is that of go-fast-odf.
+- **The XML scanner is faster on real parts:** 17% on Word, 14% on
+  PowerPoint and 7% on Excel. Attributes are kept as offsets in the tag
+  rather than slices, with the colon of each name found as the name is
+  read; the end of a name is found by a table; and the namespace of the
+  last prefix resolved is kept until the bindings in scope change. Over
+  the whole read, 3–5% less time. The output is the same.
 
 ## [0.2.0] - 2026-11-23
 

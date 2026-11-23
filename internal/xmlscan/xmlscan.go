@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 	"unicode/utf8"
 )
@@ -99,9 +100,16 @@ const (
 	DefaultBufferSize    = 64 << 10
 )
 
+// attr is an attribute of the current start tag, by its offsets in
+// Scanner.tag: no pointers, so the list costs the collector nothing.
 type attr struct {
-	name, value []byte
+	name, nameEnd   int32
+	colon           int32 // offset of ':' in the name, or -1
+	value, valueEnd int32
 }
+
+// maxTag is the longest start tag whose attributes have offsets.
+const maxTag = math.MaxInt32
 
 type elem struct {
 	nameStart int32 // offset of the qualified name in Scanner.names
@@ -165,7 +173,8 @@ type Scanner struct {
 	space      Space
 	text       []byte
 	attrs      []attr
-	pendingEnd bool // an empty-element tag still owes its End
+	tag        []byte // the current start tag, which attrs index
+	pendingEnd bool   // an empty-element tag still owes its End
 
 	stack     []elem
 	names     []byte // qualified names of the open elements
@@ -173,8 +182,15 @@ type Scanner struct {
 	bindNames []byte
 	slots     map[string]int32 // prefix -> index in heads; kept across resets
 	heads     []int32          // per prefix: its innermost binding, or -1
-	scratch   []byte           // decoded text of the current token
-	attrBuf   []byte           // decoded attribute values of the current token
+	// The last prefix resolved and its namespace, while the bindings in
+	// scope are those of generation gen: a document's elements and
+	// attributes mostly share one prefix, which then costs no lookup.
+	lastPrefix []byte
+	lastSpace  Space
+	lastGen    uint64
+	gen        uint64 // changes whenever the bindings in scope change
+	scratch    []byte // decoded text of the current token
+	attrBuf    []byte // decoded attribute values of the current token
 
 	// Repairs counts the places where malformed input was read leniently:
 	// an unknown or unterminated entity reference kept as written and,
@@ -236,7 +252,7 @@ func (s *Scanner) Release() {
 	s.buf, s.own, s.r = nil, false, nil
 	s.pos, s.end, s.eof = 0, 0, true
 	s.qname, s.local, s.space, s.text = nil, nil, 0, nil
-	s.attrs = s.attrs[:0]
+	s.attrs, s.tag = s.attrs[:0], nil
 }
 
 // Reset makes the scanner read from r, keeping its buffers.
@@ -269,13 +285,14 @@ func (s *Scanner) reset(opts *Options) {
 	// to show.
 	s.qname, s.local, s.space, s.text = nil, nil, 0, nil
 	s.stack, s.names, s.binds, s.bindNames = s.stack[:0], s.names[:0], s.binds[:0], s.bindNames[:0]
+	s.gen++
 	if len(s.slots) > 1024 {
 		s.slots, s.heads = nil, s.heads[:0] // do not carry a hostile file's prefixes around
 	}
 	for i := range s.heads {
 		s.heads[i] = -1
 	}
-	s.attrs, s.scratch, s.attrBuf = s.attrs[:0], s.scratch[:0], s.attrBuf[:0]
+	s.attrs, s.scratch, s.attrBuf, s.tag = s.attrs[:0], s.scratch[:0], s.attrBuf[:0], nil
 	s.spaces, s.maxDepth, s.maxToken, s.recover, s.closing = nil, DefaultMaxDepth, DefaultMaxTokenBytes, false, 0
 	if opts != nil {
 		s.spaces, s.recover = opts.Spaces, opts.Recover
@@ -412,7 +429,7 @@ func (s *Scanner) Next() Kind {
 		s.kind = End
 		return End
 	}
-	s.attrs, s.attrBuf = s.attrs[:0], s.attrBuf[:0]
+	s.attrs, s.attrBuf, s.tag = s.attrs[:0], s.attrBuf[:0], nil
 	for {
 		if s.pos >= s.end && !s.more() {
 			if s.err == nil && len(s.stack) > 0 && s.recover && s.mode == modeNormal {
@@ -721,6 +738,26 @@ func (s *Scanner) named(i int, name []byte) bool {
 
 func isSpace(c byte) bool { return c == ' ' || c == '\n' || c == '\t' || c == '\r' }
 
+// nameEnds marks the bytes that end a tag's name, and ':', which is noted
+// on the way; attrNameEnds the same for an attribute's name, which '='
+// also ends. One look-up a byte rather than a comparison for each.
+var nameEnds, attrNameEnds = func() (n, a [256]bool) {
+	for _, c := range []byte(">/ \n\t\r:") {
+		n[c], a[c] = true, true
+	}
+	a['='] = true
+	return
+}()
+
+func (s *Scanner) attrName(a *attr) []byte  { return s.tag[a.name:a.nameEnd] }
+func (s *Scanner) attrLocal(a *attr) []byte { return s.tag[a.name+a.colon+1 : a.nameEnd] }
+func (s *Scanner) attrPrefix(a *attr) []byte {
+	if a.colon < 0 {
+		return nil
+	}
+	return s.tag[a.name : a.name+a.colon]
+}
+
 func clip(b []byte) []byte {
 	if len(b) > 40 {
 		return append(append([]byte{}, b[:40]...), "..."...)
@@ -731,14 +768,19 @@ func clip(b []byte) []byte {
 // startTag parses a start tag or empty-element tag beginning at b[0]. The
 // whole tag must be in the window.
 func (s *Scanner) startTag(b []byte) scanStatus {
+	if len(b) > maxTag {
+		b = b[:maxTag]
+	}
 	i, colon := 1, -1
 	for ; i < len(b); i++ {
 		c := b[i]
-		if c == '>' || c == '/' || c == ' ' || c == '\n' || c == '\t' || c == '\r' {
-			break
-		}
-		if c == ':' && colon < 0 {
-			colon = i - 1
+		if nameEnds[c] {
+			if c != ':' {
+				break
+			}
+			if colon < 0 {
+				colon = i - 1
+			}
 		}
 	}
 	if i == len(b) {
@@ -775,9 +817,17 @@ func (s *Scanner) startTag(b []byte) scanStatus {
 			break
 		}
 		// An attribute: name, '=', quoted value.
-		start := i
-		for i < len(b) && b[i] != '=' && !isSpace(b[i]) && b[i] != '>' && b[i] != '/' {
-			i++
+		start, acolon := i, -1
+		for ; i < len(b); i++ {
+			c := b[i]
+			if attrNameEnds[c] {
+				if c != ':' {
+					break
+				}
+				if acolon < 0 {
+					acolon = i - start
+				}
+			}
 		}
 		if i == len(b) {
 			return needMore
@@ -822,7 +872,7 @@ func (s *Scanner) startTag(b []byte) scanStatus {
 		if attrName[0] == 'x' && len(attrName) >= 5 {
 			declares = true
 		}
-		s.attrs = append(s.attrs, attr{attrName, b[i : i+n]})
+		s.attrs = append(s.attrs, attr{int32(start), int32(start + len(attrName)), int32(acolon), int32(i), int32(i + n)})
 		i += n + 1
 	}
 
@@ -830,6 +880,7 @@ func (s *Scanner) startTag(b []byte) scanStatus {
 		s.fail(fmt.Errorf("%w (limit %d) at byte %d", ErrDepth, s.maxDepth, s.Offset()))
 		return failed
 	}
+	s.tag = b[:i]
 	s.push(name, colon, declares)
 	s.pos += i
 	s.pendingEnd = selfClose
@@ -854,18 +905,19 @@ func (s *Scanner) push(name []byte, colon int, declares bool) {
 	}
 	for i := 0; declares && i < len(s.attrs); i++ {
 		a := &s.attrs[i]
-		if len(a.name) < 5 || a.name[0] != 'x' || !bytes.HasPrefix(a.name, xmlnsPrefix) {
+		aname := s.attrName(a)
+		if len(aname) < 5 || aname[0] != 'x' || !bytes.HasPrefix(aname, xmlnsPrefix) {
 			continue
 		}
 		var prefix []byte
 		switch {
-		case len(a.name) == 5:
-		case a.name[5] == ':':
-			prefix = a.name[6:]
+		case len(aname) == 5:
+		case aname[5] == ':':
+			prefix = aname[6:]
 		default:
 			continue // an ordinary attribute whose name starts with "xmlns"
 		}
-		uri := a.value
+		uri := s.tag[a.value:a.valueEnd]
 		if bytes.IndexByte(uri, '&') >= 0 {
 			s.attrBuf, uri = s.decodeAttr(s.attrBuf, uri)
 		}
@@ -888,6 +940,9 @@ func (s *Scanner) push(name []byte, colon int, declares bool) {
 		s.bindNames = append(s.bindNames, prefix...)
 		s.binds = append(s.binds, binding{start, int32(len(s.bindNames)), space, slot, s.heads[slot]})
 		s.heads[slot] = int32(len(s.binds) - 1)
+	}
+	if int(e.bindMark) != len(s.binds) {
+		s.gen++
 	}
 
 	var prefix []byte
@@ -922,6 +977,16 @@ func (s *Scanner) resolve(prefix []byte, element bool) Space {
 	if len(prefix) == 0 && !element {
 		return NoSpace
 	}
+	if s.lastGen == s.gen && s.lastPrefix != nil && string(s.lastPrefix) == string(prefix) {
+		return s.lastSpace
+	}
+	space := s.lookup(prefix)
+	s.lastPrefix, s.lastSpace, s.lastGen = append(s.lastPrefix[:0], prefix...), space, s.gen
+	return space
+}
+
+// lookup is resolve without the last answer kept.
+func (s *Scanner) lookup(prefix []byte) Space {
 	if len(s.binds) <= linearBindings {
 		for i := len(s.binds) - 1; i >= 0; i-- {
 			b := &s.binds[i]
@@ -952,6 +1017,9 @@ func (s *Scanner) pop() {
 	for i := len(s.binds) - 1; i >= int(e.bindMark); i-- {
 		s.heads[s.binds[i].slot] = s.binds[i].prev // what this element shadowed is visible again
 	}
+	if int(e.bindMark) != len(s.binds) {
+		s.gen++
+	}
 	s.binds = s.binds[:e.bindMark]
 	s.bindNames = s.bindNames[:e.bindBytes]
 }
@@ -963,15 +1031,10 @@ func (s *Scanner) pop() {
 func (s *Scanner) Attr(space Space, local string) ([]byte, bool) {
 	for i := range s.attrs {
 		a := &s.attrs[i]
-		colon := bytes.IndexByte(a.name, ':')
-		if string(a.name[colon+1:]) != local {
+		if string(s.attrLocal(a)) != local {
 			continue
 		}
-		var prefix []byte
-		if colon >= 0 {
-			prefix = a.name[:colon]
-		}
-		if s.resolve(prefix, false) != space {
+		if s.resolve(s.attrPrefix(a), false) != space {
 			continue
 		}
 		return s.attrValue(a), true
@@ -985,7 +1048,7 @@ func (s *Scanner) Attr(space Space, local string) ([]byte, bool) {
 func (s *Scanner) AttrAny(local string) ([]byte, bool) {
 	for i := range s.attrs {
 		a := &s.attrs[i]
-		if string(a.name[bytes.IndexByte(a.name, ':')+1:]) == local {
+		if string(s.attrLocal(a)) == local {
 			return s.attrValue(a), true
 		}
 	}
@@ -1000,24 +1063,20 @@ func (s *Scanner) NumAttr() int { return len(s.attrs) }
 // namespace, local name and decoded value.
 func (s *Scanner) AttrAt(i int) (space Space, local, value []byte) {
 	a := &s.attrs[i]
-	colon := bytes.IndexByte(a.name, ':')
-	var prefix []byte
-	if colon >= 0 {
-		prefix = a.name[:colon]
-	}
-	return s.resolve(prefix, false), a.name[colon+1:], s.attrValue(a)
+	return s.resolve(s.attrPrefix(a), false), s.attrLocal(a), s.attrValue(a)
 }
 
 // AttrNameAt returns the qualified name of the i-th attribute of the
 // current Start token as written in the source, prefix included.
-func (s *Scanner) AttrNameAt(i int) []byte { return s.attrs[i].name }
+func (s *Scanner) AttrNameAt(i int) []byte { return s.attrName(&s.attrs[i]) }
 
 func (s *Scanner) attrValue(a *attr) []byte {
-	if !needsAttrDecode(a.value) {
-		return a.value
+	raw := s.tag[a.value:a.valueEnd]
+	if !needsAttrDecode(raw) {
+		return raw
 	}
 	var v []byte
-	s.attrBuf, v = s.decodeAttr(s.attrBuf, a.value)
+	s.attrBuf, v = s.decodeAttr(s.attrBuf, raw)
 	return v
 }
 
