@@ -40,7 +40,7 @@ func (p *Package) ScanPart(name string, s *xmlscan.Scanner, opts *xmlscan.Option
 	if err != nil {
 		return nil, err
 	}
-	s.Reset(rc, opts)
+	s.Reset(rc, p.Window(name, opts))
 	return rc, nil
 }
 

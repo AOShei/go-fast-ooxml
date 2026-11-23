@@ -49,6 +49,13 @@ minor version may change the API.
   same, checked on fifty million numbers.
 - A sheet's text is kept in pieces that start at 4 KiB and double up to
   256 KiB, rather than 256 KiB from the first.
+- **A part's XML scanner window holds the part, not 64 KiB whatever its
+  size.** Most parts of a document are a few kilobytes; each had a new
+  64 KiB window, which was most of what reading a Word document
+  allocated. On 1,411 Word documents from Common Crawl, allocation falls
+  from 2.33 to 1.15 GB and CPU time by 13% (one worker); with 24
+  workers, the 1,980 Word, Excel and PowerPoint files take 0.59 s rather
+  than 0.66. The output is the same.
 
 ## [0.2.0] - 2026-11-23
 
