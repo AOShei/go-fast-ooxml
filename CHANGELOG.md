@@ -28,6 +28,11 @@ minor version may change the API.
   `limit.exceeded` message on the calculated entries of a pivot cache
   named fields and items; only calculated fields are read and counted.
   Codes and severities are unchanged.
+- A scanner reset for another part no longer shows the last name and
+  text of the part it read before. Until its first token, and as the
+  text of the first start tags, it gave the previous part's; no reader
+  looks there, and the output over 6,615 corpus files is unchanged.
+  Found by the go-fast-core agent in go-fast-odf's copy of the scanner.
 
 ### Changed
 

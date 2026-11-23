@@ -221,6 +221,9 @@ func (s *Scanner) ResetBytes(data []byte, opts *Options) {
 func (s *Scanner) reset(opts *Options) {
 	s.pos, s.end, s.base, s.eof, s.err, s.late, s.mode = 0, 0, 0, false, nil, nil, modeNormal
 	s.kind, s.pendingEnd, s.Repairs = EOF, false, 0
+	// No view of the stream read before is left for the first tokens
+	// to show.
+	s.qname, s.local, s.space, s.text = nil, nil, 0, nil
 	s.stack, s.names, s.binds, s.bindNames = s.stack[:0], s.names[:0], s.binds[:0], s.bindNames[:0]
 	if len(s.slots) > 1024 {
 		s.slots, s.heads = nil, s.heads[:0] // do not carry a hostile file's prefixes around
