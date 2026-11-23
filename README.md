@@ -6,7 +6,7 @@ the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
-**Status: released as v0.2.0.** What changed in each release is in
+**Status: released as v0.3.0.** What changed in each release is in
 [`CHANGELOG.md`](CHANGELOG.md).
 What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
