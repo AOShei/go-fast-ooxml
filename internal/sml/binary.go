@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
@@ -387,20 +388,63 @@ func readBinaryStyles(r *xlsb.Reader, lost *warn.Lost) *styleSheet {
 	return buildStyles(codes, fonts, xfs)
 }
 
+// binaryRuns appends to runs the runs of a binary workbook's rich string,
+// whose text is raw: where each begins in raw, counted in bytes, and its
+// font from the workbook's fonts. Text before the first run is in the
+// cell's font.
+func binaryRuns(runs []fontRun, raw []byte, strRuns []xlsb.StrRun, st *styleSheet) []fontRun {
+	if len(strRuns) == 0 {
+		return runs
+	}
+	if strRuns[0].Ich > 0 {
+		runs = append(runs, fontRun{})
+	}
+	unit, next := 0, 0
+	for i := 0; i <= len(raw) && next < len(strRuns); {
+		if unit >= int(strRuns[next].Ich) {
+			runs = append(runs, fontRun{at: uint32(i), font: st.font(int(strRuns[next].Font)), named: true})
+			next++
+			continue
+		}
+		if i == len(raw) {
+			break
+		}
+		_, size := utf8.DecodeRune(raw[i:])
+		if size == 4 {
+			unit++ // a character outside the first plane is two units
+		}
+		unit++
+		i += size
+	}
+	return runs
+}
+
 // readBinaryStrings reads a binary shared-strings part, as readStrings
-// does an XML one.
-func readBinaryStrings(r *xlsb.Reader) (t *stringTable, removed int, full bool) {
+// does an XML one; st gives the fonts its runs name.
+func readBinaryStrings(r *xlsb.Reader, st *styleSheet) (t *stringTable, removed int, full bool) {
 	t = &stringTable{}
 	var all strings.Builder
 	var raw, cleaned []byte
+	var strRuns []xlsb.StrRun
+	var runs []fontRun
+	symbolic := st.hasSymbolFont()
 	for r.Next() {
 		if r.ID() != xlsb.SSTItem {
 			continue
 		}
 		f := xlsb.NewFields(r.Data())
-		raw = f.RichString(raw[:0])
+		raw, strRuns = f.RichStringRuns(raw[:0], strRuns[:0])
 		var n int
-		cleaned, n = plainText(cleaned[:0], raw)
+		runs = binaryRuns(runs[:0], raw, strRuns, st)
+		if fontsMatter(runs, symbolic) {
+			cleaned, n = cleanRuns(cleaned[:0], raw, runs, false)
+			if t.rich == nil {
+				t.rich = map[uint32][]fontRun{}
+			}
+			t.rich[uint32(len(t.ends))] = append([]fontRun(nil), runs...)
+		} else {
+			cleaned, n = plainText(cleaned[:0], raw)
+		}
 		removed += n
 		if int64(all.Len())+int64(len(cleaned)) > maxStringBytes {
 			t.text = all.String()
@@ -625,6 +669,7 @@ func (sh *sheet) binCell(id int, f *xlsb.Fields, row int32, col *int32) bool {
 	}
 	style := sh.wb.styles.style(int(f.U32() & 0xFFFFFF))
 	raw := sh.raw[:0]
+	sh.runs = sh.runs[:0]
 	typ := byte('n')
 	switch id {
 	case xlsb.CellBlank, xlsb.ShortBlank:
@@ -643,7 +688,8 @@ func (sh *sheet) binCell(id int, f *xlsb.Fields, row int32, col *int32) bool {
 		raw = f.String(raw)
 		typ = 'i'
 	case xlsb.CellRString, xlsb.ShortRString:
-		raw = f.RichString(raw)
+		raw, sh.strRuns = f.RichStringRuns(raw, sh.strRuns[:0])
+		sh.runs = binaryRuns(sh.runs[:0], raw, sh.strRuns, sh.wb.styles)
 		typ = 'i'
 	case xlsb.FmlaString:
 		raw = f.String(raw)

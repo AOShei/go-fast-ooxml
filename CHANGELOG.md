@@ -9,12 +9,41 @@ minor version may change the API.
 
 ### Fixed
 
+- **Text joined from many pieces no longer costs time with the square of
+  their number.** Consecutive code paragraphs of a Word document, and the
+  cells a merged cell covers in Word and PowerPoint tables, were joined by
+  copying the text so far for each piece: 60,000 code paragraphs, a file
+  of 166 KB, took six seconds and allocated tens of gigabytes. Each is now
+  appended once.
+- **The runs of a workbook's strings are in their own fonts.** A cell in a
+  symbol font whose string has runs in other fonts (a check mark in
+  Wingdings, then words in Arial) had all its text read as codes of the
+  symbol font, and a run in a symbol font in a cell that is not was left
+  as codes. Each run is now in the font it names, and one that names none
+  in the cell's: shared and inline strings of `.xlsx`, and the rich
+  strings of `.xlsb`.
 - Two warning messages said less than is read. `input.active_content` on
   Excel 4.0 macro sheets said the macros are not read; their formulas are
   read as text into the stored part, and none is run. The
   `limit.exceeded` message on the calculated entries of a pivot cache
   named fields and items; only calculated fields are read and counted.
   Codes and severities are unchanged.
+
+### Changed
+
+- **The command writes JSON a block at a time, and a table a row at a
+  time,** not each part encoded whole first. The bytes are the same. A
+  workbook of 64 MB of text peaks at 18 MB rather than 1.7 GB, and
+  `large.docx` at 43 MB rather than 110.
+- **With more than one worker, parts are handed on as soon as they and
+  those before them are read,** not a batch of four parts a worker at a time:
+  `File.Parts` holds what is read ahead, not a whole batch. When a limit
+  is met, what is not yet handed on is read again in order, as before.
+- Number formats find the fifteen digits of most numbers (whole, or with
+  up to four decimals) without the general conversion; the output is the
+  same, checked on fifty million numbers.
+- A sheet's text is kept in pieces that start at 4 KiB and double up to
+  256 KiB, rather than 256 KiB from the first.
 
 ## [0.2.0] - 2026-11-23
 

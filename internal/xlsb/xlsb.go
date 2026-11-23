@@ -239,6 +239,33 @@ func (f *Fields) RichString(dst []byte) []byte {
 	return f.String(dst)
 }
 
+// StrRun is a run of a rich string (StrRun): from the character Ich, in
+// 16-bit units, the text is in the font numbered Font.
+type StrRun struct{ Ich, Font uint16 }
+
+// RichStringRuns reads a rich string as RichString does, and appends its
+// runs to runs: those that begin in order, within the string.
+func (f *Fields) RichStringRuns(dst []byte, runs []StrRun) ([]byte, []StrRun) {
+	flags := f.U8()
+	before := len(f.b)
+	dst = f.String(dst)
+	units := int64(max(before-len(f.b)-4, 0) / 2) // the string's 16-bit units
+	if flags&1 == 0 || f.Short {
+		return dst, runs
+	}
+	n := f.U32()
+	last := -1
+	for i := uint32(0); i < n && len(f.b) >= 4; i++ {
+		r := StrRun{Ich: f.U16(), Font: f.U16()}
+		if int(r.Ich) <= last || int64(r.Ich) >= units {
+			continue
+		}
+		last = int(r.Ich)
+		runs = append(runs, r)
+	}
+	return dst, runs
+}
+
 // AppendUTF16 appends little-endian UTF-16 text to dst as UTF-8. Half of
 // a surrogate pair is not a character, and is written as U+FFFD.
 func AppendUTF16(dst, b []byte) []byte {

@@ -22,6 +22,58 @@ func (x *decimal) set(v float64) {
 	if v == 0 {
 		return
 	}
+	if x.short(v) {
+		return
+	}
+	x.long(v)
+}
+
+var tenTo = [...]float64{1, 10, 100, 1000, 10000}
+
+// short sets x to v where v is a whole number, or one with up to four
+// decimals, of fifteen digits at most: most of the numbers of a sheet.
+// It reports false, having set nothing, for any other.
+//
+// The digits are those long gives. If v times a power of ten is a whole
+// number w below 1e15, and w divided by that power is v again, then the
+// decimal w over that power is one the binary value v is the nearest to,
+// so v is within half a unit of its last binary place of it: far nearer
+// than half a unit of the fifteenth decimal digit. It has fifteen digits
+// at most, so it is the fifteen-digit decimal nearest to v, which is
+// what long finds.
+func (x *decimal) short(v float64) bool {
+	if !(v < 1e15) {
+		return false // too large, an infinity or not a number
+	}
+	for k, p := range tenTo {
+		w := v * p
+		if w >= 1e15 {
+			return false
+		}
+		if w != math.Trunc(w) {
+			continue
+		}
+		u := uint64(w)
+		if u == 0 || float64(u)/p != v {
+			return false
+		}
+		var buf [20]byte
+		s := strconv.AppendUint(buf[:0], u, 10)
+		x.exp = len(s) - k
+		n := len(s)
+		for n > 0 && s[n-1] == '0' {
+			n--
+		}
+		x.n = copy(x.d[:], s[:n])
+		return true
+	}
+	return false
+}
+
+// long sets x to the fifteen significant digits of v by the general
+// conversion, which short avoids for most numbers.
+func (x *decimal) long(v float64) {
+	x.n, x.exp = 0, 0
 	var buf [32]byte
 	s := strconv.AppendFloat(buf[:0], v, 'e', 14, 64) // d.dddddddddddddde±xx
 	x.d[0] = s[0]

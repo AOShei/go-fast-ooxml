@@ -35,6 +35,13 @@ type parser struct {
 	para    paraState          // the paragraph being read
 	after   []gofastcore.Block // blocks that follow the paragraph or table in progress
 
+	// code holds the text of the block of code being joined by emitBody,
+	// which is codeIn's block codeAt: each paragraph is appended, not the
+	// whole block copied again.
+	code   strings.Builder
+	codeIn *[]gofastcore.Block
+	codeAt int
+
 	href      string     // target of the hyperlink being read, when links are asked for
 	hrefDepth int        // depth of its element
 	fields    []field    // the fields being read, innermost last
@@ -259,13 +266,23 @@ func (p *parser) document(out *[]gofastcore.Block) {
 
 // emitBody appends a block to the body. Consecutive code paragraphs are
 // one block of code, with or without spans: the blocks are the same
-// whether spans are asked for or not.
+// whether spans are asked for or not. The block's text is built in
+// p.code, so a run of n paragraphs costs time in proportion to its
+// length, not to n times it.
 func (p *parser) emitBody(out *[]gofastcore.Block, b gofastcore.Block) {
 	if n := len(*out); n > 0 && b.Kind == gofastcore.KindCode && (*out)[n-1].Kind == gofastcore.KindCode &&
 		b.Display == 0 && (*out)[n-1].Display == 0 {
 		last := &(*out)[n-1]
 		at := len(last.Text) + 1
-		last.Text += "\n" + b.Text
+		if p.codeIn != out || p.codeAt != n-1 || p.code.Len() != len(last.Text) {
+			// A new run: what the builder holds is another block's.
+			p.code = strings.Builder{}
+			p.code.WriteString(last.Text)
+			p.codeIn, p.codeAt = out, n-1
+		}
+		p.code.WriteByte('\n')
+		p.code.WriteString(b.Text)
+		last.Text = p.code.String()
 		for _, span := range b.Spans {
 			span.Start += at
 			span.End += at
@@ -1534,8 +1551,9 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 	}
 	t := &gofastcore.Table{HeaderRows: min(headerRows, len(rows)), Rows: make([][]string, len(rows))}
 	var hidden gofastcore.Display
-	open := make([]int, cols)   // per column: index in t.Merges of the vertical merge running through it, plus one
-	marked := make([]int, cols) // per column: index in t.Display of the entry of that merge's first cell, plus one
+	open := make([]int, cols)          // per column: index in t.Merges of the vertical merge running through it, plus one
+	marked := make([]int, cols)        // per column: index in t.Display of the entry of that merge's first cell, plus one
+	var joins map[int]*strings.Builder // per merge (index in t.Merges): the text of its first cell and those it covers
 	for r, row := range rows {
 		t.Rows[r] = make([]string, cols)
 		col := before[r]
@@ -1549,11 +1567,23 @@ func (p *parser) table(emit func(gofastcore.Block)) {
 				m := &t.Merges[open[col]-1]
 				m.RowSpan = r - m.Row + 1
 				if c.text != "" {
+					// The text is appended in a builder of the merge's, so
+					// a merge down many rows is not copied again for each.
 					top := &t.Rows[m.Row][m.Col]
-					if *top != "" {
-						*top += "\n"
+					j := joins[open[col]-1]
+					if j == nil {
+						if joins == nil {
+							joins = map[int]*strings.Builder{}
+						}
+						j = &strings.Builder{}
+						j.WriteString(*top)
+						joins[open[col]-1] = j
 					}
-					*top += c.text
+					if j.Len() > 0 {
+						j.WriteByte('\n')
+					}
+					j.WriteString(c.text)
+					*top = j.String()
 					if c.hidden != 0 {
 						// The text has joined the merge's first cell, and
 						// so does what is said of it.

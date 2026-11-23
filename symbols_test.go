@@ -86,4 +86,63 @@ func TestTextInSymbolFonts(t *testing.T) {
 		doc := excel(t, pkg, nil)
 		expectTexts(t, doc, "Task", "Done", "Write", "✓", "Check", "🗶", "Ship", "🗹")
 	})
+
+	// A string of runs is in the fonts of its runs: a run that names a
+	// font is in that font, and one that names none in the cell's. A
+	// check mark in Wingdings before words in Arial is common in published
+	// workbooks; the cell's font is then often the symbol font, and its
+	// words must not be read as codes of it.
+	t.Run("Excel runs", func(t *testing.T) {
+		const arial = `<rPr><rFont val="Arial"/></rPr>`
+		const wingdings = `<rPr><rFont val="Wingdings"/></rPr>`
+		sst := `<sst xmlns="` + ooxmltest.NSSheet + `">` +
+			`<si><r><t>ü</t></r><r>` + arial + `<t xml:space="preserve"> Done</t></r></si>` + // cell in Wingdings, words in Arial
+			`<si><r>` + wingdings + `<t>ü</t></r><r><t xml:space="preserve"> Done</t></r></si>` + // cell in Arial, mark in Wingdings
+			`<si><r>` + arial + `<t>Done</t></r></si>` + // cell in Wingdings, every run in Arial
+			`<si><r><t>ü</t></r><r><t>û</t></r></si>` + // no run names a font: the cell's
+			`</sst>`
+		pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: xlRow(1,
+			`<c r="A1" s="1" t="s"><v>0</v></c>`, `<c r="B1" t="s"><v>1</v></c>`,
+			`<c r="C1" s="1" t="s"><v>2</v></c>`, `<c r="D1" s="1" t="s"><v>3</v></c>`,
+			`<c r="E1" t="s"><v>0</v></c>`)}).
+			WithSheetStyles(xlStyles(nil, []string{`<sz val="11"/><name val="Wingdings"/>`}, nil, `numFmtId="0"`, `numFmtId="0" fontId="1"`))
+		pkg.Rel("xl/workbook.xml", ooxmltest.RelSharedStrings, "sharedStrings.xml")
+		pkg.Add("xl/sharedStrings.xml", ooxmltest.CTSharedStrings, sst)
+		doc := excel(t, pkg, nil)
+		// The last cell is in the default font: its first run, which
+		// names none, is not translated.
+		expectTexts(t, doc, "✓ Done", "✓ Done", "Done", "✓🗶", "ü Done")
+
+		inline := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: xlRow(1,
+			`<c r="A1" s="1" t="inlineStr"><is><r><t>ü</t></r><r>`+arial+`<t xml:space="preserve"> Done</t></r></is></c>`,
+			`<c r="B1" t="inlineStr"><is><r>`+wingdings+`<t>ü</t></r><r><t xml:space="preserve"> Done</t></r></is></c>`)}).
+			WithSheetStyles(xlStyles(nil, []string{`<sz val="11"/><name val="Wingdings"/>`}, nil, `numFmtId="0"`, `numFmtId="0" fontId="1"`))
+		expectTexts(t, excel(t, inline, nil), "✓ Done", "✓ Done")
+	})
+
+	// The same in a binary workbook, whose runs name fonts by number.
+	t.Run("Excel binary runs", func(t *testing.T) {
+		rich := func(s string, runs ...uint16) []byte {
+			f := ooxmltest.Join(ooxmltest.U8(1), ooxmltest.WStr(s), ooxmltest.U32(uint32(len(runs)/2)))
+			for _, r := range runs {
+				f = append(f, ooxmltest.U16(r)...)
+			}
+			return f
+		}
+		pkg := ooxmltest.Xlsb(&ooxmltest.XlsbStyles{Fonts: []string{"Arial", "Wingdings"}, XFs: [][2]uint16{{0, 0}, {0, 1}}}, nil, nil,
+			ooxmltest.XlsbSheet{Name: "S", Data: ooxmltest.Join(
+				ooxmltest.Row(0, 0, 300),
+				ooxmltest.Cell(ooxmltest.XCellIsst, 0, 1, ooxmltest.U32(0)),           // Wingdings cell: mark, then Arial words
+				ooxmltest.Cell(ooxmltest.XCellIsst, 1, 0, ooxmltest.U32(0)),           // Arial cell, the same string
+				ooxmltest.Cell(ooxmltest.XCellIsst, 2, 1, ooxmltest.U32(1)),           // Wingdings cell, all of it in Arial
+				ooxmltest.Cell(ooxmltest.XCellIsst, 3, 1, ooxmltest.U32(2)),           // no runs: the cell's font
+				ooxmltest.Cell(ooxmltest.XCellRStr, 4, 1, rich("ü Done", 0, 1, 1, 0)), // a rich string in the cell
+			)})
+		sst := ooxmltest.Join(ooxmltest.Rec(159, ooxmltest.U32(3), ooxmltest.U32(3)),
+			ooxmltest.Rec(19, rich("ü Done", 0, 1, 1, 0)), ooxmltest.Rec(19, rich("Done", 0, 0)),
+			ooxmltest.Rec(19, ooxmltest.RStr("üû")), ooxmltest.Rec(160))
+		pkg.Rel("xl/workbook.bin", ooxmltest.RelSharedStrings, "sharedStrings.bin")
+		pkg.AddBytes("xl/sharedStrings.bin", ooxmltest.CTXlsbStrings, sst)
+		expectTexts(t, excel(t, pkg, nil), "✓ Done", "✓ Done", "Done", "✓🗶", "✓ Done")
+	})
 }

@@ -190,23 +190,32 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 			load(rel.Target, func(s *xmlscan.Scanner) { wb.persons = readPersons(s, &b.docLost) })
 		}
 	}
+	// The styles first: whether the workbook has a symbol font decides
+	// whether the fonts of its strings' runs are kept, and a binary
+	// workbook's runs name its fonts by number.
+	for _, rel := range rels {
+		if rel.External || !wanted || !ns.IsRel(rel.Type, ns.RelStyles) {
+			continue
+		}
+		if binary(pkg, rel.Target) {
+			loadBin(rel.Target, func(r *xlsb.Reader) { wb.styles = readBinaryStyles(r, &b.docLost) })
+		} else {
+			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, &b.docLost) })
+		}
+	}
 	for _, rel := range rels {
 		if rel.External || !wanted {
 			continue
 		}
 		bin := binary(pkg, rel.Target)
 		switch {
-		case ns.IsRel(rel.Type, ns.RelStyles) && bin:
-			loadBin(rel.Target, func(r *xlsb.Reader) { wb.styles = readBinaryStyles(r, &b.docLost) })
-		case ns.IsRel(rel.Type, ns.RelStyles):
-			load(rel.Target, func(s *xmlscan.Scanner) { wb.styles = readStyles(s, &b.docLost) })
 		case ns.IsRel(rel.Type, ns.RelSharedStrings):
 			var full bool
 			var n int
 			if bin {
-				loadBin(rel.Target, func(r *xlsb.Reader) { wb.strings, n, full = readBinaryStrings(r) })
+				loadBin(rel.Target, func(r *xlsb.Reader) { wb.strings, n, full = readBinaryStrings(r, wb.styles) })
 			} else {
-				load(rel.Target, func(s *xmlscan.Scanner) { wb.strings, n, full = readStrings(s) })
+				load(rel.Target, func(s *xmlscan.Scanner) { wb.strings, n, full = readStrings(s, wb.styles.hasSymbolFont()) })
 			}
 			b.removed += n
 			b.stringsFull = b.stringsFull || full

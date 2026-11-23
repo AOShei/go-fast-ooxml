@@ -14,6 +14,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
+	"github.com/AOShei/go-fast-ooxml/internal/xlsb"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -73,10 +74,12 @@ type sheet struct {
 	room     *gofastcore.TextBudget
 	raw, out []byte
 
-	noValue  int   // formulas stored without a result
-	removed  int   // control characters taken out
-	unmapped int   // codes of symbol fonts with no character
-	pending  int64 // text of the cells read and not yet in tables
+	noValue  int           // formulas stored without a result
+	removed  int           // control characters taken out
+	unmapped int           // codes of symbol fonts with no character
+	runs     []fontRun     // the runs of the cell's inline string being read
+	strRuns  []xlsb.StrRun // those of a binary workbook, as the record gives them
+	pending  int64         // text of the cells read and not yet in tables
 
 	// What cells hold besides their text (details.go).
 	details         []detail // in the order of the cells, once sortDetails has run
@@ -103,19 +106,28 @@ type sheet struct {
 	macros bool               // the sheet is a sheet of macros
 }
 
-// arena holds the text of a sheet's cells in large pieces, so that a cell
-// costs no allocation of its own. A piece is never moved once text has
-// been cut from it.
+// arena holds the text of a sheet's cells in pieces, so that a cell costs
+// no allocation of its own. A piece is never moved once text has been cut
+// from it. The first piece is small and each is twice the one before, up
+// to arenaPiece, so a sheet of a few cells does not take a large piece.
 type arena struct {
-	b strings.Builder
+	b    strings.Builder
+	next int // the size of the next piece; 0 before the first
 }
 
-const arenaPiece = 256 << 10
+const (
+	arenaFirst = 4 << 10
+	arenaPiece = 256 << 10
+)
 
 func (a *arena) put(p []byte) string {
 	if a.b.Cap()-a.b.Len() < len(p) {
+		if a.next == 0 {
+			a.next = arenaFirst
+		}
 		a.b = strings.Builder{}
-		a.b.Grow(max(arenaPiece, len(p)))
+		a.b.Grow(max(a.next, len(p)))
+		a.next = min(2*a.next, arenaPiece)
 	}
 	start := a.b.Len()
 	a.b.Write(p)
@@ -413,6 +425,7 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 		// The value: v, or an inline string; the formula with
 		// Options.Cells.
 		raw := sh.raw[:0]
+		sh.runs = sh.runs[:0]
 		formula, value := false, false
 		f := ""
 		cellDepth := s.Depth()
@@ -425,7 +438,7 @@ func (sh *sheet) readRow(row int32) (textBytes int64) {
 				raw = s.AppendText(raw)
 				value = true
 			case s.Is(ns.Sheet, "is"):
-				raw = readRichText(s, raw)
+				raw, sh.runs = readRuns(s, raw, sh.runs[:0])
 				value = true
 			case s.Is(ns.Sheet, "f"):
 				formula = true
@@ -503,7 +516,12 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 			return "", 0
 		}
 		text, _ := sh.wb.strings.at(i)
-		if style.symbol != symbol.None && text != "" {
+		if runs := sh.wb.strings.runs(i); runs != nil {
+			var missing int
+			sh.symbols, missing = fontsOf(sh.symbols[:0], text, runs, style.symbol)
+			sh.unmapped += missing
+			text = sh.text.put(sh.symbols)
+		} else if style.symbol != symbol.None && text != "" {
 			text = sh.symbolText(style.symbol, []byte(text))
 		}
 		if text == "" || style.format.PlainText() {
@@ -513,10 +531,21 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 		sh.out = out
 		return sh.text.put(bytes.TrimSpace(out)), blank(result)
 	case 'i', 't', 'e', 'd':
-		out, removed := sh.textOf(sh.out[:0], raw)
-		sh.removed += removed
-		if style.symbol != symbol.None && (typ == 'i' || typ == 't') && len(out) > 0 {
-			out = append(out[:0], sh.symbolText(style.symbol, out)...)
+		var out []byte
+		if typ == 'i' && fontsMatter(sh.runs, sh.wb.styles.hasSymbolFont()) {
+			// A string of runs whose fonts matter: each run in its font.
+			var removed, missing int
+			sh.symbols, removed = cleanRuns(sh.symbols[:0], raw, sh.runs, !sh.bin)
+			sh.removed += removed
+			out, missing = fontsOf(sh.out[:0], string(sh.symbols), sh.runs, style.symbol)
+			sh.unmapped += missing
+		} else {
+			var removed int
+			out, removed = sh.textOf(sh.out[:0], raw)
+			sh.removed += removed
+			if style.symbol != symbol.None && (typ == 'i' || typ == 't') && len(out) > 0 {
+				out = append(out[:0], sh.symbolText(style.symbol, out)...)
+			}
 		}
 		var hidden gofastcore.Display
 		if (typ == 'i' || typ == 't') && len(out) > 0 && !style.format.PlainText() {
