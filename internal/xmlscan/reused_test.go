@@ -3,6 +3,7 @@ package xmlscan
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -59,4 +60,41 @@ func TestReusedScannerReadsAsNew(t *testing.T) {
 			t.Fatalf("stream %d (%s, %d elements, window %d, bytes %v) differs from a new scanner's:\nreused: %s\nnew:    %s", i, tag, n, size, bytes, got[:cut], want[:cut])
 		}
 	}
+}
+
+// Windows handed back by Release are taken by other scanners, on other
+// goroutines: each stream still reads as a new scanner reads it, and a
+// released scanner gives nothing more. Run with -race.
+func TestReleasedWindowsAreReused(t *testing.T) {
+	sizes := []int{4096, 5000, 16 << 10, 64 << 10, 100 << 10}
+	want := map[string]string{}
+	for _, tag := range []string{"a", "b", "c", "d"} {
+		for _, n := range []int{1, 50, 3000} {
+			for _, size := range sizes {
+				var s Scanner
+				want[fmt.Sprint(tag, n, size)] = tokens(&s, reusedDoc(tag, n), size, false)
+			}
+		}
+	}
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Go(func() {
+			var s Scanner
+			for i := range 200 {
+				tag := string(rune('a' + (g+i)%4))
+				n := []int{1, 50, 3000}[(g*7+i)%3]
+				size := sizes[(g+i*3)%len(sizes)]
+				if got := tokens(&s, reusedDoc(tag, n), size, false); got != want[fmt.Sprint(tag, n, size)] {
+					t.Errorf("goroutine %d, stream %d (%s, %d elements, window %d): read differs from a new scanner's", g, i, tag, n, size)
+					return
+				}
+				s.Release()
+				if k := s.Next(); k != EOF || s.Local() != nil || s.Text() != nil {
+					t.Errorf("a released scanner gave %v %q %q", k, s.Local(), s.Text())
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }

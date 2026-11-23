@@ -521,7 +521,19 @@ func (p *Package) Scan(name string, s *xmlscan.Scanner, opts *xmlscan.Options) (
 		return nil, err
 	}
 	s.Reset(rc, p.Window(name, opts))
-	return rc, nil
+	return released{rc, s}, nil
+}
+
+// released closes a part's reader and hands its scanner's window back to
+// be reused: the caller closes it when it has read the part.
+type released struct {
+	io.Closer
+	s *xmlscan.Scanner
+}
+
+func (r released) Close() error {
+	r.s.Release()
+	return r.Closer.Close()
 }
 
 // Window returns opts with a window for a part read whole: one that holds

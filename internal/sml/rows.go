@@ -7,7 +7,6 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // Rows reads the cells of the sheet with the given index a band of rows
@@ -93,7 +92,7 @@ func (b *Book) Rows(ctx context.Context, index, band int, yield func(gofastcore.
 				sh.band, sh.emit = max(band, 1), func() bool { return hand(false) }
 			}
 			opened, err := sh.readOwn(true)
-			sh.s = xmlscan.Scanner{}
+			sh.s.Release()
 			if !opened {
 				sh.failed(err)
 				break
