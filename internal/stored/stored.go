@@ -1,6 +1,7 @@
 // Package stored reads what an Office package of any of the three formats
 // keeps for the file as a whole and shows on no page: the code of its VBA
-// project, and its custom XML data. Each format gives them in its stored
+// project, its custom XML data, and data that follows the end of the zip
+// archive. Each format gives them in its stored
 // part (gofastcore.PartStored), after what is its own. The code is read as
 // text and never run.
 //

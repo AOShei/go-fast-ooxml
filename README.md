@@ -6,7 +6,7 @@ the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
-**Status: released as v0.1.0.** Changes since are in
+**Status: released as v0.2.0.** What changed in each release is in
 [`CHANGELOG.md`](CHANGELOG.md).
 What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
@@ -239,7 +239,7 @@ doc, err := gofastooxml.ExtractFile(ctx, "accounts.xlsx", &gofastcore.Options{Pa
 Both ways Office has of encrypting with a password are read: the one of
 Office 2007 ("standard": AES, SHA-1), which LibreOffice still writes, and
 the one of Office 2010 and later ("agile": AES-128, 192 or 256 with SHA-1,
-SHA-256, SHA-384 or SHA-512). The document is the one the file would give
+SHA-256, SHA-384, SHA-512 or MD5). The document is the one the file would give
 unencrypted, with `Metadata.Encrypted` set and an `input.decrypted`
 warning that names the scheme and what opened it.
 
@@ -394,7 +394,7 @@ written as several, each a run of its rows.
 
 **Limits.** Besides the limits of `gofastcore.Options`, `Extractor.MaxCells`
 bounds the cells kept from a workbook (20 million by default), and the text
-of the cells is bounded by `Limits.MaxDecodedBytes`, counted wherever it is
+of the cells is bounded by `Limits.MaxTextBytes`, counted each time it is
 used: a long string that a million cells refer to is small in the file and
 large in the result. A sheet that reaches a limit is cut off there, with
 `limit.exceeded`.
@@ -694,11 +694,16 @@ and shapes; attribute values of custom XML data.
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
 | `internal/chart`, `internal/diagram` | Charts, of both kinds, as tables of their data; SmartArt diagrams, from their data model and the drawing Office made of them. Shared by the three readers |
 | `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours, pictures and embedded files, placing display reasons on blocks and spans, bullets and numerals, warning codes, what reading one part gives |
+| `internal/omml` | Equations (Office Math) of Word and PowerPoint, written in UnicodeMath |
+| `internal/formula` | Moving the references of a shared formula to each cell of its range |
+| `internal/symbol` | The characters of symbol fonts (Symbol, Wingdings, Webdings and the like) translated to Unicode |
+| `internal/stored`, `internal/vba`, `internal/codepage` | What a package of any format keeps and shows nowhere (the code of its VBA project, its custom XML), for the stored part; reading a VBA project's source ([MS-OVBA]); the code pages that source is kept in |
 | `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |
 | `testdata/fixtures`, `testdata/expect`, `testdata/fixtures.json` | Small generated files with exactly known content, the expected result of each in the shared model's JSON form, and their manifest |
 | `testdata/gen` | The fixture generator and the adapters for the comparison tools |
 | `testdata/encrypted`, `testdata/encrypted.json` | Fixtures encrypted by msoffcrypto-tool and by LibreOffice, with their passwords |
+| `testdata/fuzz` | The seed inputs of the fuzz tests |
 | `testdata/api.txt` | The exported declarations of the package; a test fails when they change |
 | `testdata/numfmt` | What LibreOffice displays for 6,048 pairs of a number format and a value: the table the number-format engine is held to |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 788 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |

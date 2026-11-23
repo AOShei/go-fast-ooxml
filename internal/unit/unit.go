@@ -22,7 +22,7 @@ type Result struct {
 // on.
 type Tally struct {
 	// Unread counts content of kinds that are not read: sound and video
-	// clips, dialog sheets.
+	// clips, dialog sheets, formulas of a binary workbook not read back.
 	Unread map[string]int
 	// Damaged names the supporting parts that could not be read to
 	// their end.

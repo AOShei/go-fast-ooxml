@@ -17,8 +17,8 @@ import (
 //
 // What is held at any time is one band, so a sheet of any length is read
 // in the memory a band takes. The price is that the sheet's part is read
-// twice (once for what applies to all rows: hidden columns, merged cells,
-// conditional formatting), that a table which runs over the end of a
+// twice (once for what applies to all rows: hidden columns and merged
+// cells), that a table which runs over the end of a
 // band is cut there (what follows in the next band is marked as
 // continuing it), and that only cells are read: the tables a sheet
 // declares are not looked up, and comments, shapes and pictures are left

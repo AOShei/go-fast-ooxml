@@ -27,7 +27,7 @@ const (
 )
 
 // paper reports whether a page of this role is printed, not shown: a
-// notes page or a handout. It is white, and has a size of its own.
+// notes page or a handout, which has a size of its own.
 func (r role) paper() bool { return r == roleNotes || r == roleNotesMaster || r == roleHandout }
 
 // phType is the type of a placeholder: a shape that stands for a kind of
@@ -273,7 +273,7 @@ type shape struct {
 }
 
 // page reads one part that holds a tree of shapes: a slide, a layout, a
-// master or a notes page. A worker keeps one and reads slide after slide
+// master, a notes page, the notes master or the handout master. A worker keeps one and reads slide after slide
 // with it, so its buffers are reused.
 type page struct {
 	p    *presentation
@@ -578,7 +578,7 @@ func (pg *page) nonVisual(sh *props, alt bool) {
 	}
 }
 
-// shapeProps reads p:spPr: where the shape is, its outline, its fill.
+// shapeProps reads p:spPr: where the shape is.
 func (pg *page) shapeProps(sh *props) {
 	s := &pg.s
 	depth := s.Depth()
@@ -594,8 +594,8 @@ func (pg *page) shapeProps(sh *props) {
 	}
 }
 
-// shapeStyle reads p:style: the fill and the text colour the shape takes
-// from the theme unless it has its own.
+// shapeStyle reads p:style: the text colour the shape takes from the
+// theme unless it has its own.
 func (pg *page) shapeStyle(sh *props) {
 	s := &pg.s
 	depth := s.Depth()
@@ -708,7 +708,8 @@ func (pg *page) sp(g *group) {
 // Each placeholder of a slide is looked up among them.
 const maxPlaceholders = warn.MaxPlaceholders
 
-// isSlideTitle and the like say what a placeholder's text is.
+// kindOf says what a placeholder's text is: its kind of block, its
+// heading level, and whether its paragraphs are joined into one block.
 func kindOf(t phType) (kind gofastcore.Kind, level uint8, joined bool) {
 	switch t {
 	case phTitle, phCtrTitle:

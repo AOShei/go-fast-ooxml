@@ -22,7 +22,7 @@ import (
 	"unicode/utf16"
 )
 
-// Errors. Both are wrapped with what was wrong.
+// Errors, wrapped with what was wrong where there is more to say.
 var (
 	// ErrNotCompound: the input does not begin as a compound file does.
 	ErrNotCompound = errors.New("cfb: not a compound file")

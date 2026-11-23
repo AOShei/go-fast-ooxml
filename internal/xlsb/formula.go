@@ -457,13 +457,14 @@ func (p *parser) name(i int64) string {
 	return p.book.Names[i-1]
 }
 
-// loc reads a cell's place (RgceLoc): its row, and its column with two
-// flags saying whether each is relative.
+// ref is a row or a column of a reference, and whether it is relative.
 type ref struct {
 	n        int32
 	relative bool
 }
 
+// loc reads a cell's place (RgceLoc): its row, and its column with two
+// flags saying whether each is relative.
 func (p *parser) loc() (row, col ref) {
 	r := int32(p.u32())
 	c := p.u16()

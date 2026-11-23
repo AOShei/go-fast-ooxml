@@ -160,8 +160,8 @@ func (sh *sheet) keepDetail(c *cell, typ byte, raw []byte, f string, date bool) 
 
 func before(a, b pos) bool { return a.row < b.row || a.row == b.row && a.col < b.col }
 
-// sortDetails puts the details in the order of the cells, as sort does the
-// cells, keeping the first of a cell given twice.
+// sortDetails puts the details in the order of the cells, as order does
+// the cells, keeping the first of a cell given twice.
 func (sh *sheet) sortDetails() {
 	if !sh.detailsUnsorted {
 		return

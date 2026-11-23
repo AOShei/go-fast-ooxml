@@ -15,7 +15,8 @@ import (
 
 // What a Word document holds that is shown on no page: its document
 // variables (names and values that fields and macros read, kept in the
-// settings), the code of its VBA project, and custom XML data. They are
+// settings), the code of its VBA project, custom XML data, and data after
+// the end of the archive. They are
 // given in the document's stored part, with no display reason: the file
 // declares nothing about their display.
 
@@ -23,8 +24,8 @@ import (
 const maxVariables = warn.MaxVariables
 
 // findStored names what the stored part is read from: the settings part,
-// if it has document variables, and the package's VBA project and custom
-// XML data.
+// if it has document variables, and the package's VBA project, custom
+// XML data and data after the end of the archive.
 func findStored(pkg *opc.Package, main string) (settings string, extra stored.Source) {
 	rels, _ := pkg.Rels(main)
 	extra = stored.Find(pkg, rels)

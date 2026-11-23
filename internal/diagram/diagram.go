@@ -96,7 +96,7 @@ func Read(pkg *opc.Package, data string, rels map[string]opc.Rel, pal *dml.Palet
 	}
 	readErr := s.Err()
 
-	// The drawing: named by the model, or the one the part has.
+	// The drawing: the one the model names, if the part has it.
 	var drawing string
 	if rel, ok := rels[drawingID]; ok && !rel.External && ns.IsRel(rel.Type, ns.RelDiagramDrawing) {
 		drawing = rel.Target

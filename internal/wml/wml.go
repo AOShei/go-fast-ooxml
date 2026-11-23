@@ -82,7 +82,6 @@ type reader struct {
 	// come after its text; noteMarks holds what is needed until then.
 	noteProps     [2]notePr
 	sections      [][2]notePr
-	inSection     [2]int // notes of each kind referred to so far in the current section
 	noteMarks     []noteMark
 	usedNotes     map[string]bool // notes already emitted: each appears once
 	furniture     []furnitureRef  // headers and footers named by sections, in order
@@ -104,13 +103,13 @@ type reader struct {
 	budget            bool                   // the decompression budget ran out
 	text              *gofastcore.TextBudget // what the document may still hold of text
 	charts            []opc.Rel              // what the charts read embed: their workbooks
-	textCut           bool                   // and that it ran out
+	textCut           bool                   // the text budget ran out
 
 }
 
-// Extract reads the Word document whose main part is named main into doc,
-// which already carries its source and properties. It appends one body
-// part.
+// Extract reads the Word document whose main part is named main into doc:
+// it appends one body part, and puts the warnings about the document and
+// the files it embeds on doc.
 //
 // It does not return an error for a damaged or over-budget document: what
 // could be read is in the part, and warnings say what could not.

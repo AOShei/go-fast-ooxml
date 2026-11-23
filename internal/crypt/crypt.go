@@ -389,7 +389,7 @@ func (in *Info) String() string {
 	return fmt.Sprintf("agile, AES-%d, %s", in.data.keyBytes*8, in.data.hashName)
 }
 
-// password returns a password as the schemes hash it: in UTF-16, low
+// passwordBytes returns a password as the schemes hash it: in UTF-16, low
 // byte first.
 func passwordBytes(password string) []byte {
 	units := utf16.Encode([]rune(password))

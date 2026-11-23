@@ -261,7 +261,7 @@ func (b *Book) readBook(main string, byID map[string]opc.Rel, load func(string, 
 }
 
 // Len returns the number of parts: one for each sheet, and one for a
-// workbook that lists none.
+// workbook that lists none; then the stored part, if there is one.
 func (b *Book) Len() int {
 	if i := b.storedIndex(); i >= 0 {
 		return i + 1
@@ -450,8 +450,8 @@ func (sh *sheet) limits() {
 	}
 }
 
-// finish completes the part: what it lacks, what was found while its
-// cells were read, and which of its text is hidden.
+// finish completes the part: what it lacks, and what was found while its
+// cells were read.
 func (sh *sheet) finish(sawImage bool) {
 	part := &sh.part
 	hasText, hasImage := false, sawImage

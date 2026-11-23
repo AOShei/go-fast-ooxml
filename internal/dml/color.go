@@ -215,7 +215,7 @@ var presets = map[string]theme.Color{
 }
 
 // ReadColor reads the colour inside the element whose Start token is
-// current (a:solidFill, a:fillRef, a:fontRef, a:highlight, a:buClr) and
+// current (a:solidFill, a:fontRef or another element that holds one) and
 // consumes the element. An element with no colour in it gives the zero
 // Color.
 func ReadColor(s *xmlscan.Scanner) Color {

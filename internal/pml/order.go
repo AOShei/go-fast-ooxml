@@ -35,7 +35,7 @@ func (pg *page) rank(box dml.Rect, boxed bool) uint8 {
 // inOrder sorts items into reading order: from the top down, and from
 // left to right among those that start beside each other, which are
 // those that start above the middle of the first of them. What lies
-// outside the slide is not seen, and comes after what is on it. Items
+// outside the slide comes after what is on it. Items
 // whose place is not known come last, in the order they are stored.
 func inOrder(items []item) {
 	sort.SliceStable(items, func(i, j int) bool {
