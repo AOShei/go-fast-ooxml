@@ -18,6 +18,14 @@ minor version may change the API.
 
 ### Fixed
 
+- **Numbers in General format round their fifteenth digit as LibreOffice
+  does:** from the shortest decimal that is read back as the value, not
+  from the binary value. 664.5600532184905 shows as 664.560053218491, not
+  664.56005321849. 5,515 values in 31 of 6,615 corpus files change, each
+  in its last digit. A duration that rounds to nothing has no sign
+  (`0:00:00`, not `-0:00:00`), as in LibreOffice. A negative value that
+  rounds to zero keeps its negative section, `(0.00)`: LibreOffice does
+  the same with the value a cell stores.
 - **Text joined from many pieces no longer costs time with the square of
   their number.** Consecutive code paragraphs of a Word document, and the
   cells a merged cell covers in Word and PowerPoint tables, were joined by
