@@ -407,44 +407,80 @@ func (f *File) pass(ctx context.Context, selected []int, window int, yield func(
 	if window <= 0 {
 		window = len(selected)
 	}
-	handed := 0
-	for handed < len(selected) {
-		batch := selected[handed:min(handed+window, len(selected))]
-		results := make([]*unit.Result, len(batch))
-		var wg sync.WaitGroup
-		var next atomic.Int64
-		for w := 0; w < min(workers, len(batch)); w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for {
-					k := int(next.Add(1)) - 1
-					if k >= len(batch) || ctx.Err() != nil {
-						return
-					}
-					results[k] = sess.src.Read(ctx, batch[k])
+	// The workers take the parts in order, and each is handed on as soon
+	// as it and those before it are read: no more than window are begun
+	// and not yet handed on. A part handed on was read to its end with
+	// nothing cut, and so were those before it, so a reading in order
+	// would have given the same; when a limit is met, the parts not yet
+	// handed on are read again in order.
+	n := len(selected)
+	results := make([]*unit.Result, n)
+	ready := make([]chan struct{}, n)
+	for k := range ready {
+		ready[k] = make(chan struct{})
+	}
+	slots := make(chan struct{}, window) // a part begun and not yet handed on holds one
+	stop := make(chan struct{})
+	var limited atomic.Bool
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for w := 0; w < min(workers, n); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
 				}
-			}()
-		}
+				select {
+				case slots <- struct{}{}:
+				case <-stop:
+					return
+				}
+				k := int(next.Add(1)) - 1
+				if k >= n || ctx.Err() != nil {
+					return
+				}
+				res := sess.src.Read(ctx, selected[k])
+				results[k] = res
+				if res.Limited {
+					limited.Store(true)
+				}
+				close(ready[k])
+			}
+		}()
+	}
+	finish := func() {
+		close(stop)
 		wg.Wait()
+	}
+	for k := range n {
+		select {
+		case <-ready[k]:
+		case <-ctx.Done():
+			finish()
+			return sess, ctx.Err()
+		}
 		if err := ctx.Err(); err != nil {
+			finish()
 			return sess, err
 		}
-		limited := sess.src.Limited()
-		for _, res := range results {
-			limited = limited || res.Limited
-		}
-		if limited {
+		if limited.Load() || sess.src.Limited() {
+			finish()
 			f.spoil(sess)
-			return f.inOrder(ctx, selected, handed, yield)
+			return f.inOrder(ctx, selected, k, yield)
 		}
-		for k, res := range results {
-			handed++
-			if !yield(batch[k], res) {
-				return sess, nil
-			}
+		res := results[k]
+		results[k] = nil // handed on: not held here
+		<-slots
+		if !yield(selected[k], res) {
+			finish()
+			return sess, nil
 		}
 	}
+	finish()
 	return sess, nil
 }
 

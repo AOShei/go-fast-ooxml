@@ -162,8 +162,9 @@ f.Warnings(); f.Children(ctx)
 ```
 
 The parts are the ones `Extract` returns, each complete, with its warnings
-and what the file declares about the display of its text. With more than one worker a few parts are
-read ahead; what is held does not grow with the number of parts. A `File`
+and what the file declares about the display of its text. With more than one worker, up to four parts a
+worker are read ahead, and each is handed on as soon as it and those
+before it are read; what is held does not grow with the number of parts. A `File`
 is safe for concurrent use, and each pass over it counts the limits afresh.
 
 **A sheet too long to hold** is read a band of rows at a time:
@@ -199,9 +200,11 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 ```
 
 JSON is written a part at a time, a sheet or a slide as soon as it is
-read, so the command holds about one part and not the whole document
-(`large.xlsx`: about 240 MiB at its peak rather than 445); the output is
-the same bytes as for the document read whole. Markdown and text are
+read, and within a part a block at a time and a table a row at a time, so
+the command holds about one part and not its encoding as well; the output
+is the same bytes as for the document read whole. A workbook of 64 MB of
+text (`poc-shared-strings.xlsx` in the corpus) peaks at 18 MB rather than
+1.7 GB, `large.docx` at 43 MB rather than 110. Markdown and text are
 written once the document is read.
 
 | Flag | |

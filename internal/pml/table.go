@@ -42,6 +42,7 @@ func (pg *page) table(sh *props) {
 	// only needed for cells that a merged cell covers, so the index is
 	// built when the first of those is met.
 	var index map[anchor]int
+	var joins map[anchor]*strings.Builder // the text of a merged cell and the cells it covers
 	note := func(r, c int) *cellNote {
 		key := anchor{int32(r), int32(c)}
 		if index == nil {
@@ -163,10 +164,22 @@ func (pg *page) table(sh *props) {
 						if int(a.row) != r {
 							at = &rows[a.row]
 						}
-						if (*at)[a.col] != "" {
-							(*at)[a.col] += "\n"
+						// Appended in a builder of the merged cell's, so a
+						// merge over many cells is not copied again for each.
+						j := joins[a]
+						if j == nil {
+							if joins == nil {
+								joins = map[anchor]*strings.Builder{}
+							}
+							j = &strings.Builder{}
+							j.WriteString((*at)[a.col])
+							joins[a] = j
 						}
-						(*at)[a.col] += text
+						if j.Len() > 0 {
+							j.WriteByte('\n')
+						}
+						j.WriteString(text)
+						(*at)[a.col] = j.String()
 						to := note(int(a.row), int(a.col))
 						to.reasons |= cn.reasons | gofastcore.DisplayHidden
 					}

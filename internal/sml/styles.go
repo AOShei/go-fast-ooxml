@@ -22,7 +22,25 @@ type cellStyle struct {
 
 type styleSheet struct {
 	styles []cellStyle
+	// fonts are the workbook's fonts, as far as a symbol font goes: the
+	// runs of a binary workbook's strings name them by number. symbolic
+	// is set if any is a symbol font.
+	fonts    []symbol.Font
+	symbolic bool
 }
+
+// font returns the font with the given number, None for one the
+// workbook does not have.
+func (st *styleSheet) font(i int) symbol.Font {
+	if st == nil || i < 0 || i >= len(st.fonts) {
+		return symbol.None
+	}
+	return st.fonts[i]
+}
+
+// hasSymbolFont reports whether the workbook has a symbol font, so that
+// the fonts of its strings' runs matter.
+func (st *styleSheet) hasSymbolFont() bool { return st != nil && st.symbolic }
 
 var plainStyle = cellStyle{format: numfmt.General(), general: true}
 
@@ -122,7 +140,10 @@ type xf struct{ format, font int }
 // number, its fonts, and its cell formats.
 func buildStyles(codes map[int]string, fonts []symbol.Font, xfs []xf) *styleSheet {
 	formats := map[int]*numfmt.Format{}
-	st := &styleSheet{styles: make([]cellStyle, len(xfs))}
+	st := &styleSheet{styles: make([]cellStyle, len(xfs)), fonts: fonts}
+	for _, f := range fonts {
+		st.symbolic = st.symbolic || f != symbol.None
+	}
 	for i, x := range xfs {
 		f, ok := formats[x.format]
 		if !ok {
