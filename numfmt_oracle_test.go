@@ -1,13 +1,18 @@
 package gofastooxml_test
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/AOShei/go-fast-core/numfmt"
+	"github.com/AOShei/go-fast-ooxml"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
 
@@ -69,13 +74,31 @@ func colName(i int) string {
 	return name
 }
 
-// numfmtTable is the table of what LibreOffice displays for every format
-// and value, one line each: format, value, quoted text.
-const numfmtTable = "testdata/numfmt/libreoffice.tsv"
+// numfmtTable returns the table of what LibreOffice displays for every
+// format and value, one line each: format, value, quoted text. The table
+// is go-fast-core's, beside the engine held to it; it is read from the
+// module this build uses.
+func numfmtTable(t *testing.T) (path string, data []byte) {
+	t.Helper()
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/AOShei/go-fast-core")
+	cmd.Dir = ooxmltest.Root(t)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("finding go-fast-core's directory: %v", err)
+	}
+	path = filepath.Join(strings.TrimSpace(string(out)), "numfmt", "testdata", "libreoffice.tsv")
+	if data, err = os.ReadFile(path); err != nil {
+		t.Fatal(err)
+	}
+	return path, data
+}
 
-// TestNumberFormatTable checks that the table the number-format engine is
-// held to (internal/numfmt) is what LibreOffice displays. Run with -update
-// to write the table again after changing the formats or values.
+// TestNumberFormatTable checks that the table go-fast-core's number-format
+// engine (package numfmt) is held to is what LibreOffice displays, for the
+// formats and values listed here. With -update it writes the table to
+// bench/out/libreoffice.tsv, which is not tracked: it is sent to
+// go-fast-core as a pull request.
 func TestNumberFormatTable(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs LibreOffice")
@@ -91,18 +114,45 @@ func TestNumberFormatTable(t *testing.T) {
 			fmt.Fprintf(&sb, "%s\t%s\t%q\n", f, strconv.FormatFloat(v, 'g', -1, 64), shown)
 		}
 	}
-	path := filepath.Join(ooxmltest.Root(t), numfmtTable)
 	if ooxmltest.Updating() {
+		path := filepath.Join(ooxmltest.Root(t), "bench", "out", "libreoffice.tsv")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		t.Logf("wrote %s, for go-fast-core's numfmt/testdata/libreoffice.tsv", path)
 		return
 	}
-	have, err := os.ReadFile(path)
+	path, have := numfmtTable(t)
+	if string(have) != sb.String() {
+		t.Errorf("%s is not what LibreOffice displays for the formats and values listed here; run with -update and compare it with bench/out/libreoffice.tsv", path)
+	}
+}
+
+// TestNumberFormatsThroughTheReader reads the workbook of every format and
+// value, and requires each cell to be what go-fast-core's engine gives for
+// its format and value: the styles of a workbook lead to the right format,
+// and the cell keeps what the engine wrote, with its display reason.
+func TestNumberFormatsThroughTheReader(t *testing.T) {
+	book := oracleBook().Bytes()
+	doc, err := gofastooxml.Extract(context.Background(), bytes.NewReader(book), int64(len(book)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(have) != sb.String() {
-		t.Errorf("%s is not what LibreOffice displays for the formats and values listed here; run with -update, then go test ./internal/numfmt", numfmtTable)
+	cells, unseen := sheetCells(t, &doc.Parts[0])
+	for i, code := range oracleFormats {
+		f := numfmt.Parse(code)
+		for j, v := range oracleValues {
+			out, result := f.Number(nil, v, false)
+			at := cellAt{i, j}
+			if want := string(out); cells[at] != want {
+				t.Errorf("%q of %v: the cell is %q, the engine gives %q", code, v, cells[at], want)
+			}
+			if want := result == numfmt.Blank; unseen[at] != want {
+				t.Errorf("%q of %v: not displayed %v, the engine says %v", code, v, unseen[at], want)
+			}
+		}
 	}
 }

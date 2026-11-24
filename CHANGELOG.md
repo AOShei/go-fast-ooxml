@@ -7,6 +7,12 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- The number-format engine and its table of what LibreOffice displays are
+  go-fast-core's (package `numfmt`), which go-fast-msbin shares; go-fast-core
+  v0.1.7 is required. The engine is the same: no cell changes.
+
 ## [0.5.0] - 2026-11-24
 
 ### Added

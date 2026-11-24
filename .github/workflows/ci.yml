@@ -87,7 +87,6 @@ jobs:
           fuzz FuzzOpen 30s .
           fuzz FuzzDocx 30s .
           fuzz FuzzXML 30s ./internal/xmlscan
-          fuzz FuzzNumFmt 20s ./internal/numfmt
           fuzz FuzzXlsx 30s .
           fuzz FuzzXlsb 30s .
           fuzz FuzzXlsbLinksTablesPivots 30s .

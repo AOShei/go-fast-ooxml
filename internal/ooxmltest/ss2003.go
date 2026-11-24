@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
+	"github.com/AOShei/go-fast-core/numfmt"
 )
 
 // SpreadsheetML2003 writes an .xlsx workbook as Excel 2003 writes an XML
