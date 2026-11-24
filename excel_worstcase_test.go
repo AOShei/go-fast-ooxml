@@ -61,25 +61,28 @@ func TestExcelWorstCaseStaircase(t *testing.T) {
 }
 
 // Many small tables, and as many hidden columns as a sheet can have: each
-// table looks up the hidden columns that cross it, not all of them. At an
-// eighth of the size (an eighth of the tables, an eighth of the hidden
-// columns) the work is an eighth if each table looks up only its own
-// columns, and a sixty-fourth if it looks up all of them. Measured, the
-// full workbook takes 11 to 12 times as long as the eighth, and 30 to 31
-// times with every table looking up every hidden column.
-// (The test this replaces gave the workbook 20 seconds, which caught only
-// a hang: with every hidden column looked up it is read in 0.14 s.)
+// table looks up the hidden columns that cross it, not all of them. So the
+// workbook is read in about the time of the same workbook with no hidden
+// columns. Measured, 1.1 to 1.2 times as long, on amd64 and 386; with every
+// table looking up every hidden column, 3.8 to 5.4 times. Both reads are of
+// 64,000 tables, so the reference is not so short that noise decides it (an
+// eighth of the workbook took 4 ms, and on CI's 32-bit runner the ratio
+// to it varied from 11 to 20).
+// (The test before those gave the workbook 20 seconds, which caught only a
+// hang: with every hidden column looked up it is read in 0.14 s.)
 func TestExcelWorstCaseHiddenColumns(t *testing.T) {
 	// workbook gives one with rows*200 cells, none next to another, so as
 	// many tables, under every other column of the first span columns
-	// hidden.
+	// hidden (none if span is 0).
 	workbook := func(rows, span int) []byte {
 		var cols, data strings.Builder
-		cols.WriteString(`<cols>`)
-		for c := 1; c <= span; c += 2 {
-			fmt.Fprintf(&cols, `<col min="%d" max="%d" hidden="1"/>`, c, c)
+		if span > 0 {
+			cols.WriteString(`<cols>`)
+			for c := 1; c <= span; c += 2 {
+				fmt.Fprintf(&cols, `<col min="%d" max="%d" hidden="1"/>`, c, c)
+			}
+			cols.WriteString(`</cols>`)
 		}
-		cols.WriteString(`</cols>`)
 		for r := 1; r <= rows; r++ {
 			cells := make([]string, 0, 200)
 			for c := 0; c < 400; c += 2 {
@@ -89,7 +92,7 @@ func TestExcelWorstCaseHiddenColumns(t *testing.T) {
 		}
 		return ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: data.String(), Extra: cols.String()}).Bytes()
 	}
-	full, eighth := workbook(320, 16384), workbook(40, 2048)
+	full, none := workbook(320, 16384), workbook(320, 0)
 	read := func(data []byte, tables int) func() {
 		return func() {
 			// Run on the goroutine costsAtMost times it on: Errorf, not Fatalf.
@@ -106,7 +109,7 @@ func TestExcelWorstCaseHiddenColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	ooxmltest.CheckDocument(t, doc)
-	costsAtMost(t, 18, "many tables under many hidden columns", read(eighth, 8000), read(full, 64000))
+	costsAtMost(t, 2.5, "many tables under many hidden columns", read(none, 64000), read(full, 64000))
 }
 
 // Thousands of tables declared over the same cells. Real tables do not

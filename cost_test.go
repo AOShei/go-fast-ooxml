@@ -35,6 +35,6 @@ func costsAtMost(t *testing.T, k float64, what string, ref, worst func()) {
 	})
 	t.Logf("%s: %v, %.1f times the reference (%v)", what, bestWorst.Round(time.Millisecond), float64(bestWorst)/float64(bestRef), bestRef.Round(time.Millisecond))
 	if bestWorst > costFloor && float64(bestWorst) > k*float64(bestRef) {
-		t.Errorf("%s: %v, %.1f times as long as the reference (%v); at most %.0f times", what, bestWorst.Round(time.Millisecond), float64(bestWorst)/float64(bestRef), bestRef.Round(time.Millisecond), k)
+		t.Errorf("%s: %v, %.1f times as long as the reference (%v); at most %g times", what, bestWorst.Round(time.Millisecond), float64(bestWorst)/float64(bestRef), bestRef.Round(time.Millisecond), k)
 	}
 }
