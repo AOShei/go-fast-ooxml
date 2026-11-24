@@ -182,14 +182,22 @@ func TestExtractSurvivesDamagedProperties(t *testing.T) {
 		"giant attribute":       `<dc:title>Kept</dc:title><dc:subject x="` + strings.Repeat("v", 20<<20) + `">s</dc:subject>`,
 		"entity expansion bomb": `<dc:title>Kept</dc:title><!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]><dc:subject>&b;</dc:subject>`,
 	}
-	for name, inner := range cases {
+	withCore := func(inner string) []byte {
 		pkg := ooxmltest.Docx("")
 		pkg.Rel("", ooxmltest.RelCoreProps, "docProps/core.xml")
 		pkg.Add("docProps/core.xml", ooxmltest.CTCoreProps,
 			`<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">`+inner)
-		var doc *gofastcore.Document
-		var err error
-		within(t, 5*time.Second, name, func() { doc, err = extract(t, pkg.Bytes(), nil) })
+		return pkg.Bytes()
+	}
+	for name, inner := range cases {
+		data := withCore(inner)
+		// Each is read in the time of sound properties of its size: a
+		// description as long, which is read and cut to its limit.
+		sound := withCore(`<dc:title>Kept</dc:title><dc:description>` + strings.Repeat("v", len(inner)) + `</dc:description></cp:coreProperties>`)
+		costsAtMost(t, 10, name,
+			func() { extract(t, sound, nil) },
+			func() { extract(t, data, nil) })
+		doc, err := extract(t, data, nil)
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 			continue
