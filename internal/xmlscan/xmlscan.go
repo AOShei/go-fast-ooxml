@@ -91,7 +91,16 @@ type Options struct {
 	// It is for parts known to be written loosely, such as legacy VML
 	// drawings, which contain fragments like "<br>" with no end tag.
 	Recover bool
+	// Bindings are namespace declarations in scope before the input's
+	// first element, as if an element around it had made them. They are
+	// for XML read out of a larger document, such as a part of a Flat OPC
+	// package, which may use a prefix that an ancestor in that document
+	// declares.
+	Bindings []Binding
 }
+
+// Binding declares a namespace: Prefix is "" for the default namespace.
+type Binding struct{ Prefix, URI string }
 
 // Defaults for Options.
 const (
@@ -192,6 +201,7 @@ type Scanner struct {
 	scratch    []byte // decoded text of the current token
 	attrBuf    []byte // decoded attribute values of the current token
 	poisoned   int    // with the xmlscanpoison tag: the window is overwritten up to here
+	converted  bool   // the input is converted to UTF-8 on the way in
 
 	// Repairs counts the places where malformed input was read leniently:
 	// an unknown or unterminated entity reference kept as written and,
@@ -284,7 +294,7 @@ func (s *Scanner) ResetBytes(data []byte, opts *Options) {
 
 func (s *Scanner) reset(opts *Options) {
 	s.pos, s.end, s.base, s.eof, s.err, s.late, s.mode = 0, 0, 0, false, nil, nil, modeNormal
-	s.kind, s.pendingEnd, s.Repairs = EOF, false, 0
+	s.kind, s.pendingEnd, s.Repairs, s.converted = EOF, false, 0, false
 	// No view of the stream read before is left for the first tokens
 	// to show.
 	s.qname, s.local, s.space, s.text = nil, nil, 0, nil
@@ -305,6 +315,11 @@ func (s *Scanner) reset(opts *Options) {
 		}
 		if opts.MaxTokenBytes > 0 {
 			s.maxToken = opts.MaxTokenBytes
+		}
+		// Declarations made before the first element belong to no
+		// element: none closes them.
+		for _, b := range opts.Bindings {
+			s.bind([]byte(b.Prefix), []byte(b.URI))
 		}
 	}
 }
@@ -928,25 +943,7 @@ func (s *Scanner) push(name []byte, colon int, declares bool) {
 		if bytes.IndexByte(uri, '&') >= 0 {
 			s.attrBuf, uri = s.decodeAttr(s.attrBuf, uri)
 		}
-		space := SpaceUnknown
-		if len(uri) == 0 {
-			space = NoSpace // xmlns="" undeclares the default namespace
-		} else if v, ok := s.spaces[string(uri)]; ok {
-			space = v
-		}
-		slot, known := s.slots[string(prefix)]
-		if !known {
-			if s.slots == nil {
-				s.slots = map[string]int32{}
-			}
-			slot = int32(len(s.heads))
-			s.slots[string(prefix)] = slot
-			s.heads = append(s.heads, -1)
-		}
-		start := int32(len(s.bindNames))
-		s.bindNames = append(s.bindNames, prefix...)
-		s.binds = append(s.binds, binding{start, int32(len(s.bindNames)), space, slot, s.heads[slot]})
-		s.heads[slot] = int32(len(s.binds) - 1)
+		s.bind(prefix, uri)
 	}
 	if int(e.bindMark) != len(s.binds) {
 		s.gen++
@@ -976,6 +973,30 @@ resolved:
 	s.qname = s.names[e.nameStart : e.nameStart+e.nameLen]
 	s.local = s.qname[e.colon+1:]
 	s.space = e.space
+}
+
+// bind declares prefix ("" for the default namespace) as uri, until the
+// element being opened, if any, closes.
+func (s *Scanner) bind(prefix, uri []byte) {
+	space := SpaceUnknown
+	if len(uri) == 0 {
+		space = NoSpace // xmlns="" undeclares the default namespace
+	} else if v, ok := s.spaces[string(uri)]; ok {
+		space = v
+	}
+	slot, known := s.slots[string(prefix)]
+	if !known {
+		if s.slots == nil {
+			s.slots = map[string]int32{}
+		}
+		slot = int32(len(s.heads))
+		s.slots[string(prefix)] = slot
+		s.heads = append(s.heads, -1)
+	}
+	start := int32(len(s.bindNames))
+	s.bindNames = append(s.bindNames, prefix...)
+	s.binds = append(s.binds, binding{start, int32(len(s.bindNames)), space, slot, s.heads[slot]})
+	s.heads[slot] = int32(len(s.binds) - 1)
 }
 
 // resolve returns the namespace bound to prefix. An element without a

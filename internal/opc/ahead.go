@@ -67,7 +67,7 @@ func (p *Package) ScanChunks(name string, s *xmlscan.Scanner, opts *xmlscan.Opti
 	if err != nil {
 		return nil, err
 	}
-	s.Reset(c, opts)
+	s.Reset(c, p.Options(name, opts))
 	return released{c, s}, nil
 }
 

@@ -997,7 +997,7 @@ func (sh *sheet) readOwn(chunks bool) (opened bool, err error) {
 		return true, r.Err()
 	}
 	if chunks {
-		sh.s.Reset(rc, scanOptions)
+		sh.s.Reset(rc, pkg.Options(sh.name, scanOptions))
 	} else {
 		sh.s.Reset(rc, pkg.Window(sh.name, scanOptions))
 	}

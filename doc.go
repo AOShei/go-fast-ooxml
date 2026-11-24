@@ -1,6 +1,7 @@
 // Package gofastooxml extracts Word, Excel and PowerPoint files (Office Open
-// XML: .docx, .xlsx, .pptx and their macro and template variants, and
-// Excel's binary workbooks, .xlsb) into the shared go-fast document model,
+// XML: .docx, .xlsx, .pptx and their macro and template variants,
+// Excel's binary workbooks, .xlsb, and any of these written as one XML
+// file, Flat OPC) into the shared go-fast document model,
 // gofastcore.Document.
 //
 // It uses the standard library and go-fast-core only.

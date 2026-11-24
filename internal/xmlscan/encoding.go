@@ -112,6 +112,28 @@ func (s *Scanner) convert(wrap func(io.Reader) io.Reader) {
 		s.buf, s.own = make([]byte, DefaultBufferSize), true
 	}
 	s.r, s.pos, s.end, s.base, s.eof = wrap(src), 0, 0, 0, false
+	s.converted = true
+}
+
+// UTF8 returns the input as the scanner reads it: converted to UTF-8 from
+// the encoding its byte order mark or declaration names, without the
+// mark. converted reports that it was not UTF-8. The error is
+// ErrEncoding, for an encoding the scanner does not read, or the
+// reader's.
+func UTF8(r io.Reader) (utf8 io.Reader, converted bool, err error) {
+	s := &Scanner{}
+	s.reset(nil)
+	s.r, s.own, s.buf = r, true, make([]byte, 4096)
+	s.sniff()
+	if s.err != nil {
+		return nil, false, s.err
+	}
+	pending := append([]byte(nil), s.buf[s.pos:s.end]...)
+	utf8 = bytes.NewReader(pending)
+	if s.r != nil && !s.eof {
+		utf8 = io.MultiReader(utf8, s.r)
+	}
+	return utf8, s.converted, nil
 }
 
 // utf16Reader converts UTF-16 to UTF-8.

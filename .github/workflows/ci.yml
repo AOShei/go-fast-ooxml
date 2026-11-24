@@ -94,6 +94,7 @@ jobs:
           fuzz FuzzRecords 20s ./internal/xlsb
           fuzz FuzzFormula 20s ./internal/xlsb
           fuzz FuzzPptx 30s .
+          fuzz FuzzFlatOPC 30s .
           fuzz FuzzCFB 20s ./internal/cfb
           fuzz FuzzEncryptionInfo 20s ./internal/crypt
 
