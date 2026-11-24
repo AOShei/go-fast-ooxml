@@ -97,6 +97,7 @@ jobs:
           fuzz FuzzFlatOPC 30s .
           fuzz FuzzSpreadsheetML 30s .
           fuzz FuzzWordML 30s .
+          fuzz FuzzFromR1C1 20s ./internal/formula
           fuzz FuzzCFB 20s ./internal/cfb
           fuzz FuzzEncryptionInfo 20s ./internal/crypt
 

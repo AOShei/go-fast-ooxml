@@ -11,9 +11,9 @@ asserted about any one of them; every one must be survived, and the run
 (go test -run TestSoak) counts what happens.
 
 Each source is a public repository at a pinned commit, so the set is the
-same wherever it is fetched. Only files with an Office extension are
-downloaded (a partial clone with a sparse checkout), and nothing is
-committed here. The files stay under their projects' licences.
+same wherever it is fetched. Only files with an Office extension, and the
+Office files saved as XML listed in XML_FILES, are downloaded (a partial
+clone with a sparse checkout), and nothing is committed here. The files stay under their projects' licences.
 """
 import os
 import subprocess
@@ -44,6 +44,65 @@ SOURCES = [
 ]
 
 
+# Office files saved as XML (Flat OPC, WordprocessingML 2003, SpreadsheetML
+# 2003) in the same projects, named one by one: their extension, .xml, is
+# every other XML file's too. Each is told by its root element.
+XML_FILES = {
+    "libreoffice": [
+        "sc/qa/unit/data/xml/autofilter-text.xml",
+        "sc/qa/unit/data/xml/background-color-standard.xml",
+        "sc/qa/unit/data/xml/border-colors.xml",
+        "sc/qa/unit/data/xml/border-directions.xml",
+        "sc/qa/unit/data/xml/character-set.xml",
+        "sc/qa/unit/data/xml/column-width-row-height.xml",
+        "sc/qa/unit/data/xml/empty-rows.xml",
+        "sc/qa/unit/data/xml/hidden-rows-columns.xml",
+        "sc/qa/unit/data/xml/merged-cells.xml",
+        "sc/qa/unit/data/xml/named-exp-global.xml",
+        "sc/qa/unit/data/xml/named-exp-local.xml",
+        "sc/qa/unit/data/xml/rhbz1390776.xml",
+        "sc/qa/unit/data/xml/tdf153444.xml",
+        "sc/qa/unit/data/xml/tdf154311.xml",
+        "sc/qa/unit/data/xml/tdf63756.xml",
+        "sc/qa/unit/data/xml/universal-content.xml",
+        "sc/qa/unit/data/xml/wrap-and-shrink.xml",
+    ],
+    "open-xml-sdk": [
+        "test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/Document.xml",
+        "test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/HelloWorldFlatOpc.xml",
+    ],
+    "phpspreadsheet": [
+        "samples/templates/excel2003.short.bad.xml",
+        "samples/templates/excel2003.xml",
+        "tests/data/Reader/Xml/ArrayFormula.xml",
+        "tests/data/Reader/Xml/CorruptedXmlFile.xml",
+        "tests/data/Reader/Xml/Excel2003XMLTest.corrected.xml",
+        "tests/data/Reader/Xml/Excel2003XMLTest.xml",
+        "tests/data/Reader/Xml/PageSetup.xml",
+        "tests/data/Reader/Xml/bug4669.xml",
+        "tests/data/Reader/Xml/datavalidations.wholerow.xml",
+        "tests/data/Reader/Xml/datavalidations.xml",
+        "tests/data/Reader/Xml/excel2003.iso8859-1.xml",
+        "tests/data/Reader/Xml/formats.utf16lebom.xml",
+        "tests/data/Reader/Xml/formats.xml",
+        "tests/data/Reader/Xml/hyperlinkbase.xml",
+        "tests/data/Reader/Xml/issue.2157.small.xml",
+        "tests/data/Reader/Xml/issue.3658.xml",
+        "tests/data/Reader/Xml/issue.4448.xml",
+        "tests/data/Reader/Xml/issue.850.xml",
+        "tests/data/Reader/Xml/splits.xml",
+    ],
+    "tika": [
+        "tika-parsers/tika-parsers-standard/tika-parsers-standard-modules/tika-parser-microsoft-module/src/test/resources/test-documents/testEXCEL2003.xml",
+        "tika-parsers/tika-parsers-standard/tika-parsers-standard-modules/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD2003.xml",
+        "tika-parsers/tika-parsers-standard/tika-parsers-standard-modules/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_2003ml.xml",
+        "tika-parsers/tika-parsers-standard/tika-parsers-standard-modules/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_2006ml.xml",
+    ],
+}
+
+XML_PATHS = {f"{repo}/{p}" for repo, ps in XML_FILES.items() for p in ps}
+
+
 def git(cwd, *args):
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_LFS_SKIP_SMUDGE="1")
     subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "advice.detachedHead=false", *args], cwd=cwd, check=True, env=env)
@@ -64,6 +123,7 @@ def fetch(name, url, commit, extensions=EXTENSIONS):
         git(dest, "config", "remote.origin.partialclonefilter", "blob:none")
         git(dest, "sparse-checkout", "init", "--no-cone")
     patterns = [f"*.{e}" for e in extensions] + [f"*.{e.upper()}" for e in extensions]
+    patterns += ["/" + p for p in XML_FILES.get(name, [])]
     git(dest, "sparse-checkout", "set", "--no-cone", *patterns)
     git(dest, "fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit)
     git(dest, "checkout", "-q", "--detach", "FETCH_HEAD")
@@ -74,8 +134,9 @@ def present():
     for base, dirs, names in os.walk(DEST):
         dirs[:] = [d for d in dirs if d != ".git"]
         for n in names:
-            if n.rsplit(".", 1)[-1].lower() in EXTENSIONS:
-                out.append(os.path.join(base, n))
+            path = os.path.join(base, n)
+            if n.rsplit(".", 1)[-1].lower() in EXTENSIONS or os.path.relpath(path, DEST).replace(os.sep, "/") in XML_PATHS:
+                out.append(path)
     return sorted(out)
 
 

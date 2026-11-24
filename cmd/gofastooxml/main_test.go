@@ -484,3 +484,43 @@ func TestDirectoryHasBinaryWorkbooks(t *testing.T) {
 		t.Errorf("status %d, %q, %q", status, stdout, stderr)
 	}
 }
+
+// TestOfficeXML: a directory's .xml files are read if they are Office
+// files saved as XML, and passed over in silence if not; a file named on
+// the command line is read whatever its name, and refused if it is not
+// an Office file.
+func TestOfficeXML(t *testing.T) {
+	dir := t.TempDir()
+	data, err := os.ReadFile(fixture(t, "values.xlsx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flat, _ := ooxmltest.FlatOPC(data)
+	ss, _ := ooxmltest.SpreadsheetML2003(data)
+	word := `<?xml version="1.0"?><w:wordDocument xmlns:w="http://schemas.microsoft.com/office/word/2003/wordml"><w:body><w:p><w:r><w:t>word</w:t></w:r></w:p></w:body></w:wordDocument>`
+	os.WriteFile(filepath.Join(dir, "flat.xml"), flat, 0o644)
+	os.WriteFile(filepath.Join(dir, "sheet.XML"), ss, 0o644)
+	os.WriteFile(filepath.Join(dir, "word.xml"), []byte(word), 0o644)
+	os.WriteFile(filepath.Join(dir, "feed.xml"), []byte(`<?xml version="1.0"?><rss version="2.0"><channel/></rss>`), 0o644)
+	os.WriteFile(filepath.Join(dir, "empty.xml"), nil, 0o644)
+
+	stdout, stderr, status := command(t, dir)
+	if status != 0 || stderr != "" {
+		t.Fatalf("status %d: %s", status, stderr)
+	}
+	var got []string
+	for _, doc := range documents(t, stdout) {
+		got = append(got, doc.Source.Name+":"+doc.Source.Format)
+	}
+	if strings.Join(got, " ") != "flat.xml:xlsx sheet.XML:spreadsheetml word.xml:wordml" {
+		t.Errorf("documents: %v", got)
+	}
+	// Named, a file is read whatever its name, and refused if it is not
+	// an Office file.
+	renamed := filepath.Join(dir, "sheet.data")
+	os.WriteFile(renamed, ss, 0o644)
+	stdout, stderr, status = command(t, renamed, filepath.Join(dir, "feed.xml"))
+	if status != 1 || len(documents(t, stdout)) != 1 || !strings.Contains(stderr, "feed.xml") || !strings.Contains(stderr, "rss") {
+		t.Errorf("status %d, standard error %q", status, stderr)
+	}
+}

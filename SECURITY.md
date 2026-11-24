@@ -27,7 +27,7 @@ Any of the following is a bug to report, whatever the file:
 |---|---|
 | **Run anything** | Macros are never run, formulas never evaluated, fields never updated. Their presence is reported (`input.active_content`); the code of VBA projects and macro sheets, and the codes of fields, are read as text and marked as stored data |
 | **Reach anything** | No file other than the input is opened and no network connection is made. Links to other files, remote templates and linked pictures are reported (`input.external_reference`), never followed. The packages that read file content do not import `os`, `net` or `os/exec`, and a test fails if one starts to |
-| **Use XML against the reader** | The library has its own XML reader. Document type declarations are refused, so there are no entities to expand and nothing external to include. Nesting is bounded at 512 elements |
+| **Use XML against the reader** | The library has its own XML reader. Document type declarations are refused, so there are no entities to expand and nothing external to include. Nesting is bounded at 512 elements. An Office file saved as XML (Flat OPC, WordprocessingML and SpreadsheetML 2003) is indexed by where its elements begin and end, the parts of the file not gone into skipped unread; each part is then read as a part of an archive is, so malformed XML in one does not reach the others |
 | **Crash the caller** | No panic on any input: every index, length and count taken from a file is checked, and every list a file can lengthen has a bound |
 | **Write what it likes into the output** | Text is valid UTF-8 with control characters removed. Names taken from the file (parts, sheets, authors, error messages) are cleaned and cut to a length before they appear in a warning or a field |
 | **Lose what it declares about display** | Text a file declares hidden or drawn with no ink, in the ways the README lists, keeps that reason. Nothing is judged from appearance, so text can be out of sight with no reason; see below |
@@ -56,6 +56,9 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | A formula of a binary workbook turned back into text | 32 KiB of text, 4,096 operands waiting for their operator | fixed | The formula is not read back, and is counted in `input.unread_content` |
 | What a binary workbook's formulas name outside their sheet | 65,536 links, each with 65,536 sheets and 65,536 names; 65,536 tables of 16,384 columns | fixed | Those past it are not read, and said with `limit.exceeded`; a formula that names one is not read back |
 | Code of a VBA project, decompressed | what is left of the text and decompression budgets | | The module is cut off; what it decompresses to is charged to the decompression budget too |
+| Elements of an Office file saved as XML found by its index (its root's children, and a worksheet's) | 65,536 | fixed | Refused |
+| A file saved as XML in another encoding than UTF-8, converted to UTF-8 in memory | | `Options.Limits.MaxDecodedBytes` | Refused |
+| Pictures of a WordprocessingML 2003 document, decoded from base64 | | `Options.Limits.MaxDecodedBytes` | Refused |
 | Data after the end of the archive | 1 MiB read, and only what follows within the archive's last 64 KiB is found | fixed | The rest is not read; `input.trailing_data` says how many bytes there are, and `limit.exceeded` how many were not read |
 
 A zero in a limit means its default and a negative number means none.
@@ -176,11 +179,13 @@ that feeds a model decides what to do with each.
   cut short, each format's main part, the records and formulas of binary
   workbooks and the parts their formulas and pivot tables name (links to
   other workbooks, tables, pivot caches), number formats, the
-  compound-file container and the encryption information; all run in CI
-  on every pull request. Before the release, all nineteen targets ran
+  compound-file container and the encryption information, the Office
+  formats saved as XML (Flat OPC, WordprocessingML and SpreadsheetML
+  2003) and formulas in R1C1 notation; all run in CI on every pull
+  request. Before the release, all nineteen targets ran
   for five to forty-five minutes each. The five findings, none a crash, a
   hang or a way past a limit, are fixed and kept as seeds.
-- A soak run over 6,598 files: the corpus and the Office files in the test
+- A soak run over 6,640 files: the corpus and the Office files in the test
   suites of LibreOffice, Apache Tika, pandoc and ten other projects,
   among them their collections of crash cases and fuzzer findings. Every
   file gives a valid document or a shared error, the same for any number
