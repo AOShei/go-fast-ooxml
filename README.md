@@ -2,8 +2,9 @@
 
 Extracts Word, Excel and PowerPoint files (`.docx`, `.xlsx`, `.pptx`, their
 macro and template variants, Excel's binary workbooks, `.xlsb`, any of
-these saved as one XML file, Flat OPC, and Excel 2003's XML spreadsheets,
-SpreadsheetML 2003) into the shared go-fast document model,
+these saved as one XML file, Flat OPC, and Office 2003's XML formats,
+WordprocessingML 2003 and SpreadsheetML 2003) into the shared go-fast
+document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
@@ -356,6 +357,66 @@ encodings: besides UTF-8, UTF-16, ISO 8859-1 and Windows-1252, the scanner
 reads ISO 8859-15, the other Windows code pages (1250 to 1258, 874) and
 the double-byte ones (Shift JIS, GBK, EUC-KR as code page 949, Big5), in
 every format.
+
+### WordprocessingML 2003
+
+Word 2003 saved documents as "XML Document": one XML file whose root is
+`w:wordDocument` in the namespace
+`http://schemas.microsoft.com/office/word/2003/wordml`. It is the direct
+ancestor of the WordprocessingML of `.docx`, and is read by translating it
+into the parts of the `.docx` it corresponds to, which the Word reader
+then reads as any other (`internal/wordml`): headings from styles and
+their `basedOn` chains, lists with their computed labels, tables with
+merged cells, footnotes and endnotes, comments, tracked changes (text
+given with insertions accepted, deletions as notes), headers and footers,
+links, fields, hidden text, pictures. Its `format` is `wordml` and its
+`mime` `application/vnd.ms-wordml`.
+
+What is translated:
+
+- Names 2003 hyphenates are camel-cased (`sz-cs` is `szCs`, `line-rule`
+  `lineRule`, `h-ansi` `hAnsi`); `fareast` is `eastAsia`, `vmerge`
+  `vMerge`.
+- Styles (`w:styles`), lists (`w:lists`) and settings (`w:docPr`) are in
+  the document; they become their parts. A paragraph's `w:listPr`
+  (`w:ilvl`, `w:ilfo`) is `w:numPr`; `w:listDef` and `w:list` are
+  `w:abstractNum` and `w:num`; a level's number format is a number
+  (`w:nfc`), translated into its name.
+- Footnotes, endnotes and comments are written where they are cited;
+  they go into their parts, with a reference where they were. Headers and
+  footers are written in their section's `w:sectPr`; they become parts the
+  section names (`odd` is `default`).
+- Revisions, comments and bookmarks are `aml:annotation` elements:
+  `Word.Insertion` is `w:ins`, `Word.Deletion` `w:del`, `Word.Comment` a
+  comment with `Word.Comment.Start` and `.End` around its range,
+  `Word.Bookmark.Start` and `.End` a bookmark. Formatting changes are left
+  out.
+- Links are `w:hlink`, with the address in `w:dest` and a place in the
+  document in `w:bookmark`.
+- Pictures are VML whose `v:imagedata` names a `w:binData`, the picture in
+  base64, by a `wordml://` name; each becomes a media part, counted
+  against `Limits.MaxDecodedBytes`.
+- `wx:sect` and `wx:sub-section`, which only group, are left out around
+  what they hold, as are smart tags and other elements of namespaces the
+  format does not define; Word's hints (`wx:`) are dropped.
+
+Word 2003 has no charts or equations of its own kind: it saves a picture
+of each, which is read as a picture. Tika's test suite has one document
+saved both ways, as Word 2003 XML and as Flat OPC from a later Word; the
+two give the same blocks but for those pictures, a move that 2003 records
+as an insertion and a deletion, and two citation fields and the
+bibliography's sources, which the 2003 file does not hold. LibreOffice
+was asked to write 200 corpus documents as Word 2003 XML and wrote 189;
+their words agree with their `.docx` documents' at 0.75 on average, and
+each difference looked at (the documents that differ most, and those
+whose headings differ) came from what LibreOffice's writing lost or
+changed: the text of text boxes, tables and content controls, tabs,
+charts and equations
+written as objects, and heading styles under LibreOffice's own names with
+no outline level.
+
+A body whose XML is malformed, or that a cut file breaks off in, is read
+up to that place, with an `input.repaired` warning.
 
 The root element decides: XML of any other kind is refused with
 `ErrUnsupported`, its root named in the message, so that XML sent here by
@@ -818,6 +879,7 @@ and shapes; attribute values of custom XML data.
 | `cmd/gofastooxml` | The command |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget. An archive that has lost its directory is read through go-fast-core's `ziprecover`. A package written as XML (Flat OPC) is read by the same interface |
+| `internal/wordml` | WordprocessingML 2003 translated into the parts of a `.docx` |
 | `internal/xmlroot`, `internal/xmlindex` | Telling the Office formats saved as XML by their root element; finding where the elements of such a file are, without reading those not gone into |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook, and the elements of a SpreadsheetML 2003 workbook, read into the same |

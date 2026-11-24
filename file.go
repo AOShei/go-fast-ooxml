@@ -209,8 +209,11 @@ func (f *File) open(first bool) (*session, error) {
 		decoded = min(decoded, f.within)
 	}
 	lim := opc.Limits{MaxDecodedBytes: decoded, MaxMembers: members}
-	if f.xml == xmlroot.SpreadsheetML {
+	switch f.xml {
+	case xmlroot.SpreadsheetML:
 		return f.openSpreadsheetML(first, lim)
+	case xmlroot.WordML:
+		return f.openWordML(first, lim)
 	}
 	var pkg *opc.Package
 	var err error
@@ -302,7 +305,7 @@ func (f *File) Close() error {
 // macro-enabled file or a template is the format it is a variant of; a
 // binary workbook (.xlsb) is "xlsx"; a package written as one XML file
 // (Flat OPC) is the format of the package. An Excel 2003 XML spreadsheet
-// is "spreadsheetml".
+// is "spreadsheetml", a Word 2003 XML document "wordml".
 func (f *File) Format() string { return f.source.Format }
 
 // Source returns what is known of where the document came from, as in

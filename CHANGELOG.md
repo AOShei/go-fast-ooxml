@@ -25,6 +25,12 @@ minor version may change the API.
   `Options.Cells`; document properties), and `File.Sheets` and
   `File.Rows` work on it. Every corpus workbook written as SpreadsheetML
   2003 shows the cells its `.xlsx` shows (1,776 workbooks).
+- **WordprocessingML 2003** (Word 2003's "XML Document", root
+  `w:wordDocument`): `Source.Format` `wordml`, MIME
+  `application/vnd.ms-wordml`. Translated into the parts of the `.docx` it
+  corresponds to and read by the Word reader: headings, lists with their
+  labels, tables, footnotes, endnotes, comments, tracked changes, headers
+  and footers, links, fields, hidden text, pictures, document properties.
 - **More encodings** are read in every format: ISO 8859-15, the Windows
   code pages 1250 to 1258 and 874, Shift JIS, GBK, EUC-KR and Big5. Before,
   a part declaring one was refused (`ErrEncoding`).

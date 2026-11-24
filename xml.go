@@ -9,6 +9,8 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/props"
 	"github.com/AOShei/go-fast-ooxml/internal/sml"
+	"github.com/AOShei/go-fast-ooxml/internal/wml"
+	"github.com/AOShei/go-fast-ooxml/internal/wordml"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlindex"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
 )
@@ -22,6 +24,9 @@ import (
 //   - SpreadsheetML 2003 (Workbook): Excel 2002 and 2003's XML
 //     spreadsheet, format "spreadsheetml", read into sheets as .xlsx is
 //     (internal/sml/ss2003.go).
+//   - WordprocessingML 2003 (w:wordDocument): Word 2003's XML document,
+//     format "wordml", translated into the parts of the .docx it
+//     corresponds to and read as one (internal/wordml).
 //
 // Any other XML is refused with ErrUnsupported, so that XML sent here by
 // mistake is seen to be.
@@ -33,10 +38,8 @@ func (f *File) detectXML() error {
 	kind, root := xmlroot.Detect(f.body)
 	f.xml = kind
 	switch kind {
-	case xmlroot.NotXML, xmlroot.FlatOPC, xmlroot.SpreadsheetML:
+	case xmlroot.NotXML, xmlroot.FlatOPC, xmlroot.SpreadsheetML, xmlroot.WordML:
 		return nil
-	case xmlroot.WordML:
-		return fmt.Errorf("gofastooxml: a WordprocessingML 2003 document (Word 2003 XML), not read yet: %w", gofastcore.ErrUnsupported)
 	}
 	what := "XML"
 	switch root {
@@ -53,6 +56,8 @@ func (f *File) detectXML() error {
 const (
 	formatSpreadsheetML = "spreadsheetml"
 	mimeSpreadsheetML   = "application/vnd.ms-spreadsheetml"
+	formatWordML        = "wordml"
+	mimeWordML          = "application/vnd.ms-wordml"
 )
 
 // maxXMLElements bounds the elements an Office 2003 XML file's index
@@ -117,4 +122,32 @@ func xmlError(what string, err error) error {
 		shared = gofastcore.ErrLimitExceeded
 	}
 	return fmt.Errorf("gofastooxml: %s: %s: %w", what, clean.Label(err.Error()), shared)
+}
+
+// openWordML opens a WordprocessingML 2003 document: its index, its
+// translation into the parts of a .docx, their package, its properties
+// and its body.
+func (f *File) openWordML(first bool, lim opc.Limits) (*session, error) {
+	x, err := xmlindex.Read(f.body, f.bodySize, xmlindex.Options{MaxElements: maxXMLElements, MaxCopy: lim.MaxDecodedBytes})
+	if err != nil {
+		return nil, xmlError("a WordprocessingML 2003 document", err)
+	}
+	tr, err := wordml.Translate(x, lim.MaxDecodedBytes)
+	if err != nil {
+		return nil, fmt.Errorf("gofastooxml: a WordprocessingML 2003 document: %s: %w", clean.Label(err.Error()), gofastcore.ErrLimitExceeded)
+	}
+	pkg := opc.NewSections(x.Src, lim, tr.Sections)
+	meta, err := props.Read2003(pkg, wordml.Props, wordml.Custom)
+	if first {
+		f.source = gofastcore.Source{Format: formatWordML, MIME: mimeWordML, Name: f.opts.Name, Size: f.size}
+		f.meta = meta.Metadata
+		f.note2003(x, meta, err)
+		if err := tr.Check(); err != nil {
+			f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputRepaired, Severity: gofastcore.SeverityWarning,
+				Message: clean.Label(err.Error()) + "; what comes before it is read"})
+		}
+	}
+	sess := &session{pkg: pkg}
+	sess.src = wml.Open(pkg, wordml.Main, &f.opts)
+	return sess, nil
 }
