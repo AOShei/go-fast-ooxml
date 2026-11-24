@@ -6,6 +6,10 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -220,5 +224,77 @@ func TestRecoveryIsBounded(t *testing.T) {
 		if doc != nil || !errors.Is(err, gofastcore.ErrMalformed) {
 			t.Errorf("%d bytes that begin like an archive: %v", len(junk), err)
 		}
+	}
+}
+
+// A file cut just after an archive stored uncompressed inside it (a
+// workbook embedded in a document) ends with that archive's directory,
+// which archive/zip takes for the file's own. The file is still read as
+// itself: its members are found by their headers, and the document is
+// the one it gave whole.
+func TestArchiveCutAfterAStoredArchive(t *testing.T) {
+	base, err := os.ReadFile(filepath.Join("testdata", "fixtures", "basic-docx.docx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded, err := os.ReadFile(filepath.Join("testdata", "fixtures", "values.xlsx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(base), int64(len(base)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, f := range zr.File {
+		raw, err := f.OpenRaw()
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, err := zw.CreateRaw(&f.FileHeader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(w, raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w, err := zw.CreateRaw(&zip.FileHeader{
+		Name:               "word/embeddings/Book1.xlsx",
+		Method:             zip.Store,
+		CRC32:              crc32.ChecksumIEEE(embedded),
+		CompressedSize64:   uint64(len(embedded)),
+		UncompressedSize64: uint64(len(embedded)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Write(embedded)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	whole, err := extract(t, data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cut := data[:directoryAt(t, data)]
+	if _, err := zip.NewReader(bytes.NewReader(cut), int64(len(cut))); err != nil {
+		t.Fatalf("archive/zip no longer reads the stored workbook's directory (%v): the test needs another case", err)
+	}
+	doc, err := extract(t, cut, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ooxmltest.CheckDocument(t, doc)
+	if doc.Source.Format != whole.Source.Format {
+		t.Fatalf("read as %s, not as the %s it is", doc.Source.Format, whole.Source.Format)
+	}
+	if message, warning := repaired(doc); !warning || strings.Contains(message, "breaks off") {
+		t.Errorf("warning %q", message)
+	}
+	if withoutRepair(t, doc) != withoutRepair(t, whole) {
+		t.Error("the document differs from the whole file's")
 	}
 }

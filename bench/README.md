@@ -455,7 +455,7 @@ over the runs of a target:
 | `FuzzLinear` | An equation | 5 min | 33 million | clean, after one finding |
 | `FuzzCFB` | A compound file | 5 min | 5.5 million | clean |
 | `FuzzEncryptionInfo` | The encryption information of a protected file | 5 min | 18 million | clean |
-| `FuzzRecover` | Bytes behind the start of an archive, read by its members' own headers | 5 min | 21 million | clean |
+| `FuzzRecover` | Bytes behind the start of an archive, read by its members' own headers (since moved to go-fast-core's `ziprecover`, with its tests) | 5 min | 21 million | clean |
 | `FuzzNumFmt` | A number format and a value | 5 min | 79 million | clean |
 | `FuzzProject` | A VBA project | 5 min | 47 million | clean |
 | `FuzzChart` | A chart | 5 min | 6.4 million | clean |

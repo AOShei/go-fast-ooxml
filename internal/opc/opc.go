@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/AOShei/go-fast-core/inflate"
+	"github.com/AOShei/go-fast-core/ziprecover"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -83,7 +83,7 @@ type Package struct {
 	overrides map[string]string    // canonical part name -> content type
 	budget    atomic.Int64         // decompressed bytes still allowed
 	ambiguous int                  // members that different readers would read differently
-	recovered *Recovery            // set if the directory was rebuilt from the members' headers
+	recovered *ziprecover.Recovery // set if the directory was rebuilt from the members' headers
 	trailing  []byte               // what follows the end of the archive, up to maxTrailing
 	afterEnd  int64                // how many bytes follow it in all
 
@@ -146,30 +146,25 @@ func (p *Package) CutTargets() int64 {
 
 // Open reads the archive's directory and the content-types table.
 func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
-	zr, err := zip.NewReader(r, size)
-	var recovered *Recovery
-	if err != nil {
-		var head [4]byte
-		if n, _ := r.ReadAt(head[:], 0); n != len(head) || string(head[:]) != "PK\x03\x04" {
-			return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
-		}
-		// It begins as an archive does and has no directory that can be
-		// read: the members are looked for by their own headers.
-		var rerr error
-		switch zr, recovered, rerr = recoverArchive(r, size, lim); {
-		case errors.Is(rerr, ErrBudget), errors.Is(rerr, ErrTooManyParts):
-			return nil, rerr
-		case rerr != nil:
-			return nil, ErrCutOff
-		}
+	// A file whose directory cannot be read but which begins with a
+	// member's header is recovered by go-fast-core's ziprecover, which
+	// finds the members by their own headers. It registers go-fast-core's
+	// decompressor, which takes about half the time of compress/flate and
+	// gives the same bytes; archive/zip still checks each part's CRC-32.
+	zr, recovered, err := ziprecover.Open(r, size, ziprecover.Limits{MaxMembers: lim.MaxMembers, MaxDecodedBytes: lim.MaxDecodedBytes})
+	switch {
+	case errors.Is(err, ziprecover.ErrNotZip):
+		return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
+	case errors.Is(err, ziprecover.ErrBudget):
+		return nil, ErrBudget
+	case errors.Is(err, ziprecover.ErrTooManyMembers):
+		return nil, ErrTooManyParts
+	case err != nil:
+		return nil, ErrCutOff
 	}
 	if lim.MaxMembers > 0 && len(zr.File) > lim.MaxMembers {
 		return nil, fmt.Errorf("%w: %d, limit %d", ErrTooManyParts, len(zr.File), lim.MaxMembers)
 	}
-	// Deflated parts are inflated by go-fast-core's decompressor, which
-	// takes about half the time of compress/flate and gives the same
-	// bytes. archive/zip still checks each part's CRC-32.
-	zr.RegisterDecompressor(zip.Deflate, inflate.Decompressor)
 	p := &Package{
 		files:     make(map[string]*zip.File, len(zr.File)),
 		names:     make([]string, 0, len(zr.File)),
@@ -274,7 +269,7 @@ func trailing(r io.ReaderAt, size int64) ([]byte, int64) {
 
 // Recovered returns what was found by the members' own headers, if the
 // archive had no directory that could be read; nil for a sound archive.
-func (p *Package) Recovered() *Recovery { return p.recovered }
+func (p *Package) Recovered() *ziprecover.Recovery { return p.recovered }
 
 const contentTypesName = "[content_types].xml"
 

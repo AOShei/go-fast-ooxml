@@ -76,7 +76,6 @@ jobs:
           go test -run '^$' -fuzz '^FuzzFormula$' -fuzztime 20s ./internal/xlsb
           go test -run '^$' -fuzz '^FuzzPptx$' -fuzztime 30s .
           go test -run '^$' -fuzz '^FuzzCFB$' -fuzztime 20s ./internal/cfb
-          go test -run '^$' -fuzz '^FuzzRecover$' -fuzztime 20s ./internal/opc
           go test -run '^$' -fuzz '^FuzzEncryptionInfo$' -fuzztime 20s ./internal/crypt
 
   dependencies:
