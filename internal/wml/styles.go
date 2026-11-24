@@ -108,8 +108,11 @@ func readStyles(s *xmlscan.Scanner) *styles {
 			s.Skip()
 			continue
 		}
-		id, _ := s.Attr(ns.Word, "styleId")
-		def, _ := s.Attr(ns.Word, "default")
+		// Copied: the style's children are read before these are used,
+		// and a view of the scanner lasts only until the next token.
+		rawID, _ := s.Attr(ns.Word, "styleId")
+		rawDef, _ := s.Attr(ns.Word, "default")
+		id, def := string(rawID), isOn(rawDef)
 		cur := &style{outline: -1, numID: -1, ilvl: -1}
 		depth := s.Depth()
 		for s.Next() != xmlscan.EOF && s.Depth() >= depth {
@@ -137,11 +140,11 @@ func readStyles(s *xmlscan.Scanner) *styles {
 			continue
 		}
 		if character {
-			st.chars[string(id)] = &charStyle{run: cur.run, based: cur.based}
+			st.chars[id] = &charStyle{run: cur.run, based: cur.based}
 			continue
 		}
-		st.byID[string(id)] = cur
-		if isOn(def) && st.def == nil {
+		st.byID[id] = cur
+		if def && st.def == nil {
 			st.def = cur
 		}
 	}

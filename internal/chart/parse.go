@@ -321,6 +321,7 @@ func (r *reader) newer(c *Chart) []series {
 					continue
 				}
 				typ, _ := s.Attr(xmlscan.NoSpace, "type")
+				cat := string(typ) == "cat" // told now: the levels are read first
 				var levels [][]string
 				ld := s.Depth()
 				for s.Next() != xmlscan.EOF && s.Depth() >= ld {
@@ -333,7 +334,7 @@ func (r *reader) newer(c *Chart) []series {
 						}
 					}
 				}
-				if string(typ) == "cat" && !numeric {
+				if cat && !numeric {
 					d.cats = dim{levels: levels}
 				} else if len(d.vals) < maxValues {
 					d.vals = append(d.vals, dim{levels: levels})

@@ -191,6 +191,7 @@ type Scanner struct {
 	gen        uint64 // changes whenever the bindings in scope change
 	scratch    []byte // decoded text of the current token
 	attrBuf    []byte // decoded attribute values of the current token
+	poisoned   int    // with the xmlscanpoison tag: the window is overwritten up to here
 
 	// Repairs counts the places where malformed input was read leniently:
 	// an unknown or unterminated entity reference kept as written and,
@@ -244,6 +245,9 @@ func getWindow(size int) []byte {
 // already, since the window slides over the stream as it is read.
 func (s *Scanner) Release() {
 	if s.own {
+		if poison {
+			s.poisonReleased()
+		}
 		if c := windowClass(len(s.buf)); c >= 0 && len(s.buf) == 4096<<c && cap(s.buf) == len(s.buf) {
 			b := s.buf
 			windows[c].Put(&b)
@@ -428,6 +432,9 @@ func (s *Scanner) Next() Kind {
 		s.pop()
 		s.kind = End
 		return End
+	}
+	if poison {
+		s.poisonViews()
 	}
 	s.attrs, s.attrBuf, s.tag = s.attrs[:0], s.attrBuf[:0], nil
 	for {
