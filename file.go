@@ -209,6 +209,9 @@ func (f *File) open(first bool) (*session, error) {
 		decoded = min(decoded, f.within)
 	}
 	lim := opc.Limits{MaxDecodedBytes: decoded, MaxMembers: members}
+	if f.xml == xmlroot.SpreadsheetML {
+		return f.openSpreadsheetML(first, lim)
+	}
 	var pkg *opc.Package
 	var err error
 	if f.xml == xmlroot.FlatOPC {
@@ -298,7 +301,8 @@ func (f *File) Close() error {
 // Format returns the kind of file: "docx", "xlsx" or "pptx". A
 // macro-enabled file or a template is the format it is a variant of; a
 // binary workbook (.xlsb) is "xlsx"; a package written as one XML file
-// (Flat OPC) is the format of the package.
+// (Flat OPC) is the format of the package. An Excel 2003 XML spreadsheet
+// is "spreadsheetml".
 func (f *File) Format() string { return f.source.Format }
 
 // Source returns what is known of where the document came from, as in
@@ -371,7 +375,7 @@ func (f *File) selection() (selected []int, asked int, err error) {
 // kind names the kind of document.
 func (f *File) kind() string {
 	switch f.source.Format {
-	case "xlsx":
+	case "xlsx", formatSpreadsheetML:
 		return "workbook"
 	case "pptx":
 		return "presentation"
@@ -765,7 +769,7 @@ func (f *File) Rows(ctx context.Context, number, band int) iter.Seq2[gofastcore.
 		var book *sml.Book
 		switch {
 		case err != nil:
-		case f.source.Format != "xlsx":
+		case f.kind() != "workbook":
 			err = fmt.Errorf("gofastooxml: a %s has no rows: %w", f.kind(), gofastcore.ErrUnsupported)
 		case number < 1 || number > len(f.sheets):
 			err = fmt.Errorf("gofastooxml: sheet %d: the workbook has %d sheets, numbered from 1: %w", number, len(f.sheets), gofastcore.ErrNoPartsSelected)

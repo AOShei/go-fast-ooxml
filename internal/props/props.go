@@ -3,7 +3,9 @@
 package props
 
 import (
+	"bytes"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -253,4 +255,135 @@ func parseTime(v string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// Read2003 fills a Metadata from the properties of a document of Office
+// 2003's XML formats (WordprocessingML and SpreadsheetML 2003): the parts
+// props and custom hold their o:DocumentProperties and
+// o:CustomDocumentProperties elements. Either may be missing. The keys are
+// those of the .docx and .xlsx properties they correspond to.
+func Read2003(p *opc.Package, props, custom string) (Result, error) {
+	var res Result
+	for _, part := range []struct {
+		name string
+		read func(*xmlscan.Scanner, *Result)
+	}{{props, read2003}, {custom, readCustom2003}} {
+		if !p.Has(part.name) {
+			continue
+		}
+		var s xmlscan.Scanner
+		c, err := p.Scan(part.name, &s, scanOptions)
+		if err != nil {
+			res.Damaged = append(res.Damaged, part.name)
+			continue
+		}
+		part.read(&s, &res)
+		c.Close()
+		if err := s.Err(); err != nil {
+			if errors.Is(err, opc.ErrBudget) {
+				return res, err
+			}
+			res.Damaged = append(res.Damaged, part.name)
+		}
+	}
+	return res, nil
+}
+
+func read2003(s *xmlscan.Scanner, res *Result) {
+	m := &res.Metadata
+	for s.Next() != xmlscan.EOF {
+		if s.Kind() != xmlscan.Start || s.Depth() != 2 || s.Space() != ns.Office {
+			continue
+		}
+		local := string(s.Local())
+		v := value(s, res)
+		if v == "" {
+			continue
+		}
+		switch local {
+		case "Title":
+			m.Title = v
+		case "Subject":
+			m.Subject = v
+		case "Author":
+			m.Authors = []string{v}
+		case "Keywords":
+			m.Keywords = []string{v}
+		case "Created":
+			m.Created = parseTime(v)
+		case "LastSaved":
+			m.Modified = parseTime(v)
+		case "Description":
+			extra(m, "description", v)
+		case "LastAuthor":
+			extra(m, "last_modified_by", v)
+		case "Revision":
+			extra(m, "revision", v)
+		case "Category":
+			extra(m, "category", v)
+		case "Company":
+			extra(m, "company", v)
+		case "Manager":
+			extra(m, "manager", v)
+		case "Version":
+			extra(m, "app_version", v)
+		case "Template":
+			extra(m, "template", v)
+		}
+	}
+}
+
+// readCustom2003 reads o:CustomDocumentProperties, whose elements are
+// named after the properties, with spaces and other characters a name
+// cannot hold written as _xHHHH_.
+func readCustom2003(s *xmlscan.Scanner, res *Result) {
+	m := &res.Metadata
+	n := 0
+	for s.Next() != xmlscan.EOF {
+		if s.Kind() != xmlscan.Start || s.Depth() != 2 {
+			continue
+		}
+		raw := unescapeName(s.Local())
+		if len(raw) > maxCustomName {
+			k := maxCustomName
+			for k > 0 && !utf8.RuneStart(raw[k]) {
+				k--
+			}
+			res.NamesCut++
+			res.NameBytes += int64(len(raw) - k)
+			raw = raw[:k]
+		}
+		name, removed := clean.String(raw, clean.Trim)
+		res.Removed += removed
+		name = strings.ToValidUTF8(name, "")
+		v := value(s, res)
+		if name == "" {
+			continue
+		}
+		if n >= maxCustom {
+			res.CustomPast++
+			continue
+		}
+		n++
+		extra(m, customPrefix+strings.ToLower(name), v)
+	}
+}
+
+// unescapeName decodes _xHHHH_ in an element's name.
+func unescapeName(b []byte) []byte {
+	if !bytes.Contains(b, []byte("_x")) {
+		return append([]byte(nil), b...)
+	}
+	var out []byte
+	for i := 0; i < len(b); i++ {
+		if i+7 <= len(b) && b[i] == '_' && b[i+1] == 'x' && b[i+6] == '_' {
+			if v, err := strconv.ParseUint(string(b[i+2:i+6]), 16, 16); err == nil && v != 0 {
+				out = utf8.AppendRune(out, rune(v))
+				i += 6
+				continue
+			}
+		}
+		out = append(out, b[i])
+	}
+	return out
 }

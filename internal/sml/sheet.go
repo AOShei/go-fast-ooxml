@@ -96,6 +96,7 @@ type sheet struct {
 	unread          map[string]int     // content of kinds that are not read
 	damaged         []string           // parts that could not be read to their end
 	cut             string             // why reading stopped early, if it did
+	ssNotes         []ssNote           // the comments of a SpreadsheetML 2003 sheet, read with its cells
 
 	// Reading a band of rows at a time (see Rows).
 	pass   int                // which of the two passes over the part this is
@@ -340,39 +341,51 @@ func (sh *sheet) readData() {
 		}
 		first := len(sh.cells)
 		bytesBefore := sh.readRow(row)
-		if n := len(sh.cells) - first; n > 0 {
-			if hidden {
-				sh.hiddenRows = append(sh.hiddenRows, row)
-			}
-			if sh.band > 0 {
-				// A band is handed on and forgotten: what is kept does
-				// not grow with the sheet, and is not counted.
-				if sh.inBand++; sh.inBand >= sh.band {
-					sh.inBand = 0
-					if !sh.emit() {
-						sh.cut = "stopped"
-						return
-					}
-				}
-				continue
-			}
-			// What is kept is charged to the document's budgets, a row
-			// at a time.
-			if sh.wb.cells.Add(-int64(n)) < 0 {
-				sh.cells = sh.cells[:first]
-				sh.cut = "the limit on the number of cells was reached"
-				return
-			}
-			// The text is taken from the budget when the tables are
-			// made, with what their blocks and cells take; reading stops
-			// here once there could be no room for it.
-			if sh.pending += bytesBefore; sh.pending > sh.room.Left() {
-				sh.cells = sh.cells[:first]
-				sh.cut = "the limit on the amount of text was reached"
-				return
-			}
+		if !sh.rowDone(first, row, hidden, bytesBefore) {
+			return
 		}
 	}
+}
+
+// rowDone accounts for a row just read, whose cells begin at
+// sh.cells[first] and hold textBytes of text: it hands on a band when one
+// is full, and charges what is kept to the document's budgets. It
+// reports false if reading is to stop, sh.cut saying why.
+func (sh *sheet) rowDone(first int, row int32, hidden bool, textBytes int64) bool {
+	n := len(sh.cells) - first
+	if n == 0 {
+		return true
+	}
+	if hidden {
+		sh.hiddenRows = append(sh.hiddenRows, row)
+	}
+	if sh.band > 0 {
+		// A band is handed on and forgotten: what is kept does not grow
+		// with the sheet, and is not counted.
+		if sh.inBand++; sh.inBand >= sh.band {
+			sh.inBand = 0
+			if !sh.emit() {
+				sh.cut = "stopped"
+				return false
+			}
+		}
+		return true
+	}
+	// What is kept is charged to the document's budgets, a row at a time.
+	if sh.wb.cells.Add(-int64(n)) < 0 {
+		sh.cells = sh.cells[:first]
+		sh.cut = "the limit on the number of cells was reached"
+		return false
+	}
+	// The text is taken from the budget when the tables are made, with
+	// what their blocks and cells take; reading stops here once there
+	// could be no room for it.
+	if sh.pending += textBytes; sh.pending > sh.room.Left() {
+		sh.cells = sh.cells[:first]
+		sh.cut = "the limit on the amount of text was reached"
+		return false
+	}
+	return true
 }
 
 // readRow reads the cells of the row whose Start token is current, and

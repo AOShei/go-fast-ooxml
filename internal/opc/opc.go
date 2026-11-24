@@ -92,6 +92,7 @@ type Package struct {
 	flat       bool                 // a Flat OPC package: its parts are flatParts, not files
 	flatParts  map[string]*flatPart // by canonical part name
 	flatDamage *FlatDamage          // where a Flat OPC package breaks off
+	sections   bool                 // the parts are elements of a file with no package (NewSections)
 
 	cutMu    sync.Mutex
 	cut      map[string]int64 // by relationships part: external targets cut to their bound

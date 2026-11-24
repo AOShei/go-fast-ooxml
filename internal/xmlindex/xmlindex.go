@@ -178,6 +178,12 @@ type lexer struct {
 	tag []byte
 	// lastSlash: the tag markup read last ended with "/>".
 	lastSlash bool
+	// name is the name of the tag read last, as written, cut at
+	// maxName; open holds the names of the elements open in the content
+	// being skipped, ends where each ends in it.
+	name []byte
+	open []byte
+	ends []int
 }
 
 func (x *lexer) readByte() (byte, error) {
@@ -261,10 +267,14 @@ func (x *lexer) markup(keep bool) (kind byte, err error) {
 	if c == '/' {
 		kind = '/'
 	}
-	x.tag = x.tag[:0]
+	x.tag, x.name = x.tag[:0], x.name[:0]
 	if keep && kind == '<' {
 		x.tag = append(x.tag, c)
 	}
+	if kind == '<' {
+		x.name = append(x.name, c)
+	}
+	naming := true // the tag's name is being read
 	var quote byte
 	prev := c
 	for {
@@ -284,6 +294,13 @@ func (x *lexer) markup(keep bool) (kind byte, err error) {
 			return kind, nil
 		}
 		prev = c
+		if naming {
+			if isXMLSpace(c) || c == '/' || len(x.name) >= maxName {
+				naming = false
+			} else {
+				x.name = append(x.name, c)
+			}
+		}
 		if keep {
 			if len(x.tag) >= maxTag {
 				return 0, fmt.Errorf("a tag of the package longer than %d bytes", maxTag)
@@ -296,9 +313,10 @@ func (x *lexer) markup(keep bool) (kind byte, err error) {
 // skipContent consumes the content of a part's data element and its end
 // tag, and returns where the content ends. count is given the character
 // data at its top level.
-func (x *lexer) skipContent(count func([]byte)) (end int64, err error) {
-	depth := 0
+func (x *lexer) skipContent(own string, count func([]byte)) (end int64, err error) {
+	x.open, x.ends = x.open[:0], x.ends[:0]
 	for {
+		depth := len(x.ends)
 		if depth == 0 {
 			err = x.text(count)
 		} else {
@@ -314,17 +332,55 @@ func (x *lexer) skipContent(count func([]byte)) (end int64, err error) {
 		}
 		switch kind {
 		case '/':
+			isOwn := string(x.name) == own[:min(len(own), maxName)]
 			if depth == 0 {
+				if isOwn {
+					return at, nil
+				}
+				continue // a stray end tag
+			}
+			// The end tag of the element open innermost, as it should
+			// be; or of one further out, which closes those inside it;
+			// or of the element being skipped, which closes them all.
+			// Any other is dropped. The search is bounded, so that a
+			// file of stray end tags costs no more than its length.
+			found := -1
+			for i := depth - 1; i >= 0 && i >= depth-maxSearch; i-- {
+				from := 0
+				if i > 0 {
+					from = x.ends[i-1]
+				}
+				if string(x.open[from:x.ends[i]]) == string(x.name) {
+					found = i
+					break
+				}
+			}
+			switch {
+			case found >= 0:
+				x.ends = x.ends[:found]
+				if found > 0 {
+					x.open = x.open[:x.ends[found-1]]
+				} else {
+					x.open = x.open[:0]
+				}
+			case isOwn:
 				return at, nil
 			}
-			depth--
 		case '<':
 			if !x.lastSlash {
-				depth++
+				x.open = append(x.open, x.name...)
+				x.ends = append(x.ends, len(x.open))
 			}
 		}
 	}
 }
+
+// Bounds of skipping: the part of a name compared, and how far out an
+// end tag is looked for among the elements open.
+const (
+	maxName   = 1024
+	maxSearch = 256
+)
 
 // splitTag splits a tag, what is between "<" and ">", into its name and
 // attributes, with values decoded.
@@ -603,7 +659,7 @@ func (x *Index) read(opts Options) error {
 			if opts.Text != nil {
 				count = func(b []byte) { opts.Text(e, b) }
 			}
-			end, err := lx.skipContent(count)
+			end, err := lx.skipContent(qname, count)
 			sc.undeclare(mark)
 			if err != nil {
 				return damaged(err)

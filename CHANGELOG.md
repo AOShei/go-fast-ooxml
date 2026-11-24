@@ -16,6 +16,18 @@ minor version may change the API.
   `flat_opc`; `Source.Format` is `docx`, `xlsx` or `pptx`. Checked on
   every file of the corpus and the soak set written as Flat OPC (6,502
   files, the same document each).
+- **SpreadsheetML 2003** (Excel 2002 and 2003's "XML Spreadsheet", root
+  `Workbook`): `Source.Format` `spreadsheetml`, MIME
+  `application/vnd.ms-spreadsheetml`. Read into the same sheets as `.xlsx`
+  (number formats, including Excel's named ones; dates; cell types;
+  merged cells; hidden rows, columns and sheets; comments; links;
+  drop-down lists; defined names; R1C1 formulas given in A1 with
+  `Options.Cells`; document properties), and `File.Sheets` and
+  `File.Rows` work on it. Every corpus workbook written as SpreadsheetML
+  2003 shows the cells its `.xlsx` shows (1,776 workbooks).
+- **More encodings** are read in every format: ISO 8859-15, the Windows
+  code pages 1250 to 1258 and 874, Shift JIS, GBK, EUC-KR and Big5. Before,
+  a part declaring one was refused (`ErrEncoding`).
 - **XML that is not one of the formats read is refused with
   `ErrUnsupported`**, naming its root, where any input that was not a zip
   archive was `ErrMalformed`.

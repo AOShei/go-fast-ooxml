@@ -93,7 +93,42 @@ func (d *FlatDamage) Message() string {
 }
 
 // Flat reports whether the package is a Flat OPC package.
-func (p *Package) Flat() bool { return p.flat }
+func (p *Package) Flat() bool { return p.flat && !p.sections }
+
+// Section is a stretch of an XML file read as a part: an element of a
+// file in one of the formats saved as XML that have no package (Office
+// 2003's), with the namespaces declared around it.
+type Section struct {
+	Name, ContentType string
+	Off, N            int64
+	Bindings          []xmlscan.Binding
+}
+
+// NewSections returns a package whose parts are the given stretches of
+// src, read as an archive's are, within the budget of lim. It has no
+// relationships unless a section is named as a relationships part.
+func NewSections(src io.ReaderAt, lim Limits, sections []Section) *Package {
+	p := &Package{
+		flatParts: map[string]*flatPart{},
+		defaults:  map[string]string{},
+		overrides: map[string]string{},
+		flat:      true,
+		sections:  true,
+	}
+	p.budget.Store(lim.MaxDecodedBytes)
+	for _, s := range sections {
+		name := Canonical(s.Name)
+		if _, dup := p.flatParts[name]; dup {
+			continue
+		}
+		p.flatParts[name] = &flatPart{src: src, off: s.Off, n: s.N, outer: s.Bindings}
+		p.names = append(p.names, name)
+		if s.ContentType != "" {
+			p.overrides[name] = s.ContentType
+		}
+	}
+	return p
+}
 
 // FlatDamage returns where a Flat OPC package breaks off; nil for one read
 // to its end, and for a zip archive.
