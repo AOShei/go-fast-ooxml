@@ -12,24 +12,27 @@ import (
 // reader that delivers ordinary-sized chunks: at 4 MiB in at most 8 times
 // the time it takes at 1 MiB, where linear work is 4 times and quadratic
 // 16. The two are timed best of three, in turn, so a slow or busy machine
-// slows both alike; a full-size read under 20 ms passes whatever its
-// ratio, as times that short are mostly noise.
+// slows both alike; each time is of as many reads as take 25 ms, as a
+// clock can be coarse (on Windows a quarter-size read timed 0 or 5 ms);
+// a full-size read under 20 ms passes whatever its ratio, as times that
+// short are mostly noise.
 func TestWorstCaseInputsAreLinear(t *testing.T) {
 	const size = 4 << 20
 	full, quarter := worstCases(size), worstCases(size/4)
 	read := func(name, in, way string) time.Duration {
 		opts := &Options{Recover: strings.Contains(name, "recovery"), MaxTokenBytes: 2 * size}
-		s := NewBytes([]byte(in), opts)
-		if way == "reader" {
-			s = New(bytes.NewReader([]byte(in)), opts)
-		}
-		start := time.Now()
-		for s.Next() != EOF {
-			if s.Kind() == Start {
-				s.Attr(NoSpace, "x")
+		data := []byte(in)
+		return timed(func() {
+			s := NewBytes(data, opts)
+			if way == "reader" {
+				s = New(bytes.NewReader(data), opts)
 			}
-		}
-		return time.Since(start)
+			for s.Next() != EOF {
+				if s.Kind() == Start {
+					s.Attr(NoSpace, "x")
+				}
+			}
+		})
 	}
 	for name := range full {
 		for _, way := range []string{"bytes", "reader"} {
@@ -78,4 +81,15 @@ func worstCases(size int) map[string]string {
 		"mismatched end tags with recovery": strings.Repeat(`<a>`, 400) + strings.Repeat(`<b/></c>`, size/8),
 		"shadowed prefixes":                 strings.Repeat(`<p:a xmlns:p="urn:x" xmlns:q="urn:y">`, 400) + strings.Repeat(`<q:b p:x="1"/>`, size/14) + strings.Repeat(`</p:a>`, 400),
 	}
+}
+
+// timed returns the time f takes, as the mean of as many runs as take
+// 25 ms, so that a coarse clock does not decide it.
+func timed(f func()) time.Duration {
+	start, n := time.Now(), 0
+	for n == 0 || time.Since(start) < 25*time.Millisecond {
+		f()
+		n++
+	}
+	return time.Since(start) / time.Duration(n)
 }
