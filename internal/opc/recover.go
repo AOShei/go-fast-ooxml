@@ -110,7 +110,12 @@ scan:
 		default:
 			// The length follows the data. Where the data ends is found
 			// by decompressing it, which also gives the length and the
-			// checksum the descriptor would have given.
+			// checksum the descriptor would have given. compress/flate
+			// does this, as it takes no byte past the end of the data
+			// from a ByteReader; go-fast-core's inflate does not say
+			// where the data ended. Only a file cut short is read this
+			// way, and its members are then read through the directory
+			// made for them, with go-fast-core's decompressor.
 			src.reset(data, size)
 			sum := crc32.NewIEEE()
 			out := &counter{w: sum, left: budget}

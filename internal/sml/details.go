@@ -49,12 +49,15 @@ const (
 // formulaOf reads the formula of the cell at row, col (the f element
 // whose Start token is current) as Excel shows it, without "=".
 func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
-	typ, _ := s.Attr(xmlscan.NoSpace, "t")
+	// Told apart now: the text is read below, and a view of the scanner
+	// lasts only until the next token.
+	t, _ := s.Attr(xmlscan.NoSpace, "t")
+	isShared, isTable := string(t) == "shared", string(t) == "dataTable"
 	si, shared := intAttr(s, "si")
 	_, master := s.Attr(xmlscan.NoSpace, "ref")
 	var r1, r2 string
 	var twoD, rowInput bool
-	if string(typ) == "dataTable" {
+	if isTable {
 		if v, ok := s.Attr(xmlscan.NoSpace, "r1"); ok {
 			r1 = sh.lost.Label(string(v))
 		}
@@ -68,8 +71,8 @@ func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
 	}
 	sh.fbuf = s.AppendText(sh.fbuf[:0])
 	text := verbatim(sh.fbuf, &sh.lost)
-	switch string(typ) {
-	case "shared":
+	switch {
+	case isShared:
 		if !shared {
 			return text
 		}
@@ -88,7 +91,7 @@ func (sh *sheet) formulaOf(s *xmlscan.Scanner, row, col int32) string {
 			return formula.Shift(m.text, int(row-m.row), int(col-m.col))
 		}
 		return text
-	case "dataTable":
+	case isTable:
 		// A what-if table: Excel shows it as {=TABLE(row input, column
 		// input)}.
 		switch {

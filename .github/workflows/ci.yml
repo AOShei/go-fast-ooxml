@@ -49,26 +49,54 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: GOARCH=386 go test -short ./...
 
+      # A view the scanner gives (a name, text, an attribute's value)
+      # lasts until the next token. With the xmlscanpoison tag the bytes
+      # of every token passed are overwritten, so a reader that keeps a
+      # view too long reads '#' and its test fails, however the input
+      # arrived. See internal/xmlscan/poison.go.
+      - name: Test, scanner views overwritten
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -short -tags xmlscanpoison ./...
+
       # The allocation budgets are not measured under the race detector.
       - name: Allocation budgets
         run: go test -run 'TestAllocationBudgets' -v .
 
+      # Go's fuzzing engine sometimes ends a run with "context deadline
+      # exceeded" and no failing input, when its time runs out while a
+      # worker on a busy runner has not answered (FuzzFormula on main,
+      # 2026-11-23; FuzzEncryptionInfo, 2026-11-24). Such a run is tried
+      # once more. A run that writes a failing input fails at once.
       - name: Fuzz smoke
         if: matrix.os == 'ubuntu-latest'
         run: |
-          go test -run '^$' -fuzz '^FuzzOpen$' -fuzztime 30s .
-          go test -run '^$' -fuzz '^FuzzDocx$' -fuzztime 30s .
-          go test -run '^$' -fuzz '^FuzzXML$' -fuzztime 30s ./internal/xmlscan
-          go test -run '^$' -fuzz '^FuzzNumFmt$' -fuzztime 20s ./internal/numfmt
-          go test -run '^$' -fuzz '^FuzzXlsx$' -fuzztime 30s .
-          go test -run '^$' -fuzz '^FuzzXlsb$' -fuzztime 30s .
-          go test -run '^$' -fuzz '^FuzzXlsbLinksTablesPivots$' -fuzztime 30s .
-          go test -run '^$' -fuzz '^FuzzRecords$' -fuzztime 20s ./internal/xlsb
-          go test -run '^$' -fuzz '^FuzzFormula$' -fuzztime 20s ./internal/xlsb
-          go test -run '^$' -fuzz '^FuzzPptx$' -fuzztime 30s .
-          go test -run '^$' -fuzz '^FuzzCFB$' -fuzztime 20s ./internal/cfb
-          go test -run '^$' -fuzz '^FuzzRecover$' -fuzztime 20s ./internal/opc
-          go test -run '^$' -fuzz '^FuzzEncryptionInfo$' -fuzztime 20s ./internal/crypt
+          fuzz() {
+            for attempt in 1 2; do
+              if out=$(go test -run '^$' -fuzz "^$1\$" -fuzztime "$2" "$3" 2>&1); then
+                echo "$out" | tail -n 2
+                return 0
+              fi
+              echo "$out" | tail -n 30
+              if echo "$out" | grep -q 'Failing input written' || ! echo "$out" | grep -q 'context deadline exceeded'; then
+                return 1
+              fi
+              echo "::warning::$1: the fuzzing engine's time ran out with no failing input; trying once more"
+            done
+            return 1
+          }
+          fuzz FuzzOpen 30s .
+          fuzz FuzzDocx 30s .
+          fuzz FuzzXML 30s ./internal/xmlscan
+          fuzz FuzzNumFmt 20s ./internal/numfmt
+          fuzz FuzzXlsx 30s .
+          fuzz FuzzXlsb 30s .
+          fuzz FuzzXlsbLinksTablesPivots 30s .
+          fuzz FuzzRecords 20s ./internal/xlsb
+          fuzz FuzzFormula 20s ./internal/xlsb
+          fuzz FuzzPptx 30s .
+          fuzz FuzzCFB 20s ./internal/cfb
+          fuzz FuzzRecover 20s ./internal/opc
+          fuzz FuzzEncryptionInfo 20s ./internal/crypt
 
   dependencies:
     # The series rule: the standard library and go-fast modules only.

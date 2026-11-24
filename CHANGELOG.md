@@ -9,7 +9,29 @@ minor version may change the API.
 
 ### Changed
 
-- **Requires go-fast-core v0.1.4** (was v0.1.2). Its `Text` and
+- **Parts are inflated by go-fast-core's decompressor** (`inflate`,
+  go-fast-pdf's, moved to core), which takes about half the time of
+  `compress/flate` and gives the same bytes; `archive/zip` still checks
+  each part's CRC-32. Requires go-fast-core v0.1.5. On the batch
+  benchmark's 1,980 files, CPU time falls by 12 to 17% for each format,
+  with one worker and with 24; with one worker the mixed batch takes
+  3.46 s rather than 4.03. Each part being read holds its compressed
+  bytes (up to 32 MiB; a larger part is still inflated by
+  `compress/flate`), so peak memory rises with the parts read at once: by
+  6% on the mixed batch with one worker and 12% with 24, and from 204 to
+  250 MB for `large.xlsx` with all workers. Decompressing a large part
+  ahead of its reading gains less than it did: a document whose largest
+  body or sheet is 1 MiB or more is read 1.04 to 1.18 times as fast with
+  more than one worker (it was 1.16 to 1.26), and `File.Rows` on a large
+  sheet 1.36 times (it was 1.66).
+- A part damaged inside its compressed data now keeps up to 32 KiB more
+  of what was decompressed before the damage, as the new decompressor
+  hands its output over in smaller reads. In 7 of 6,615 corpus files,
+  all damaged, more text is kept, and where the damage is reported
+  inside the text the message names it as the decompressor or the
+  scanner now sees it: `inflate: the data ends early` in place of
+  `unexpected EOF`, or the malformed XML the extra bytes reach.
+- **go-fast-core v0.1.4** (was v0.1.2; v0.1.5 above). Its `Text` and
   `Markdown` allocate their result once: reading the 1,980 files of the
   batch benchmark allocates 2.65 GB rather than 3.15. The output is the
   same, as JSON, text and Markdown, over 6,615 corpus files.
@@ -19,6 +41,23 @@ minor version may change the API.
   cell's; and the cutter's scratch room is sized to the band, not to the
   widest sheet there can be. From go-fast-msbin, which shares the code.
   The output is the same.
+
+### Fixed
+
+- **Three readers kept a view of the scanner past the next token,** and
+  read whatever the window held by then, once the window had moved on:
+  - Word styles lost their identifier where `styles.xml` is larger than
+    64 KiB, and their headings became paragraphs (2 corpus files);
+  - a workbook's shared formulas were lost in large sheets (136
+    formulas in 3 corpus files);
+  - a newer chart (`chartex`) could take its category levels for
+    values.
+
+  The new decompressor's smaller reads made these show in small parts as
+  well. The tests now also run with the scanner overwriting the bytes of
+  every token it has passed (`-tags xmlscanpoison`, in CI), which fails
+  any reader that keeps a view too long; over the corpus, with and
+  without cell details, the output is then the same.
 
 ## [0.3.0] - 2026-11-23
 

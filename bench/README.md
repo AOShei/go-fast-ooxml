@@ -330,6 +330,29 @@ decompression budget is charged a chunk at a time as the scanner takes it,
 so that where the limit cuts a sheet does not depend on how far ahead the
 decompressing has got.
 
+**Since go-fast-core's decompressor** (after 0.3.0), which inflates
+about twice as fast as `compress/flate`, decompressing ahead hides less.
+Measured on 2026-11-24, best of five: `Rows` on the first sheet of
+`large.xlsx` takes 161 ms with one worker and 119 with more (1.36 times as
+fast; with `compress/flate` 214 and 129, 1.66). On the 162 Word and
+Excel files of the corpus, the soak set and the batch benchmark whose
+largest body or sheet is 1 MiB or more, each read in the library with two
+workers, read ahead and not, in turn, best of five (geometric mean of
+read ahead against not):
+
+| Largest body or sheet | Word files | Word | Excel files | Excel |
+|---|---|---|---|---|
+| 1 to 2 MiB | 42 | 1.06 | 36 | 1.06 |
+| 2 to 4 MiB | 17 | 1.12 | 26 | 1.09 |
+| 4 to 8 MiB | 4 | 1.11 | 22 | 1.10 |
+| 8 MiB and more | 7 | 1.16 | 8 | 1.10 |
+
+With 24 workers the gains are within 0.02 of these. Reading ahead from
+2, 4 or 8 MiB only gives up the gain of the sizes below; reading Word
+bodies not ahead gives up theirs (0.99 to 1.01). Each part read ahead
+allocates about 1 MiB more, for the chunks held ready. The figures below
+are those of 2026-11-20, with `compress/flate`.
+
 **A large part read ahead.** With more than one worker, a Word body or a
 sheet of 1 MiB or more (as the archive gives its size) is decompressed on
 a goroutine of its own, ahead of its reading, in `Extract` and `File` as

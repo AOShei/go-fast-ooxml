@@ -50,9 +50,13 @@ seconds with all workers, and 0.06, 0.58 and 0.05 with one.
 
 With more than one worker (`Options.Workers`, all the CPUs by default), a
 Word body or a sheet of 1 MiB or more is decompressed on a goroutine of its
-own, ahead of its reading: 1.16 to 1.26 times as fast for such a file, the
-larger the more. Under 1 MiB, where it would not pay, a part is read as
-before. The document is the same with any number of workers
+own, ahead of its reading. Since parts are inflated by go-fast-core's
+decompressor, about twice as fast as `compress/flate`, this gains less
+than it did: on 162 Word and Excel files whose largest body or sheet is
+1 MiB or more, a Word file is read 1.04 to 1.18 times as fast, the larger
+the more, and a workbook 1.06 to 1.11 times (it was 1.16 to 1.26); a sheet
+read through `File.Rows` 1.36 times (it was 1.66). Under 1 MiB a part is
+read as before. The document is the same with any number of workers
 ([`bench/README.md`](bench/README.md)).
 
 On the 788 real files of the corpus, which include damaged, encrypted and
@@ -215,7 +219,7 @@ pictures are left to `Part`. Bands follow the order of the rows in the
 file; a damaged file that gives its rows out of order has them sorted
 within a band, not across bands. With more than one worker
 (`Options.Workers`, all the CPUs by default) the sheet is decompressed on a
-goroutine of its own, ahead of the reading of its rows: about 1.6 times as
+goroutine of its own, ahead of the reading of its rows: about 1.4 times as
 fast, with the same bands.
 
 ## The command
