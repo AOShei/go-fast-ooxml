@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/numfmt"
+	"github.com/AOShei/go-fast-core/numfmt"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
 

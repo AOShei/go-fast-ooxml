@@ -255,13 +255,16 @@ form already, which is given as stored (LibreOffice displays it by its
 format); and a negative date serial, which Excel cannot show as a date and
 which is given as the number.
 
-The number formats themselves are held to a table: `testdata/numfmt/libreoffice.tsv`
-is what LibreOffice displays for 84 formats applied to 72 values, and
-`go test ./internal/numfmt` requires the engine to give the same for all
-6,048 pairs, apart from 204 where LibreOffice shows an error, 174 where the
-format displays nothing and the value is kept, and 23 very large or very
-small numbers in another notation. `TestNumberFormatTable` checks the table
-against LibreOffice itself.
+The number formats themselves are held to a table, which is go-fast-core's
+with the engine (`numfmt/testdata/libreoffice.tsv` there): what LibreOffice
+displays for 84 formats applied to 88 values. go-fast-core's tests require
+the engine to give the same for all 7,392 pairs, apart from 258 where the
+format displays nothing and the value is kept, 210 where LibreOffice shows
+an error, 31 very large or very small numbers in another notation, and 5
+numbers below 1e-307 under `@`, for which LibreOffice shows 0.
+`TestNumberFormatTable` here checks the table against LibreOffice itself,
+and `TestNumberFormatsThroughTheReader` reads the same formats and values
+from a workbook.
 
 ## Excel speed and memory
 

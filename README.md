@@ -516,11 +516,12 @@ message.
 
 **Cells are given as displayed.** A cell holding 1234.5 with the format
 `#,##0.00` is `1,234.50`; 0.125 as `0.0%` is `12.5%`. The number-format
-engine (`internal/numfmt`) handles sections for negative numbers, zero and
-text, conditions, thousands and scaling, percent, scientific and
+engine (go-fast-core's `numfmt`) handles sections for negative numbers,
+zero and text, conditions, thousands and scaling, percent, scientific and
 engineering notation, fractions, durations, currency and literal text. It
-agrees with LibreOffice on all 6,048 pairs of a table of formats and
-values, and on the cells of 446 real workbooks (see `bench/README.md`).
+agrees with LibreOffice on a table of 7,392 pairs of a format and a value,
+and on the cells of 446 real workbooks, apart from the differences
+`bench/README.md` lists.
 
 Four things are not as displayed, on purpose:
 
@@ -893,7 +894,6 @@ and shapes; attribute values of custom XML data.
 | `internal/xlsb` | The records of a binary workbook (`.xlsb`): splitting a part into records, reading their fields, and turning a compiled formula back into its text |
 | `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
 | `internal/crypt` | The two encryption schemes of Office: reading the encryption information, verifying a password or a private key for a certificate, decrypting the package as it is read |
-| `internal/numfmt` | Number formats: what a cell displays for the value it holds |
 | `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables, reading order, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
 | `internal/chart`, `internal/diagram` | Charts, of both kinds, as tables of their data; SmartArt diagrams, from their data model and the drawing Office made of them. Shared by the three readers |
@@ -909,7 +909,6 @@ and shapes; attribute values of custom XML data.
 | `testdata/encrypted`, `testdata/encrypted.json` | Fixtures encrypted by msoffcrypto-tool and by LibreOffice, with their passwords |
 | `testdata/fuzz` | The seed inputs of the fuzz tests |
 | `testdata/api.txt` | The exported declarations of the package; a test fails when they change |
-| `testdata/numfmt` | What LibreOffice displays for 6,048 pairs of a number format and a value: the table the number-format engine is held to |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 788 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |
 | `testdata/soak.py` | Fetches the soak set: 5,810 Office files from the test suites of thirteen other projects, at pinned commits. Not in the repository |
 | `bench` | Measurements: the comparison with the tools in use today, the soak run, the benchmarks; see `bench/README.md` |
