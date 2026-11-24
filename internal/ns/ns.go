@@ -46,6 +46,10 @@ const (
 	SS2003                                                 // ss: SpreadsheetML 2003, Excel's XML spreadsheet
 	Excel2003                                              // x: its Excel-specific elements
 	HTML40                                                 // html: rich text in SpreadsheetML 2003
+	Word2003                                               // w: WordprocessingML 2003, Word's XML document
+	WordAux                                                // wx: its auxiliary hints
+	AML                                                    // aml: its annotations (revisions, comments, bookmarks)
+	Word10                                                 // w10: Word's VML extensions
 )
 
 // Spaces is the table handed to every scanner.
@@ -99,6 +103,10 @@ var Spaces = map[string]xmlscan.Space{
 	"urn:schemas-microsoft-com:office:spreadsheet":                              SS2003,
 	"urn:schemas-microsoft-com:office:excel":                                    Excel2003,
 	"http://www.w3.org/TR/REC-html40":                                           HTML40,
+	"http://schemas.microsoft.com/office/word/2003/wordml":                      Word2003,
+	"http://schemas.microsoft.com/office/word/2003/auxHint":                     WordAux,
+	"http://schemas.microsoft.com/aml/2001/core":                                AML,
+	"urn:schemas-microsoft-com:office:word":                                     Word10,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part

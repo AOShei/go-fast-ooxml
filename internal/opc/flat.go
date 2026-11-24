@@ -1,6 +1,7 @@
 package opc
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -102,6 +103,10 @@ type Section struct {
 	Name, ContentType string
 	Off, N            int64
 	Bindings          []xmlscan.Binding
+	// Data, if set, is the part itself, made in memory (a part of the
+	// package an Office 2003 file is translated into), and Off and N are
+	// not used.
+	Data []byte
 }
 
 // NewSections returns a package whose parts are the given stretches of
@@ -121,7 +126,11 @@ func NewSections(src io.ReaderAt, lim Limits, sections []Section) *Package {
 		if _, dup := p.flatParts[name]; dup {
 			continue
 		}
-		p.flatParts[name] = &flatPart{src: src, off: s.Off, n: s.N, outer: s.Bindings}
+		part := &flatPart{src: src, off: s.Off, n: s.N, outer: s.Bindings}
+		if s.Data != nil {
+			part.src, part.off, part.n, part.outer = bytes.NewReader(s.Data), 0, int64(len(s.Data)), nil
+		}
+		p.flatParts[name] = part
 		p.names = append(p.names, name)
 		if s.ContentType != "" {
 			p.overrides[name] = s.ContentType
