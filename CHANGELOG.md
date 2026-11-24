@@ -9,6 +9,10 @@ minor version may change the API.
 
 ### Changed
 
+- **Requires go-fast-core v0.1.4** (was v0.1.2). Its `Text` and
+  `Markdown` allocate their result once: reading the 1,980 files of the
+  batch benchmark allocates 2.65 GB rather than 3.15. The output is the
+  same, as JSON, text and Markdown, over 6,615 corpus files.
 - Reading a workbook takes about 4% less time. A number is no longer
   written as the parts of a fraction unless its format is one; a sheet
   that keeps no formulas, types or links skips the look-up of each
