@@ -7,6 +7,19 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **Flat OPC**: a Word, Excel or PowerPoint package saved as one XML file
+  (root `pkg:package`; Word's "Word XML Document", PowerPoint's
+  "PowerPoint XML Presentation") is read as the package it stands for and
+  gives the same document, with `metadata.extra["packaging"]`
+  `flat_opc`; `Source.Format` is `docx`, `xlsx` or `pptx`. Checked on
+  every file of the corpus and the soak set written as Flat OPC (6,502
+  files, the same document each).
+- **XML that is not one of the formats read is refused with
+  `ErrUnsupported`**, naming its root, where any input that was not a zip
+  archive was `ErrMalformed`.
+
 ## [0.4.0] - 2026-11-24
 
 ### Changed

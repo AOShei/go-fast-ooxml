@@ -23,6 +23,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/sml"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/wml"
+	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
 )
 
 // File is a Word, Excel or PowerPoint file opened for reading a part at a
@@ -51,6 +52,7 @@ type File struct {
 	meta      gofastcore.Metadata
 	opened    []gofastcore.Warning // warnings about the document known when it was opened
 	decrypted bool                 // the file was encrypted, and unlock decrypted it
+	xml       xmlroot.Kind         // what the file is, if it is XML: a Flat OPC package, or not read
 	within    int64                // for a file embedded in a document: the bytes that document has left to decompress; 0 otherwise
 	parts     int
 	stored    int // the index of the stored part, or -1
@@ -175,6 +177,11 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 	if err := f.unlock(ctx); err != nil {
 		return nil, err
 	}
+	if !f.decrypted {
+		if err := f.detectXML(); err != nil {
+			return nil, err
+		}
+	}
 	sess, err := f.open(true)
 	if err != nil {
 		return nil, err
@@ -201,14 +208,24 @@ func (f *File) open(first bool) (*session, error) {
 	if f.within > 0 {
 		decoded = min(decoded, f.within)
 	}
-	pkg, err := opc.Open(f.body, f.bodySize, opc.Limits{MaxDecodedBytes: decoded, MaxMembers: members})
+	lim := opc.Limits{MaxDecodedBytes: decoded, MaxMembers: members}
+	var pkg *opc.Package
+	var err error
+	if f.xml == xmlroot.FlatOPC {
+		pkg, err = opc.OpenFlat(f.body, f.bodySize, lim)
+	} else {
+		pkg, err = opc.Open(f.body, f.bodySize, lim)
+	}
 	if err != nil {
 		return nil, wrap(err)
 	}
 	main, format, mime, err := pkg.Main()
 	if err != nil {
-		if pkg.Recovered() != nil {
+		switch d := pkg.FlatDamage(); {
+		case pkg.Recovered() != nil:
 			err = opc.ErrCutOff // the part that says what the file is was lost with its end
+		case d != nil:
+			err = fmt.Errorf("%w: %s", opc.ErrDamaged, d.Message())
 		}
 		return nil, wrap(err)
 	}
@@ -230,6 +247,17 @@ func (f *File) open(first bool) (*session, error) {
 		}
 		if rec := pkg.Recovered(); rec != nil {
 			warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired, rec.Message(clean.Label))
+		}
+		if d := pkg.FlatDamage(); d != nil {
+			warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired, clean.Label(d.Message()))
+		}
+		if pkg.Flat() {
+			// The same document as the archive would be, written as one
+			// XML file.
+			if f.meta.Extra == nil {
+				f.meta.Extra = map[string]string{}
+			}
+			f.meta.Extra["packaging"] = "flat_opc"
 		}
 		if n := pkg.Ambiguous(); n > 0 {
 			warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous,
@@ -269,7 +297,8 @@ func (f *File) Close() error {
 
 // Format returns the kind of file: "docx", "xlsx" or "pptx". A
 // macro-enabled file or a template is the format it is a variant of; a
-// binary workbook (.xlsb) is "xlsx".
+// binary workbook (.xlsb) is "xlsx"; a package written as one XML file
+// (Flat OPC) is the format of the package.
 func (f *File) Format() string { return f.source.Format }
 
 // Source returns what is known of where the document came from, as in

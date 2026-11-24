@@ -1,8 +1,9 @@
 # go-fast-ooxml
 
 Extracts Word, Excel and PowerPoint files (`.docx`, `.xlsx`, `.pptx`, their
-macro and template variants, and Excel's binary workbooks, `.xlsb`) into
-the shared go-fast document model,
+macro and template variants, Excel's binary workbooks, `.xlsb`, and any of
+these saved as one XML file, Flat OPC) into the shared go-fast document
+model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
@@ -266,6 +267,37 @@ reported on standard error and makes the exit status 1; the other inputs
 are still read. Unless `-quiet` is given, a line on standard error names
 the files that have a warning of severity error. Office
 files embedded in a document are extracted too, into its `children`.
+
+## Office files saved as XML
+
+Word and PowerPoint can save a document as one XML file in place of a zip
+archive ("Word XML Document", "PowerPoint XML Presentation"): Flat OPC,
+whose root is `pkg:package` in the namespace
+`http://schemas.microsoft.com/office/2006/xmlPackage`. Each part of the
+package is an element stating its name and content type, with its XML
+inline or its bytes in base64. Such a file is read as the package it
+stands for, by the same readers, and gives the same document: its
+`format` and `mime` are those of the package (`docx`, `xlsx` or `pptx`),
+and `metadata.extra["packaging"]` is `flat_opc`. Every file of the corpus
+and of the soak set written as Flat OPC gives the document the file
+gives (`TestFlatOPCReadsAsItsPackage`, 6,502 files; the others are refused,
+or read by a recovery path, as packages).
+
+A part's XML is read where it is in the file, with the namespaces
+declared around it; a binary part is decoded as it is read, and counts
+against `Limits.MaxDecodedBytes` as a decompressed part does. One pass
+over the file finds the parts, reading only the package's own elements
+and skipping over the parts' content, so a part whose XML is malformed
+fails as that part, as in an archive. A file cut short is read up to the
+last complete part, with an `input.repaired` warning saying where it
+breaks off. A file in UTF-16 or a single-byte encoding is converted to
+UTF-8 in memory first (Office writes UTF-8). A document type declaration
+is refused, as everywhere.
+
+The root element decides: XML of any other kind is refused with
+`ErrUnsupported`, its root named in the message, so that XML sent here by
+mistake is seen to be. Office's `<?mso-application?>` instruction is not
+needed, and not trusted.
 
 ## Encrypted files
 
@@ -722,7 +754,8 @@ and shapes; attribute values of custom XML data.
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for reading a part at a time |
 | `cmd/gofastooxml` | The command |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
-| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget. An archive that has lost its directory is read through go-fast-core's `ziprecover` |
+| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget. An archive that has lost its directory is read through go-fast-core's `ziprecover`. A package written as XML (Flat OPC) is read by the same interface |
+| `internal/xmlroot` | Telling the Office formats saved as XML by their root element |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook read into the same |
 | `internal/xlsb` | The records of a binary workbook (`.xlsb`): splitting a part into records, reading their fields, and turning a compiled formula back into its text |

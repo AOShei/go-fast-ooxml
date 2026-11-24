@@ -1,6 +1,7 @@
 // Package opc reads the container of an Office Open XML file: a zip
 // archive holding parts, a table of their content types, and relationship
-// parts that link them.
+// parts that link them; or the same package written as one XML document
+// (Flat OPC, flat.go).
 //
 // It is the only place the library touches the archive, so it is where the
 // limits on decompression are enforced.
@@ -13,6 +14,7 @@ import (
 	"hash/crc32"
 	"io"
 	"path"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -86,6 +88,10 @@ type Package struct {
 	recovered *ziprecover.Recovery // set if the directory was rebuilt from the members' headers
 	trailing  []byte               // what follows the end of the archive, up to maxTrailing
 	afterEnd  int64                // how many bytes follow it in all
+
+	flat       bool                 // a Flat OPC package: its parts are flatParts, not files
+	flatParts  map[string]*flatPart // by canonical part name
+	flatDamage *FlatDamage          // where a Flat OPC package breaks off
 
 	cutMu    sync.Mutex
 	cut      map[string]int64 // by relationships part: external targets cut to their bound
@@ -385,6 +391,10 @@ func unicodePath(f *zip.File) string {
 
 // Has reports whether the package has the named part.
 func (p *Package) Has(name string) bool {
+	if p.flat {
+		_, ok := p.flatParts[Canonical(name)]
+		return ok
+	}
 	_, ok := p.files[Canonical(name)]
 	return ok
 }
@@ -408,6 +418,13 @@ func (p *Package) Names() []string { return p.names }
 // Size returns the uncompressed size the archive declares for a part, or
 // -1 if there is no such part. A hostile archive can declare anything.
 func (p *Package) Size(name string) int64 {
+	if p.flat {
+		m, ok := p.flatParts[Canonical(name)]
+		if !ok {
+			return -1
+		}
+		return m.size()
+	}
 	f, ok := p.files[Canonical(name)]
 	if !ok {
 		return -1
@@ -480,6 +497,13 @@ func (p *Package) Open(name string) (io.ReadCloser, error) {
 
 // openRaw opens a member, decompressing it, without charging the budget.
 func (p *Package) openRaw(name string) (io.ReadCloser, error) {
+	if p.flat {
+		m, ok := p.flatParts[Canonical(name)]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
+		}
+		return m.open(), nil
+	}
 	f, ok := p.files[Canonical(name)]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
@@ -541,8 +565,9 @@ func (r released) Close() error {
 // scanner's default. A part of a kilobyte needs no 64 KiB window, and
 // most parts of a document are a few kilobytes. Text longer than the
 // window is handed over in pieces, so a part larger than it declares is
-// read as it is with any window.
+// read as it is with any window. It is Options as well.
 func (p *Package) Window(name string, opts *xmlscan.Options) *xmlscan.Options {
+	opts = p.Options(name, opts)
 	size := p.Size(name)
 	if size < 0 || size >= xmlscan.DefaultBufferSize || (opts != nil && opts.BufferSize > 0) {
 		return opts
@@ -552,6 +577,25 @@ func (p *Package) Window(name string, opts *xmlscan.Options) *xmlscan.Options {
 		o = *opts
 	}
 	o.BufferSize = int(size+1+4095) &^ 4095
+	return &o
+}
+
+// Options returns the options to scan a part with: opts, with the
+// namespaces declared around the part when it is the XML of a Flat OPC
+// package's part.
+func (p *Package) Options(name string, opts *xmlscan.Options) *xmlscan.Options {
+	if !p.flat {
+		return opts
+	}
+	m, ok := p.flatParts[Canonical(name)]
+	if !ok || len(m.outer)+len(m.own) == 0 {
+		return opts
+	}
+	var o xmlscan.Options
+	if opts != nil {
+		o = *opts
+	}
+	o.Bindings = slices.Concat(m.outer, m.own, o.Bindings)
 	return &o
 }
 

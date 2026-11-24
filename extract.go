@@ -191,11 +191,12 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 // The format is decided from the package itself, never from a file name.
 // An error wraps one of the gofastcore errors:
 //
-//   - ErrMalformed: not a zip archive, or a package too damaged to
-//     identify.
+//   - ErrMalformed: neither a zip archive nor XML, or a package too
+//     damaged to identify.
 //   - ErrUnsupported: a zip archive or package that is not a Word, Excel
-//     or PowerPoint file; a legacy binary Office file; a file encrypted
-//     in a way other than with a password or for a certificate.
+//     or PowerPoint file; XML that is not one of the Office formats saved
+//     as XML; a legacy binary Office file; a file encrypted in a way other
+//     than with a password or for a certificate.
 //   - ErrPasswordRequired, ErrWrongPassword: the file is encrypted, and
 //     Options.Password is empty or does not open it.
 //   - ErrKeyRequired: the file's key is also encrypted for certificates,
