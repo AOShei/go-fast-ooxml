@@ -1,12 +1,14 @@
 package opc
 
 import (
-	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
-	"math"
+	"strings"
 
+	"github.com/AOShei/go-fast-ooxml/internal/xmlindex"
+	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
@@ -98,34 +100,61 @@ func (p *Package) Flat() bool { return p.flat }
 func (p *Package) FlatDamage() *FlatDamage { return p.flatDamage }
 
 // OpenFlat reads a Flat OPC package: one pass over the file finds its
-// parts, which are then read as those of an archive are.
+// parts (xmlindex), which are then read as those of an archive are. A
+// part whose XML is malformed fails when it is read, alone, as in an
+// archive. A file cut short is read up to its last complete part.
 //
 // A file that is not UTF-8 (UTF-16, or a single-byte encoding its
 // declaration names) is converted whole, into memory, first: a part read
 // where it is must be in the encoding the scanner is given. Office writes
 // UTF-8.
 func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
-	src := r
-	if text, converted, err := xmlscan.UTF8(io.NewSectionReader(r, 0, size)); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrDamaged, err)
-	} else if converted {
-		// The budget for decompressed bytes is what bounds this copy; the
-		// file itself is bounded by the input limit already.
-		data, err := io.ReadAll(io.LimitReader(text, min(lim.MaxDecodedBytes, math.MaxInt64-1)+1))
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrDamaged, err)
-		}
-		if int64(len(data)) > lim.MaxDecodedBytes {
-			return nil, ErrBudget
-		}
-		// The declaration names the encoding the file was in; it is
-		// dropped, so that the copy is read as the UTF-8 it now is.
-		if bytes.HasPrefix(data, []byte("<?xml")) {
-			if i := bytes.Index(data, []byte("?>")); i >= 0 {
-				data = data[i+2:]
+	// What a binaryData element holds: base64 characters and padding.
+	type count struct{ chars, pad int64 }
+	counts := map[*xmlindex.Element]*count{}
+	opts := xmlindex.Options{
+		Descend: func(e *xmlindex.Element, depth int) bool {
+			return depth == 2 && e.Is(xmlroot.PackageNS, "part")
+		},
+		Text: func(e *xmlindex.Element, text []byte) {
+			if !e.Is(xmlroot.PackageNS, "binaryData") {
+				return
 			}
-		}
-		src, size = bytes.NewReader(data), int64(len(data))
+			c := counts[e]
+			if c == nil {
+				c = &count{}
+				counts[e] = c
+			}
+			for _, b := range text {
+				switch b {
+				case ' ', '\t', '\r', '\n':
+				case '=':
+					c.chars++
+					c.pad++
+				default:
+					c.chars++
+				}
+			}
+		},
+		MaxCopy: lim.MaxDecodedBytes,
+	}
+	if lim.MaxMembers > 0 {
+		// A part is two elements; a few more are allowed around them.
+		opts.MaxElements = 2*lim.MaxMembers + 1024
+	}
+	x, err := xmlindex.Read(r, size, opts)
+	switch {
+	case errors.Is(err, xmlindex.ErrTooLarge):
+		return nil, ErrBudget
+	case errors.Is(err, xmlindex.ErrTooMany):
+		return nil, fmt.Errorf("%w: more than %d", ErrTooManyParts, lim.MaxMembers)
+	case errors.Is(err, xmlindex.ErrNoRoot):
+		return nil, fmt.Errorf("%w: XML with no package in it", ErrDamaged)
+	case err != nil:
+		return nil, fmt.Errorf("%w: %v", ErrDamaged, err)
+	}
+	if !x.Root.Is(xmlroot.PackageNS, "package") {
+		return nil, fmt.Errorf("%w: XML whose root is %s", ErrNotPackage, x.Root.Name)
 	}
 	p := &Package{
 		flatParts: map[string]*flatPart{},
@@ -134,8 +163,62 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		flat:      true,
 	}
 	p.budget.Store(lim.MaxDecodedBytes)
-	if err := p.indexFlat(src, size, lim); err != nil {
-		return nil, err
+	attr := func(e *xmlindex.Element, local string) string {
+		if v, ok := e.Attr(xmlroot.PackageNS, local); ok {
+			return v
+		}
+		v, _ := e.Attr("", local)
+		return v
+	}
+	parts := 0
+	for _, part := range x.Root.Children {
+		if part.End == 0 || !part.Is(xmlroot.PackageNS, "part") {
+			continue // a part the file breaks off in is no part
+		}
+		name := attr(part, "name")
+		var data *xmlindex.Element
+		for _, d := range part.Children {
+			if d.End > 0 && (d.Is(xmlroot.PackageNS, "xmlData") || d.Is(xmlroot.PackageNS, "binaryData")) {
+				data = d
+				break
+			}
+		}
+		if data == nil || name == "" {
+			continue // a part with no data, or no name, is no part
+		}
+		m := &flatPart{src: x.Src, off: data.ContentStart, n: data.ContentEnd - data.ContentStart, base64: data.Local == "binaryData"}
+		if m.base64 {
+			if c := counts[data]; c != nil {
+				m.decoded = max(c.chars/4*3-c.pad, 0)
+			}
+		} else {
+			m.outer, m.own = data.Outer, data.Own
+		}
+		canon := Canonical(name)
+		if _, dup := p.flatParts[canon]; dup {
+			p.ambiguous++
+			continue
+		}
+		if parts++; lim.MaxMembers > 0 && parts > lim.MaxMembers {
+			return nil, fmt.Errorf("%w: more than %d", ErrTooManyParts, lim.MaxMembers)
+		}
+		p.flatParts[canon] = m
+		p.names = append(p.names, canon)
+		if shown := strings.TrimLeft(strings.ReplaceAll(name, "\\", "/"), "/"); shown != canon {
+			if p.written == nil {
+				p.written = map[string]string{}
+			}
+			p.written[canon] = shown
+		}
+		if ct := attr(part, "contentType"); ct != "" {
+			p.overrides[canon] = ct
+		}
+	}
+	if x.Damage != nil {
+		if parts == 0 {
+			return nil, fmt.Errorf("%w: %v", ErrDamaged, x.Damage)
+		}
+		p.flatDamage = &FlatDamage{At: x.At, Parts: parts, Err: x.Damage}
 	}
 	return p, nil
 }
