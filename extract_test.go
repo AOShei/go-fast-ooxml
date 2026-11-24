@@ -192,8 +192,15 @@ func TestExtractSurvivesDamagedProperties(t *testing.T) {
 	for name, inner := range cases {
 		data := withCore(inner)
 		// Each is read in the time of sound properties of its size: a
-		// description as long, which is read and cut to its limit.
+		// description as long, which is read and cut to its limit. The
+		// giant attribute, over the scanner's limit on a tag (16 MiB), in
+		// the time of a sound one just under it: an attribute is held
+		// whole where text is not, and on some machines (32-bit, on CI's
+		// runners) the memory costs far more than the reading.
 		sound := withCore(`<dc:title>Kept</dc:title><dc:description>` + strings.Repeat("v", len(inner)) + `</dc:description></cp:coreProperties>`)
+		if name == "giant attribute" {
+			sound = withCore(`<dc:title>Kept</dc:title><dc:subject x="` + strings.Repeat("v", 15<<20) + `">s</dc:subject></cp:coreProperties>`)
+		}
 		costsAtMost(t, 10, name,
 			func() { extract(t, sound, nil) },
 			func() { extract(t, data, nil) })
