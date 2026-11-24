@@ -229,13 +229,7 @@ func (f *File) open(first bool) (*session, error) {
 			warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, fmt.Sprintf("%d in document properties", meta.Removed))
 		}
 		if rec := pkg.Recovered(); rec != nil {
-			message := fmt.Sprintf("the archive's directory cannot be read: the file is cut short or damaged. %d members were found by their own headers", rec.Members)
-			if rec.Cut != "" {
-				message += "; the last, " + clean.Label(rec.Cut) + ", breaks off"
-			} else {
-				message += "; any that followed are lost"
-			}
-			warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired, message)
+			warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired, rec.Message(clean.Label))
 		}
 		if n := pkg.Ambiguous(); n > 0 {
 			warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous,

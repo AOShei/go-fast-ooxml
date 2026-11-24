@@ -95,7 +95,6 @@ jobs:
           fuzz FuzzFormula 20s ./internal/xlsb
           fuzz FuzzPptx 30s .
           fuzz FuzzCFB 20s ./internal/cfb
-          fuzz FuzzRecover 20s ./internal/opc
           fuzz FuzzEncryptionInfo 20s ./internal/crypt
 
   dependencies:

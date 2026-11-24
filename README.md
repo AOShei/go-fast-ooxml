@@ -137,7 +137,9 @@ with warnings that say what could not.
   inside its body gives the body up to there. The document carries
   `input.repaired`, which says how many members were found and which one
   breaks off. Where too little is left to tell what the file is, the
-  error is `ErrMalformed`.
+  error is `ErrMalformed`. The recovery is go-fast-core's `ziprecover`,
+  shared by every go-fast library that reads zip archives, so a cut file
+  is read the same way and reported in the same words in each.
 - **A document holds at most `Limits.MaxTextBytes` of text**, 256 MiB by
   default, counted as often as it occurs and together with the files
   embedded in it. A small file can say a long text many times (one string
@@ -720,7 +722,7 @@ and shapes; attribute values of custom XML data.
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for reading a part at a time |
 | `cmd/gofastooxml` | The command |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
-| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget; finding the members of an archive that has lost its directory |
+| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget. An archive that has lost its directory is read through go-fast-core's `ziprecover` |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook read into the same |
 | `internal/xlsb` | The records of a binary workbook (`.xlsb`): splitting a part into records, reading their fields, and turning a compiled formula back into its text |

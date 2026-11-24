@@ -24,6 +24,17 @@ minor version may change the API.
   body or sheet is 1 MiB or more is read 1.04 to 1.18 times as fast with
   more than one worker (it was 1.16 to 1.26), and `File.Rows` on a large
   sheet 1.36 times (it was 1.66).
+- **A file that has lost its archive's directory is read by go-fast-core's
+  `ziprecover`** (go-fast-core v0.1.6), this library's recovery moved to
+  core and shared by every go-fast library that reads zip archives, so
+  a cut file is read and reported (`input.repaired`, worded as before)
+  the same way in each. Over the 6,615 corpus files, each read whole and
+  cut at 13 places before its directory (92,610 reads), the output is the
+  same in 91,610; the other 1,000 are the two fixes below and 15 reads of
+  3 damaged files made by fuzzers, whose directory does not list the
+  member at the start of the file and which are now read by their
+  members' headers (one gives different damaged output, the others still
+  an error, with the cut-off message).
 - A part damaged inside its compressed data now keeps up to 32 KiB more
   of what was decompressed before the damage, as the new decompressor
   hands its output over in smaller reads. In 7 of 6,615 corpus files,
@@ -58,6 +69,16 @@ minor version may change the API.
   every token it has passed (`-tags xmlscanpoison`, in CI), which fails
   any reader that keeps a view too long; over the corpus, with and
   without cell details, the output is then the same.
+- **A file cut just after an archive stored uncompressed inside it** (a
+  workbook or presentation embedded in a document) was read as that
+  archive: its directory, at the end of what is left, was taken for the
+  file's own. It is now read as itself, by its members' headers. This was
+  979 of the 92,610 corpus reads above, nearly all a Word or PowerPoint
+  file that came out as the workbook in it.
+- **A member stored uncompressed whose sizes follow its data** no longer
+  stops the reading of a cut file there (Go's zip writer makes such
+  members; LibreOffice's `dd-stored.docx` is built of them): 6 cuts of
+  that file that were an error are now read.
 
 ## [0.3.0] - 2026-11-23
 
