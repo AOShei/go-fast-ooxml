@@ -68,6 +68,11 @@ func TestAgainstLibreOffice(t *testing.T) {
 			if general := string(AppendGeneral(nil, v)); got != general {
 				t.Errorf("%q of %v: blank, but kept as %q, not %q", code, v, got, general)
 			}
+		case code == "@" && want == "0" && v != 0 && math.Abs(v) < 1e-307:
+			// LibreOffice writes a number under @ in plain decimals,
+			// which run out below about 1e-307, and shows 0. Its General
+			// shows the number, as the engine does under both.
+			classes["@ of a number under 1e-307, 0 in LibreOffice"]++
 		case sameNumber(got, want) && (code == "General" || code == "@"):
 			// The same number in another notation: LibreOffice writes
 			// exponents with three digits and keeps sixteen-digit

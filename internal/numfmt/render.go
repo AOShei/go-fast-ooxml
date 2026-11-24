@@ -296,8 +296,11 @@ func (s *section) appendNumber(dst []byte, v float64, minus bool) []byte {
 	hasFraction := num != 0
 	intIndex, fracIndex, expIndex := 0, 0, 0
 	var numText, denText [20]byte
-	numDigits := strconv.AppendInt(numText[:0], num, 10)
-	denDigits := strconv.AppendInt(denText[:0], den, 10)
+	var numDigits, denDigits []byte
+	if s.numSlots+s.denSlots > 0 {
+		numDigits = strconv.AppendInt(numText[:0], num, 10)
+		denDigits = strconv.AppendInt(denText[:0], den, 10)
+	}
 	numIndex, denIndex := 0, 0
 	for _, t := range s.toks {
 		switch t.kind {

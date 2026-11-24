@@ -183,8 +183,11 @@ func (b *builder) cut(g group, out []group) (pieces []group, changed bool) {
 		}
 		width := int(hi - lo + 1)
 		if cap(b.occ) < width {
-			b.occ = make([]bool, maxCols)
-			b.ids = make([]int32, maxCols)
+			// Room for twice the band, not the widest sheet there is:
+			// most bands are a few columns wide.
+			room := min(max(2*width, 64), maxCols)
+			b.occ = make([]bool, room)
+			b.ids = make([]int32, room)
 		}
 		occ, ids := b.occ[:width], b.ids[:width]
 		clear(occ)
@@ -310,6 +313,9 @@ func (b *builder) table(g group, at *rect, headerRows int, name, role string) bo
 		id := int32(len(b.rects) + 1)
 		b.rects = append(b.rects, part)
 		var marks hiddenMarks
+		// A sheet with no formulas, types or links kept has no cell
+		// detail to look for.
+		detailed := len(b.sh.details) > 0 || b.sh.linkAt != nil || b.sh.links != nil
 		for ; next < n; next++ {
 			i := g.index(next)
 			c := &cells[i]
@@ -320,8 +326,10 @@ func (b *builder) table(g group, at *rect, headerRows int, name, role string) bo
 				continue
 			}
 			t.Rows[c.row-part.r0][c.col-part.c0] = c.text
-			if d, ok := b.sh.cellDetail(c, int(c.row-part.r0), int(c.col-part.c0)); ok {
-				t.Cells = append(t.Cells, d)
+			if detailed {
+				if d, ok := b.sh.cellDetail(c, int(c.row-part.r0), int(c.col-part.c0)); ok {
+					t.Cells = append(t.Cells, d)
+				}
 			}
 			if b.owner != nil {
 				b.owner[i] = id

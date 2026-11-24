@@ -34,6 +34,9 @@ var oracleValues = []float64{
 	// The fifteenth digit rounded from the binary value and from the
 	// shortest decimal differs for these.
 	664.5600532184905, 315.2080853201245, 535314.2866377655,
+	// Subnormal numbers, which have fewer than fifteen digits of their own,
+	// and a normal neighbour.
+	2.12199579096527e-314, 5.4323092248711e-312, 3.30035851421953e-321, 2.5e-308, -2.12199579096527e-314,
 	0.999, 0.9999999, 59.9999, 1.0 / 86400, 1.5, 4.5, -2.5, -0.005, 0.045, 0.995, 9.5, 99.5, 0.0005, 1e-300, 1e300, -1e15, 7.0 / 16, 1.0 / 7, 100, 1000, 1e6, 0.1, 0.01, 0.001,
 }
 
