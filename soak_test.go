@@ -161,7 +161,7 @@ func TestSoak(t *testing.T) {
 	}
 	root := filepath.Join(ooxmltest.Root(t), "testdata", "corpus")
 	extensions := map[string]bool{}
-	for _, e := range []string{"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm"} {
+	for _, e := range []string{"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm", "xml"} {
 		extensions["."+e] = true
 	}
 	var paths []string

@@ -4,7 +4,13 @@
 //
 //	gofastooxml [flags] file-or-directory...
 //
-// A directory stands for the Office files in it and below it. With one
+// A directory stands for the Office files in it and below it: those named
+// as the formats are (.docx, .xlsx, .pptx and their variants, .xlsb), and
+// the .xml files that are Office files saved as XML (Flat OPC,
+// WordprocessingML 2003, SpreadsheetML 2003), told by their root element;
+// other .xml files are passed over without a word. A file named on the
+// command line is read whatever its name, and one that is not an Office
+// file is refused. With one
 // input the JSON is indented; with several, each document is one line.
 // JSON is written a part at a time, as the parts are read, so that what
 // is held is about one part (a sheet, a slide, a Word document's body);
@@ -37,6 +43,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-ooxml"
+	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
 )
 
 func main() {
@@ -50,6 +57,21 @@ var extensions = map[string]bool{
 	".docx": true, ".docm": true, ".dotx": true, ".dotm": true,
 	".xlsx": true, ".xlsm": true, ".xltx": true, ".xltm": true, ".xlsb": true,
 	".pptx": true, ".pptm": true, ".ppsx": true, ".ppsm": true, ".potx": true, ".potm": true,
+}
+
+// officeXML reports whether the .xml file at path is an Office file saved
+// as XML, by its root element. One that cannot be read is not.
+func officeXML(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	switch kind, _ := xmlroot.Detect(f); kind {
+	case xmlroot.FlatOPC, xmlroot.WordML, xmlroot.SpreadsheetML:
+		return true
+	}
+	return false
 }
 
 // keysFlag is -key: each use reads the private keys in a file.
@@ -243,7 +265,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				return nil
 			}
 			// Office keeps a lock file named "~$..." beside an open file.
-			if !d.IsDir() && extensions[strings.ToLower(filepath.Ext(path))] && !strings.HasPrefix(d.Name(), "~$") {
+			if d.IsDir() || strings.HasPrefix(d.Name(), "~$") {
+				return nil
+			}
+			switch ext := strings.ToLower(filepath.Ext(path)); {
+			case extensions[ext]:
+				found = append(found, path)
+			case ext == ".xml" && officeXML(path):
 				found = append(found, path)
 			}
 			return nil

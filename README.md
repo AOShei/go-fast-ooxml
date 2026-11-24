@@ -65,7 +65,7 @@ On the 788 real files of the corpus, which include damaged, encrypted and
 hostile ones, this library reads 773 and refuses 15 with a reason: seven
 need a password, four are archives too damaged to read, and the rest are
 other formats, a legacy `.xls`, a document type declaration and a cipher
-other than AES. None makes it crash or hang. The same holds for 5,810 more
+other than AES. None makes it crash or hang. The same holds for 5,852 more
 from other projects' test suites ([`bench/README.md`](bench/README.md)).
 
 ### A batch of files in one process
@@ -236,6 +236,13 @@ gofastooxml -format markdown deck.pptx       # or markdown, or text
 gofastooxml -format text -exclude-display contract.docx
 gofastooxml ./archive > documents.jsonl      # every Office file under a directory
 ```
+
+A directory stands for the Office files in it and below it: those named as
+the formats are (`.docx`, `.xlsx`, `.pptx`, their variants, `.xlsb`), and
+the `.xml` files that are Office files saved as XML, told by their root
+element; other `.xml` files are passed over without a word. A file named
+on the command line is read whatever its name, and refused, with the
+exit status 1, if it is not an Office file.
 
 JSON is written a part at a time, a sheet or a slide as soon as it is
 read, and within a part a block at a time and a table a row at a time, so
