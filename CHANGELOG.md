@@ -7,11 +7,13 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-24
+
 ### Changed
 
 - The number-format engine and its table of what LibreOffice displays are
-  go-fast-core's (package `numfmt`), which go-fast-msbin shares; go-fast-core
-  v0.1.7 is required. The engine is the same: no cell changes.
+  go-fast-core's (package `numfmt`); go-fast-core v0.1.7 is required. The
+  engine is the same: no cell changes.
 
 ## [0.5.0] - 2026-11-24
 
@@ -441,7 +443,8 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.1
 [0.5.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.0
 [0.4.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.4.0
 [0.3.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.3.0
