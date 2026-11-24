@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-24
+
 ### Added
 
 - **Flat OPC**: a Word, Excel or PowerPoint package saved as one XML file
@@ -34,9 +36,16 @@ minor version may change the API.
 - **More encodings** are read in every format: ISO 8859-15, the Windows
   code pages 1250 to 1258 and 874, Shift JIS, GBK, EUC-KR and Big5. Before,
   a part declaring one was refused (`ErrEncoding`).
+- `Extractor.Formats` lists `spreadsheetml` and `wordml`.
+- The command reads the `.xml` files of a directory that are Office files
+  saved as XML, told by their root element, and passes over the others.
+
+### Changed
+
 - **XML that is not one of the formats read is refused with
   `ErrUnsupported`**, naming its root, where any input that was not a zip
-  archive was `ErrMalformed`.
+  archive was `ErrMalformed`. Input that is neither a zip archive nor XML
+  is `ErrMalformed` as before.
 
 ## [0.4.0] - 2026-11-24
 
@@ -426,7 +435,8 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.0
 [0.4.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.4.0
 [0.3.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.2.0
