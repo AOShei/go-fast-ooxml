@@ -108,28 +108,45 @@ with the environment (`GOGC=200`) or `debug.SetGCPercent`.
 
 ## Where the time goes
 
-A CPU profile of each batch with one worker shows:
+CPU profiles of each batch with one worker, five runs merged, of 0.3.0
+and of this library now, which inflates with go-fast-core's decompressor:
 
-| | Word | Excel |
-|---|---|---|
-| Inflating the parts and checking their CRC (`compress/flate`, `hash/crc32`) | 31% | 27% |
-| Scanning the XML (`internal/xmlscan`, without the inflating it calls) | 28% | 28% |
-| Allocating and collecting | 12% | 13% |
-| The rest: the readers, building the document, writing the text | 29% | 32% |
+| | Word, 0.3.0 | Word, now | Excel, 0.3.0 | Excel, now |
+|---|---|---|---|---|
+| Inflating the parts and checking their CRC | 2.91 s (32%) | 1.61 s (21%) | 3.03 s (24%) | 1.51 s (13%) |
+| Scanning the XML (`internal/xmlscan`, without the inflating it calls) | 3.10 s (35%) | 2.99 s (40%) | 4.20 s (33%) | 4.13 s (37%) |
+| All | 8.97 s | 7.56 s | 12.78 s | 11.30 s |
 
 **Inflating.** This library depends only on the standard library and the
-go-fast modules. An experiment outside it measured what a faster
-decompressor would give. Every deflated part of the batch was inflated from
-memory, on one core, best of 7:
+go-fast modules. Until 0.3.0 it inflated with `compress/flate`. An
+experiment outside it then measured what a faster decompressor would
+give. Every deflated part of the batch was inflated from memory, on one
+core, best of 7:
 
 | Decompressor | Word parts (797 MB) | Excel parts (485 MB) |
 |---|---|---|
-| `compress/flate` (standard library) | 712 MB/s | 683 MB/s |
-| klauspost/compress | 905 MB/s (79% of the time) | 879 MB/s (78%) |
-| C zlib 1.3.2 | 978 MB/s (73%) | 1,122 MB/s (61%) |
+| `compress/flate` (standard library) | 823 MB/s | 797 MB/s |
+| klauspost/compress | 1,039 MB/s | 1,029 MB/s |
+| C zlib 1.3.2 | 1,056 MB/s | 1,194 MB/s |
+| go-fast-pdf's decompressor | 1,453 MB/s | 1,439 MB/s |
 
-Inflating as fast as klauspost/compress would take about 6% off the CPU
-time of reading Word or Excel, and as fast as C zlib 8 to 10%.
+go-fast-pdf's decompressor, written with the standard library only, has
+since moved to go-fast-core (`inflate`), and this library uses it for
+every deflated part, through `archive/zip`, which still checks each part's
+CRC-32. Against 0.3.0, measured together, best wall time and median CPU
+time of five runs:
+
+| Batch | One worker | 24 workers |
+|---|---|---|
+| All 1,980 files | 4.03 → 3.46 s; CPU −12%; peak 101 → 107 MB | 0.52 → 0.48 s; CPU −13%; peak 274 → 309 MB |
+| Word | 1.65 → 1.37 s; CPU −14% | 0.26 → 0.23 s; CPU −14% |
+| Excel | 2.23 → 1.92 s; CPU −12% | 0.35 → 0.32 s; CPU −13% |
+| PowerPoint | 0.12 → 0.10 s; CPU −17% | 0.03 s; CPU −14% |
+
+Each part being read holds its compressed bytes in memory, so peak memory
+rises with the parts read at once: by 6% on the mixed batch with one
+worker, 12% with 24. The tables above were made with 0.3.0 and are kept as
+they were, as the other tools were measured in the same minutes.
 
 **Scanning.** `BenchmarkReal` in `internal/xmlscan` scans the XML parts of
 the batch, with the file of parts named by `XMLSCAN_PARTS` (4-byte length,

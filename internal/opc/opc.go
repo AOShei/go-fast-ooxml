@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/AOShei/go-fast-core/inflate"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -165,6 +166,10 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 	if lim.MaxMembers > 0 && len(zr.File) > lim.MaxMembers {
 		return nil, fmt.Errorf("%w: %d, limit %d", ErrTooManyParts, len(zr.File), lim.MaxMembers)
 	}
+	// Deflated parts are inflated by go-fast-core's decompressor, which
+	// takes about half the time of compress/flate and gives the same
+	// bytes. archive/zip still checks each part's CRC-32.
+	zr.RegisterDecompressor(zip.Deflate, inflate.Decompressor)
 	p := &Package{
 		files:     make(map[string]*zip.File, len(zr.File)),
 		names:     make([]string, 0, len(zr.File)),

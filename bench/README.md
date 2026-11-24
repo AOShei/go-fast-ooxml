@@ -330,6 +330,16 @@ decompression budget is charged a chunk at a time as the scanner takes it,
 so that where the limit cuts a sheet does not depend on how far ahead the
 decompressing has got.
 
+**Since go-fast-core's decompressor** (after 0.3.0), which inflates
+about twice as fast as `compress/flate`, decompressing ahead hides less.
+Measured on 2026-11-24, best of five: `Rows` on the first sheet of
+`large.xlsx` takes 161 ms with one worker and 119 with more (1.36 times as
+fast; with `compress/flate` 214 and 129, 1.66). On the 11 Word files of
+the corpus with a body of 1 MiB or more, the command with two workers is
+1.01 times as fast as with one (1.11 with `compress/flate`; geometric
+mean, best of seven, the whole run of the command). The figures below are
+those of 2026-11-20.
+
 **A large part read ahead.** With more than one worker, a Word body or a
 sheet of 1 MiB or more (as the archive gives its size) is decompressed on
 a goroutine of its own, ahead of its reading, in `Extract` and `File` as
