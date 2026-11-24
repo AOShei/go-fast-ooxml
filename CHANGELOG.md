@@ -20,9 +20,10 @@ minor version may change the API.
   `compress/flate`), so peak memory rises with the parts read at once: by
   6% on the mixed batch with one worker and 12% with 24, and from 204 to
   250 MB for `large.xlsx` with all workers. Decompressing a large part
-  ahead of its reading gains less than it did: `File.Rows` on a large
-  sheet is 1.36 times as fast with more than one worker (it was 1.66), a
-  large Word body about as fast as with one.
+  ahead of its reading gains less than it did: a document whose largest
+  body or sheet is 1 MiB or more is read 1.04 to 1.18 times as fast with
+  more than one worker (it was 1.16 to 1.26), and `File.Rows` on a large
+  sheet 1.36 times (it was 1.66).
 - A part damaged inside its compressed data now keeps up to 32 KiB more
   of what was decompressed before the damage, as the new decompressor
   hands its output over in smaller reads. In 7 of 6,615 corpus files,

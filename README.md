@@ -51,11 +51,12 @@ seconds with all workers, and 0.06, 0.58 and 0.05 with one.
 With more than one worker (`Options.Workers`, all the CPUs by default), a
 Word body or a sheet of 1 MiB or more is decompressed on a goroutine of its
 own, ahead of its reading. Since parts are inflated by go-fast-core's
-decompressor, about twice as fast as `compress/flate`, this gains less: a
-sheet read through `File.Rows` is 1.36 times as fast (it was 1.66), and on
-the 11 Word files of the corpus with a body of 1 MiB or more, two workers
-take about as long as one (1.01 times as fast; it was 1.11). Under 1 MiB a
-part is read as before. The document is the same with any number of workers
+decompressor, about twice as fast as `compress/flate`, this gains less
+than it did: on 162 Word and Excel files whose largest body or sheet is
+1 MiB or more, a Word file is read 1.04 to 1.18 times as fast, the larger
+the more, and a workbook 1.06 to 1.11 times (it was 1.16 to 1.26); a sheet
+read through `File.Rows` 1.36 times (it was 1.66). Under 1 MiB a part is
+read as before. The document is the same with any number of workers
 ([`bench/README.md`](bench/README.md)).
 
 On the 788 real files of the corpus, which include damaged, encrypted and
