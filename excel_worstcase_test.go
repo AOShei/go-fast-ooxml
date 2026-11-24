@@ -61,34 +61,52 @@ func TestExcelWorstCaseStaircase(t *testing.T) {
 }
 
 // Many small tables, and as many hidden columns as a sheet can have: each
-// table looks up the hidden columns that cross it, not all of them.
+// table looks up the hidden columns that cross it, not all of them. At an
+// eighth of the size (an eighth of the tables, an eighth of the hidden
+// columns) the work is an eighth if each table looks up only its own
+// columns, and a sixty-fourth if it looks up all of them. Measured, the
+// full workbook takes 11 to 12 times as long as the eighth, and 30 to 31
+// times with every table looking up every hidden column.
+// (The test this replaces gave the workbook 20 seconds, which caught only
+// a hang: with every hidden column looked up it is read in 0.14 s.)
 func TestExcelWorstCaseHiddenColumns(t *testing.T) {
-	var cols, rows strings.Builder
-	cols.WriteString(`<cols>`)
-	for c := 1; c <= 16384; c += 2 {
-		fmt.Fprintf(&cols, `<col min="%d" max="%d" hidden="1"/>`, c, c)
+	// workbook gives one with rows*200 cells, none next to another, so as
+	// many tables, under every other column of the first span columns
+	// hidden.
+	workbook := func(rows, span int) []byte {
+		var cols, data strings.Builder
+		cols.WriteString(`<cols>`)
+		for c := 1; c <= span; c += 2 {
+			fmt.Fprintf(&cols, `<col min="%d" max="%d" hidden="1"/>`, c, c)
+		}
+		cols.WriteString(`</cols>`)
+		for r := 1; r <= rows; r++ {
+			cells := make([]string, 0, 200)
+			for c := 0; c < 400; c += 2 {
+				cells = append(cells, xlNum(colName(c+(r%2)*40)+strconv.Itoa(2*r), "1"))
+			}
+			data.WriteString(xlRow(2*r, cells...))
+		}
+		return ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: data.String(), Extra: cols.String()}).Bytes()
 	}
-	cols.WriteString(`</cols>`)
-	// Sixty thousand cells, none next to another: sixty thousand tables.
-	for r := 1; r <= 300; r++ {
-		cells := make([]string, 0, 200)
-		for c := 0; c < 400; c += 2 {
-			cells = append(cells, xlNum(colName(c+(r%2)*40)+strconv.Itoa(2*r), "1"))
+	full, eighth := workbook(320, 16384), workbook(40, 2048)
+	read := func(data []byte, tables int) func() {
+		return func() {
+			// Run on the goroutine costsAtMost times it on: Errorf, not Fatalf.
+			doc, err := extract(t, data, nil)
+			if err != nil {
+				t.Error(err)
+			} else if n := len(doc.Parts[0].Blocks); n != tables {
+				t.Errorf("%d blocks, want %d", n, tables)
+			}
 		}
-		rows.WriteString(xlRow(2*r, cells...))
 	}
-	data := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "S", Data: rows.String(), Extra: cols.String()}).Bytes()
-	within(t, 20*time.Second, "many tables under many hidden columns", func() {
-		doc, err := extract(t, data, nil)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		ooxmltest.CheckDocument(t, doc)
-		if n := len(doc.Parts[0].Blocks); n != 60000 {
-			t.Errorf("%d blocks", n)
-		}
-	})
+	doc, err := extract(t, full, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ooxmltest.CheckDocument(t, doc)
+	costsAtMost(t, 18, "many tables under many hidden columns", read(eighth, 8000), read(full, 64000))
 }
 
 // Thousands of tables declared over the same cells. Real tables do not
