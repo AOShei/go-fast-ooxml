@@ -86,6 +86,7 @@ func worstCases(size int) map[string]string {
 // timed returns the time f takes, as the mean of as many runs as take
 // 25 ms, so that a coarse clock does not decide it.
 func timed(f func()) time.Duration {
+	f() // untimed, so that each side's memory is as warm as the other's
 	start, n := time.Now(), 0
 	for n == 0 || time.Since(start) < 25*time.Millisecond {
 		f()
