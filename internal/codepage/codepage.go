@@ -120,3 +120,35 @@ func Decode(cp int, b []byte) (s string, undecoded int) {
 	}
 	return sb.String(), undecoded
 }
+
+// Lead reports whether c is a lead byte of the double-byte code page cp:
+// the first of a pair that is one character.
+func Lead(cp int, c byte) bool {
+	d := doubles[cp]
+	return d != nil && c >= 0x80 && d.runs[c].n > 0
+}
+
+// byName maps the names XML declarations give code pages to their
+// numbers, in lower case.
+var byName = map[string]int{
+	"windows-874": 874, "cp874": 874, "tis-620": 874,
+	"shift_jis": 932, "shift-jis": 932, "sjis": 932, "x-sjis": 932, "ms932": 932, "windows-31j": 932, "cp932": 932,
+	"gbk": 936, "gb2312": 936, "cp936": 936, "x-gbk": 936, "windows-936": 936,
+	"euc-kr": 949, "ks_c_5601-1987": 949, "cp949": 949, "windows-949": 949,
+	"big5": 950, "cp950": 950, "windows-950": 950,
+	"macintosh": 10000, "x-mac-roman": 10000, "mac": 10000,
+}
+
+// ByName returns the code page an XML declaration names, if this package
+// decodes it: windows-1250 to windows-1258 (also as cp1250), windows-874,
+// Shift JIS, GBK, EUC-KR (as code page 949), Big5 and Mac Roman.
+func ByName(name string) (int, bool) {
+	name = strings.ToLower(name)
+	for _, prefix := range []string{"windows-", "cp", "x-cp"} {
+		if rest, ok := strings.CutPrefix(name, prefix); ok && len(rest) == 4 && rest >= "1250" && rest <= "1258" {
+			return int(rest[3]-'0') + 1250, true
+		}
+	}
+	cp, ok := byName[name]
+	return cp, ok
+}

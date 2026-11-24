@@ -6,6 +6,8 @@ import (
 	"io"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/AOShei/go-fast-ooxml/internal/codepage"
 )
 
 // sniff looks at the first bytes of the input, skips a byte order mark and
@@ -73,7 +75,15 @@ func (s *Scanner) sniff() {
 		s.convert(func(src io.Reader) io.Reader { return &singleByteReader{src: src} })
 	case is("windows-1252", "cp1252", "cp-1252"):
 		s.convert(func(src io.Reader) io.Reader { return &singleByteReader{src: src, cp1252: true} })
+	case is("iso-8859-15", "latin-9", "latin9", "l9"):
+		s.convert(func(src io.Reader) io.Reader { return &singleByteReader{src: src, latin9: true} })
 	default:
+		// The other code pages of Windows, which programs other than
+		// Office write their XML in.
+		if cp, ok := codepage.ByName(string(enc)); ok {
+			s.convert(func(src io.Reader) io.Reader { return &codePageReader{src: src, cp: cp} })
+			return
+		}
 		s.fail(fmt.Errorf("%w: %q", ErrEncoding, enc))
 	}
 }
@@ -197,10 +207,62 @@ func (u *utf16Reader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// latin9 holds the characters of ISO 8859-15 where it differs from ISO
+// 8859-1.
+var latin9 = [256]rune{0xA4: 0x20AC, 0xA6: 0x0160, 0xA8: 0x0161, 0xB4: 0x017D, 0xB8: 0x017E, 0xBC: 0x0152, 0xBD: 0x0153, 0xBE: 0x0178}
+
+// codePageReader converts text in a Windows code page to UTF-8. A lead
+// byte of a double-byte code page that ends a read waits for its trail
+// byte in the next.
+type codePageReader struct {
+	src   io.Reader
+	cp    int
+	in    [4096]byte
+	carry int // bytes of in kept from the read before
+	out   []byte
+	off   int
+	err   error
+}
+
+func (c *codePageReader) Read(p []byte) (int, error) {
+	for c.off == len(c.out) {
+		if c.err != nil {
+			return 0, c.err
+		}
+		c.out, c.off = c.out[:0], 0
+		n, err := c.src.Read(c.in[c.carry:])
+		n += c.carry
+		// Where the last character begins: a lead byte at the end waits
+		// for its trail, unless the input has ended.
+		end := n
+		for i := 0; i < n; i++ {
+			if codepage.Lead(c.cp, c.in[i]) {
+				if i+1 == n && err == nil {
+					end = i
+					break
+				}
+				i++
+			}
+		}
+		text, _ := codepage.Decode(c.cp, c.in[:end])
+		c.out = append(c.out, text...)
+		c.carry = copy(c.in[:], c.in[end:n])
+		if err != nil {
+			c.err = err
+		} else if n == c.carry && n > 0 && len(c.out) == 0 {
+			return 0, nil // no progress; let the caller decide
+		}
+	}
+	n := copy(p, c.out[c.off:])
+	c.off += n
+	return n, nil
+}
+
 // singleByteReader converts ISO 8859-1, or Windows-1252, to UTF-8.
 type singleByteReader struct {
 	src    io.Reader
 	cp1252 bool
+	latin9 bool // ISO 8859-15: ISO 8859-1 with eight characters replaced
 	in     [4096]byte
 	out    []byte
 	off    int
@@ -228,6 +290,8 @@ func (l *singleByteReader) Read(p []byte) (int, error) {
 				l.out = append(l.out, c)
 			case l.cp1252 && c < 0xA0:
 				l.out = utf8.AppendRune(l.out, cp1252High[c-0x80])
+			case l.latin9 && latin9[c] != 0:
+				l.out = utf8.AppendRune(l.out, latin9[c])
 			default:
 				l.out = utf8.AppendRune(l.out, rune(c))
 			}

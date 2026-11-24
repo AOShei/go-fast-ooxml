@@ -158,7 +158,7 @@ var _ gofastcore.Extractor = (*Extractor)(nil)
 // gofastcore.Source.Format. Macro-enabled files and templates are reported
 // as the format they are a variant of, and a binary workbook (.xlsb) as
 // "xlsx".
-func (e *Extractor) Formats() []string { return []string{"docx", "xlsx", "pptx"} }
+func (e *Extractor) Formats() []string { return []string{"docx", "xlsx", "pptx", formatSpreadsheetML} }
 
 // Extract reads a Word, Excel or PowerPoint file with default settings. It
 // is (&Extractor{}).Extract.

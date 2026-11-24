@@ -47,6 +47,8 @@ type workbook struct {
 	date1904 bool
 	persons  map[string]string // authors of threaded comments, by id
 	formulas *xlsb.Book        // what the formulas of a binary workbook refer to; nil for XML
+	ss       bool              // a SpreadsheetML 2003 workbook (ss2003.go)
+	ssStyles map[string]int    // its styles' numbers, by their IDs
 
 	cells atomic.Int64 // cells that may still be kept
 

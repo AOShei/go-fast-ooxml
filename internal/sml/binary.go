@@ -68,7 +68,7 @@ func plainText(dst, raw []byte) ([]byte, int) {
 
 // textOf is cellText or plainText, as the sheet is XML or records.
 func (sh *sheet) textOf(dst, raw []byte) ([]byte, int) {
-	if sh.bin {
+	if sh.bin || sh.wb.ss {
 		return plainText(dst, raw)
 	}
 	return cellText(dst, raw)
@@ -1001,7 +1001,11 @@ func (sh *sheet) readOwn(chunks bool) (opened bool, err error) {
 	} else {
 		sh.s.Reset(rc, pkg.Window(sh.name, scanOptions))
 	}
-	sh.read()
+	if sh.wb.ss {
+		sh.readSS()
+	} else {
+		sh.read()
+	}
 	return true, sh.s.Err()
 }
 

@@ -43,9 +43,9 @@ func CheckDocument(t testing.TB, doc *gofastcore.Document) {
 	}
 
 	switch doc.Source.Format {
-	case "docx", "xlsx", "pptx":
+	case "docx", "xlsx", "pptx", "spreadsheetml", "wordml":
 	default:
-		t.Errorf("source.format %q is not one of docx, xlsx, pptx", doc.Source.Format)
+		t.Errorf("source.format %q is not one of docx, xlsx, pptx, spreadsheetml, wordml", doc.Source.Format)
 	}
 
 	for i := range doc.Parts {

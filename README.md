@@ -1,9 +1,9 @@
 # go-fast-ooxml
 
 Extracts Word, Excel and PowerPoint files (`.docx`, `.xlsx`, `.pptx`, their
-macro and template variants, Excel's binary workbooks, `.xlsb`, and any of
-these saved as one XML file, Flat OPC) into the shared go-fast document
-model,
+macro and template variants, Excel's binary workbooks, `.xlsb`, any of
+these saved as one XML file, Flat OPC, and Excel 2003's XML spreadsheets,
+SpreadsheetML 2003) into the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
@@ -270,6 +270,8 @@ files embedded in a document are extracted too, into its `children`.
 
 ## Office files saved as XML
 
+### Flat OPC
+
 Word and PowerPoint can save a document as one XML file in place of a zip
 archive ("Word XML Document", "PowerPoint XML Presentation"): Flat OPC,
 whose root is `pkg:package` in the namespace
@@ -293,6 +295,67 @@ last complete part, with an `input.repaired` warning saying where it
 breaks off. A file in UTF-16 or a single-byte encoding is converted to
 UTF-8 in memory first (Office writes UTF-8). A document type declaration
 is refused, as everywhere.
+
+### SpreadsheetML 2003
+
+Excel 2002 and 2003 saved workbooks as "XML Spreadsheet 2003": one XML
+file whose root is `Workbook` in the namespace
+`urn:schemas-microsoft-com:office:spreadsheet`. It is a schema of its own,
+older than `.xlsx`, but what it says of cells is what `.xlsx` says, and it
+is read into the same sheets by the same code: number formats, dates in
+ISO 8601, cell types, merged cells, hidden rows, columns and sheets,
+comments, links (with `Options.Spans`), drop-down lists, defined names
+(in the stored part), table splitting, limits, `File.Sheets` and
+`File.Rows`. Its `format` is `spreadsheetml` and its `mime`
+`application/vnd.ms-spreadsheetml`. Every workbook of the corpus written as
+SpreadsheetML 2003 by the test harness shows the cells, merged ranges and
+hidden rows and columns its `.xlsx` shows (`TestSpreadsheetMLReadsAsXlsx`,
+1,776 workbooks; the others are refused or read past damage as `.xlsx`).
+The 37 SpreadsheetML files in LibreOffice's, PhpSpreadsheet's and Tika's
+test suites are read (one, malformed on purpose, up to where it breaks
+off).
+
+What the format does differently, and how it is read:
+
+- **Positions.** Rows and cells follow one another; `ss:Index` (from 1)
+  jumps ahead, and `ss:Span` repeats a row or column. A cell with no index
+  comes after the cell before it, past the cells merged with it or with a
+  cell above.
+- **Styles** are named (`ss:StyleID`) and inherit through `ss:Parent`. A
+  cell with none has its row's, then its column's, then the style named
+  `Default`. Number formats are format codes, or the names Excel gives
+  its built-in formats there ("General Number", "General Date", "Long
+  Date", "Medium Date", "Short Date", "Long Time", "Medium Time", "Short
+  Time", "Currency", "Euro Currency", "Fixed", "Standard", "Percent",
+  "Scientific", "Yes/No", "True/False", "On/Off"), which are those of
+  Visual Basic's `Format` function. A date's format decides only whether
+  a date, a time or both are shown, since dates are given in ISO 8601.
+- **Dates** are written as dates (`ss:Type="DateTime"`) and read into the
+  serial numbers `.xlsx` holds, in the workbook's date system (1900, with
+  Excel's 29 February 1900, or 1904). A date whose style is General is
+  shown as a date and time.
+- **Merged cells** are the extra cells a cell covers: `ss:MergeAcross`,
+  `ss:MergeDown`.
+- **Formulas** are in R1C1 notation (`=R[-1]C+1`); with `Options.Cells`
+  they are given in A1 notation (`=B4+1`), as are defined names and the
+  cells a drop-down list is for.
+- **Comments** are inside their cells (`Comment`), links are a cell's
+  `ss:HRef`. Rich text is HTML inside `ss:Data`; its text is read, and
+  its formatting is not.
+- The format holds no pictures, charts or shapes.
+
+The file is indexed once, as Flat OPC is (`internal/xmlindex`): its
+worksheets, styles, names and properties are elements, each read as a
+part, so a worksheet whose XML is malformed fails alone, and a file cut
+short gives the sheets complete before the cut, with an `input.repaired`
+warning. Document properties come from `o:DocumentProperties` and
+`o:CustomDocumentProperties`, under the keys the `.xlsx` properties use.
+
+Files of this format written by programs other than Office declare many
+encodings: besides UTF-8, UTF-16, ISO 8859-1 and Windows-1252, the scanner
+reads ISO 8859-15, the other Windows code pages (1250 to 1258, 874) and
+the double-byte ones (Shift JIS, GBK, EUC-KR as code page 949, Big5), in
+every format.
 
 The root element decides: XML of any other kind is refused with
 `ErrUnsupported`, its root named in the message, so that XML sent here by
@@ -755,9 +818,9 @@ and shapes; attribute values of custom XML data.
 | `cmd/gofastooxml` | The command |
 | `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget. An archive that has lost its directory is read through go-fast-core's `ziprecover`. A package written as XML (Flat OPC) is read by the same interface |
-| `internal/xmlroot` | Telling the Office formats saved as XML by their root element |
+| `internal/xmlroot`, `internal/xmlindex` | Telling the Office formats saved as XML by their root element; finding where the elements of such a file are, without reading those not gone into |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |
-| `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook read into the same |
+| `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook, and the elements of a SpreadsheetML 2003 workbook, read into the same |
 | `internal/xlsb` | The records of a binary workbook (`.xlsb`): splitting a part into records, reading their fields, and turning a compiled formula back into its text |
 | `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
 | `internal/crypt` | The two encryption schemes of Office: reading the encryption information, verifying a password or a private key for a certificate, decrypting the package as it is read |
@@ -767,7 +830,7 @@ and shapes; attribute values of custom XML data.
 | `internal/chart`, `internal/diagram` | Charts, of both kinds, as tables of their data; SmartArt diagrams, from their data model and the drawing Office made of them. Shared by the three readers |
 | `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours, pictures and embedded files, placing display reasons on blocks and spans, bullets and numerals, warning codes, what reading one part gives |
 | `internal/omml` | Equations (Office Math) of Word and PowerPoint, written in UnicodeMath |
-| `internal/formula` | Moving the references of a shared formula to each cell of its range |
+| `internal/formula` | Moving the references of a shared formula to each cell of its range; formulas in R1C1 notation read into A1 |
 | `internal/symbol` | The characters of symbol fonts (Symbol, Wingdings, Webdings and the like) translated to Unicode |
 | `internal/stored`, `internal/vba`, `internal/codepage` | What a package of any format keeps and shows nowhere (the code of its VBA project, its custom XML), for the stored part; reading a VBA project's source ([MS-OVBA]); the code pages that source is kept in |
 | `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |

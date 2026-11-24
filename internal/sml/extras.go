@@ -202,6 +202,11 @@ func (sh *sheet) comments() []placed {
 		b.Loc.Range = cellName(row, col)
 		out = append(out, placed{row: row, col: col, block: b})
 	}
+	plain = true
+	for _, n := range sh.ssNotes {
+		add(n.row, n.col, []byte(n.text), n.author, "")
+	}
+	plain = false
 	for _, rel := range sh.list {
 		if rel.External || !ns.IsRel(rel.Type, ns.RelThreadedComment) {
 			continue
