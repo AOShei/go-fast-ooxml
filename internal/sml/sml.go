@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/numfmt"
 	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
@@ -32,6 +33,11 @@ type Config struct {
 	// together.
 	MaxCells int64
 }
+
+// cachedNumbers is how many numbers a sheet's reader remembers the
+// displayed text of. Most sheets have fewer distinct ones, and more
+// entries gave no measurable gain.
+const cachedNumbers = 256
 
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 
@@ -407,6 +413,7 @@ func (wb *workbook) sheet(ctx context.Context, index int, ref sheetRef, budget b
 // missing, a chart, a dialog, or one the limit was reached before.
 func (wb *workbook) start(ctx context.Context, index int, ref sheetRef, budget bool) (sh *sheet, readable bool) {
 	sh = &sheet{wb: wb, ctx: ctx, name: ref.target, budget: budget, unread: map[string]int{}}
+	sh.numbers = numfmt.NewCache(cachedNumbers)
 	sh.bin = ref.target != "" && binary(wb.pkg, ref.target)
 	sh.room = gofastcore.TextBudgetFrom(ctx)
 	sh.shapes.Budget, sh.shapes.Cost = sh.room, gofastcore.BlockCost
@@ -501,7 +508,8 @@ func (sh *sheet) finish(sawImage bool) {
 func (sh *sheet) content() (sawImage bool) {
 	opened, err := sh.readOwn(false)
 	sh.failed(err)
-	sh.s.Release() // its window is no longer needed
+	sh.s.Release()   // its window is no longer needed
+	sh.numbers = nil // nor is what the formats made of its numbers
 	if !opened {
 		return false
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/numfmt"
 	"github.com/AOShei/go-fast-ooxml"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
@@ -152,6 +153,107 @@ func TestNumberFormatsThroughTheReader(t *testing.T) {
 			}
 			if want := result == numfmt.Blank; unseen[at] != want {
 				t.Errorf("%q of %v: not displayed %v, the engine says %v", code, v, unseen[at], want)
+			}
+		}
+	}
+}
+
+// TestRepeatedNumbers reads sheets whose numbers come back, many more of
+// them than a sheet's reader remembers (cachedNumbers in internal/sml):
+// the same value through several formats, soon and late, in both date
+// systems, the sheet whole and by bands of rows. Every cell is to be what
+// go-fast-core's engine gives for its format and value, with its display
+// reason and its type.
+func TestRepeatedNumbers(t *testing.T) {
+	codes := []string{"0.00", "#,##0", "0%", "yyyy\\-mm\\-dd", "0;0;;", ";;;", "General", "[>100]0.0;\"low\""}
+	var fmts, xfs strings.Builder
+	formats := make([]*numfmt.Format, len(codes))
+	for i, code := range codes {
+		formats[i] = numfmt.Parse(code)
+		fmt.Fprintf(&fmts, `<numFmt numFmtId="%d" formatCode="%s"/>`, 200+i, ooxmltest.EscapeXML(code))
+		fmt.Fprintf(&xfs, `<xf numFmtId="%d" applyNumberFormat="1"/>`, 200+i)
+	}
+	styles := fmt.Sprintf(`<numFmts count="%d">%s</numFmts><cellXfs count="%d"><xf numFmtId="0"/>%s</cellXfs>`,
+		len(codes), fmts.String(), len(codes)+1, xfs.String())
+	// Three times over the same 483 values, three of which (-1, 0 and 1)
+	// are also on every fifth row: each in every format, 3,864 pairs.
+	var values []float64
+	for i := 0; i < 1800; i++ {
+		switch i % 5 {
+		case 0:
+			values = append(values, float64(i%3)-1) // -1, 0 and 1
+		default:
+			values = append(values, float64(i%600)*1.25)
+		}
+	}
+	var rows strings.Builder
+	for r, v := range values {
+		fmt.Fprintf(&rows, `<row r="%d">`, r+1)
+		for c := range codes {
+			fmt.Fprintf(&rows, `<c r="%s%d" s="%d"><v>%s</v></c>`, colName(c), r+1, c+1, strconv.FormatFloat(v, 'g', -1, 64))
+		}
+		rows.WriteString(`</row>`)
+	}
+	for _, date1904 := range []bool{false, true} {
+		pkg := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "F", Data: rows.String()}).WithSheetStyles(styles)
+		if date1904 {
+			pkg.Add("xl/workbook.xml", ooxmltest.CTWorkbook, `<workbook xmlns="`+ooxmltest.NSSheet+`" xmlns:r="`+ooxmltest.NSRel+
+				`"><workbookPr date1904="1"/><sheets><sheet name="F" sheetId="1" r:id="rId1"/></sheets></workbook>`)
+		}
+		f, err := gofastooxml.OpenBytes(pkg.Bytes(), &gofastcore.Options{Cells: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		read := map[string][]gofastcore.Part{}
+		for p, err := range f.Parts(context.Background()) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			read["whole"] = append(read["whole"], p)
+		}
+		for p, err := range f.Rows(context.Background(), 1, 100) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			read["bands"] = append(read["bands"], p)
+		}
+		for how, parts := range read {
+			cells, unseen, dates := map[cellAt]string{}, map[cellAt]bool{}, map[cellAt]bool{}
+			for i := range parts {
+				cs, us := sheetCells(t, &parts[i])
+				for at, text := range cs {
+					cells[at] = text
+				}
+				for at := range us {
+					unseen[at] = true
+				}
+				for _, b := range parts[i].Blocks {
+					if b.Table == nil {
+						continue
+					}
+					origin := parseA1(t, b.Loc.Range)
+					for _, d := range b.Table.Cells {
+						if d.Type == gofastcore.CellDate {
+							dates[cellAt{origin.row + d.Row, origin.col + d.Col}] = true
+						}
+					}
+				}
+			}
+			wrong := 0
+			for r, v := range values {
+				for c, f := range formats {
+					out, result := f.Number(nil, v, date1904)
+					at := cellAt{r, c}
+					if cells[at] != string(out) || unseen[at] != (result == numfmt.Blank) || dates[at] != (result == numfmt.Date) {
+						if wrong++; wrong <= 10 {
+							t.Errorf("%s, 1904 %v: %q of %v at %v: %q, unseen %v, date %v; the engine gives %q, %v",
+								how, date1904, codes[c], v, at, cells[at], unseen[at], dates[at], out, result)
+						}
+					}
+				}
+			}
+			if wrong > 10 {
+				t.Errorf("%s, 1904 %v: %d cells differ", how, date1904, wrong)
 			}
 		}
 	}

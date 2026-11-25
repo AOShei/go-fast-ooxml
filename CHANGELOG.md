@@ -7,6 +7,13 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- The reader of a sheet remembers what the number formats made of the
+  sheet's recent numbers (go-fast-core's `numfmt.Cache`, 256 of them), and
+  copies it when a number comes back. go-fast-core v0.1.8 is required. No
+  cell changes.
+
 ## [0.5.1] - 2026-11-24
 
 ### Changed
