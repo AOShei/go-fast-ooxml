@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-11-25
+
 ### Changed
 
 - go-fast-core v0.1.9 is required: its number-format engine writes a whole
@@ -457,7 +459,8 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.3
 [0.5.2]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.2
 [0.5.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.1
 [0.5.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.0
