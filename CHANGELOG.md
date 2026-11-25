@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-25
+
 ### Changed
 
 - The reader of a sheet remembers what the number formats made of the
