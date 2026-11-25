@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-25
+
 ### Changed
 
 - The reader of a sheet remembers what the number formats made of the
@@ -450,7 +452,8 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.2
 [0.5.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.1
 [0.5.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.0
 [0.4.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.4.0
