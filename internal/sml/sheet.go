@@ -73,6 +73,9 @@ type sheet struct {
 	// the shapes' (gofastcore.Limits.MaxTextBytes).
 	room     *gofastcore.TextBudget
 	raw, out []byte
+	// numbers remembers what the formats made of the sheet's numbers of
+	// late: sheets repeat them.
+	numbers *numfmt.Cache
 
 	noValue  int           // formulas stored without a result
 	removed  int           // control characters taken out
@@ -589,7 +592,7 @@ func (sh *sheet) value(typ byte, style *cellStyle, raw []byte) (string, gofastco
 		sh.out = out
 		return sh.text.put(out), 0
 	}
-	out, result := style.format.Number(sh.out[:0], v, sh.wb.date1904)
+	out, result := sh.numbers.Number(style.format, sh.out[:0], v, sh.wb.date1904)
 	sh.isDate = result == numfmt.Date
 	sh.out = out
 	return sh.text.put(out), blank(result)
