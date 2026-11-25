@@ -7,6 +7,11 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- go-fast-core v0.1.9 is required: its number-format engine writes a whole
+  number through a plain format (`#,##0`, `0.00`) faster. No cell changes.
+
 ## [0.5.2] - 2026-11-25
 
 ### Changed
