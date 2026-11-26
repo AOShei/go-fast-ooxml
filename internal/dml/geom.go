@@ -32,6 +32,9 @@ func (m Matrix) Then(outer Matrix) Matrix {
 	}
 }
 
+// Apply returns where m takes the point (x, y).
+func (m Matrix) Apply(x, y float64) (float64, float64) { return m.apply(x, y) }
+
 func (m Matrix) apply(x, y float64) (float64, float64) {
 	return m.A*x + m.C*y + m.E, m.B*x + m.D*y + m.F
 }

@@ -30,6 +30,13 @@ const (
 	CapCommentDate
 	CapCommentAuthors
 	CapPlaceholders
+	// Visio.
+	CapPages
+	CapShapes
+	CapShapeDepth
+	CapShapeRows
+	CapShapeText
+	CapBackPages
 	// Excel.
 	CapSheets
 	CapSheetRows
@@ -106,6 +113,13 @@ var caps = [numCaps]capInfo{
 	CapCommentAuthors:    {"comment authors past " + itoa(MaxCommentAuthors) + " were not read; their comments have no author", "author", "authors"},
 	CapPlaceholders:      {"placeholders of a layout or master past " + itoa(MaxPlaceholders) + " were not read; slide placeholders that would inherit from them do not", "placeholder", "placeholders"},
 
+	CapPages:      {"pages past " + itoa(MaxSlides) + " were not read", "page", "pages"},
+	CapShapes:     {"shapes of a page or master past " + itoa(MaxShapes) + " were not read", "shape", "shapes"},
+	CapShapeDepth: {"shapes in groups nested more than " + itoa(MaxShapeDepth) + " deep were not read", "shape", "shapes"},
+	CapShapeRows:  {"rows of a section of a shape past " + itoa(MaxShapeRows) + " were not read (formats of text, fields, shape data, links)", "row", "rows"},
+	CapShapeText:  {"text of a shape past " + itoa(MaxShapeText) + " runs, fields and paragraph marks was not read", "shape", "shapes"},
+	CapBackPages:  {"background pages behind a page past " + itoa(MaxBackPages) + " in turn, or that lead back to a page already shown, were not read", "page", "pages"},
+
 	CapSheets:              {"sheets past " + itoa(MaxSheets) + " were not read", "sheet", "sheets"},
 	CapSheetRows:           {"rows past row " + itoa(MaxRows) + " of the sheet were not read", "row", "rows"},
 	CapSheetCols:           {"cells past column " + itoa(MaxCols) + " of the sheet were not read", "cell", "cells"},
@@ -171,6 +185,11 @@ const (
 	MaxCommentDepth        = 64
 	MaxCommentAuthors      = 1 << 16
 	MaxPlaceholders        = 256
+	MaxShapes              = 1 << 18
+	MaxShapeDepth          = 64
+	MaxShapeRows           = 1 << 14
+	MaxShapeText           = 1 << 18
+	MaxBackPages           = 16
 	MaxSheets              = 1 << 16
 	MaxRows                = 1 << 20
 	MaxCols                = 1 << 14
@@ -389,9 +408,22 @@ func (l *Lost) Take() *Lost {
 	return out
 }
 
+// Reset forgets what was counted.
+func (l *Lost) Reset() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.n, l.bytes, l.order = [numCaps]int64{}, [numCaps]int64{}, nil
+}
+
 // Say gives the warnings to p, one per bound, forgets what was counted,
 // and reports whether there was any.
 func (l *Lost) Say(p *gofastcore.Part) bool {
+	if !l.Any() {
+		return false // the usual case, which need not copy anything
+	}
 	ws := l.Take().Warnings()
 	for _, w := range ws {
 		p.Warn(w.Severity, w.Code, w.Message)

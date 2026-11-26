@@ -7,6 +7,28 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Added
+
+- Visio drawings: `.vsdx`, `.vsdm`, templates (`.vstx`, `.vstm`) and
+  stencils (`.vssx`, `.vssm`), all reported as format `vsdx` with the
+  media type of their kind. One part of kind `page` per foreground page,
+  with the page's size; each shape's text as paragraphs or list items,
+  with its box on the page, in reading order; text, field values and
+  formats a shape takes from its master; pictures, links (with
+  `Options.Spans`), comments and embedded objects; the text of background
+  pages as headers and footers on the pages in front of them, and
+  background pages behind no page as parts of their own; macros in the
+  stored part. `hidden` for text a shape hides and for shapes on layers
+  all switched off, `no_ink` for fully transparent text. A Visio package
+  with no table of content types is read by its relationships, with
+  `input.repaired`. The command reads the six extensions from a directory.
+
+### Changed
+
+- A package that holds no document of a kind this library reads is
+  refused with "no Word, Excel, PowerPoint or Visio document" (it said "no
+  Word, Excel or PowerPoint document").
+
 ## [0.5.3] - 2026-11-25
 
 ### Changed

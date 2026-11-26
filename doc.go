@@ -1,14 +1,14 @@
-// Package gofastooxml extracts Word, Excel and PowerPoint files (Office Open
-// XML: .docx, .xlsx, .pptx and their macro and template variants,
-// Excel's binary workbooks, .xlsb, any of these written as one XML file,
-// Flat OPC, and Office 2003's XML formats, WordprocessingML 2003 and
-// SpreadsheetML 2003) into the shared go-fast document model,
-// gofastcore.Document.
+// Package gofastooxml extracts Word, Excel, PowerPoint and Visio files
+// (Office Open XML: .docx, .xlsx, .pptx, .vsdx and their macro and template
+// variants, Visio's stencils, Excel's binary workbooks, .xlsb, any of these
+// written as one XML file, Flat OPC, and Office 2003's XML formats,
+// WordprocessingML 2003 and SpreadsheetML 2003) into the shared go-fast
+// document model, gofastcore.Document.
 //
 // It uses the standard library and go-fast-core only.
 //
-// A Word document is one part; a workbook has a part for each sheet and a
-// presentation one for each slide. What a file stores and shows nowhere
+// A Word document is one part; a workbook has a part for each sheet, a
+// presentation one for each slide and a Visio drawing one for each page. What a file stores and shows nowhere
 // (the code of a VBA project, defined names, custom XML) is in one more
 // part, last, of kind gofastcore.PartStored. Headings, list items with their labels,
 // tables with merged cells, pictures, notes and comments are read as what

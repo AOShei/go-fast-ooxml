@@ -255,9 +255,11 @@ func TestExtractErrors(t *testing.T) {
 		w.Close()
 		return buf.Bytes()
 	}
-	visio := ooxmltest.NewPackage()
-	visio.Rel("", ooxmltest.RelOfficeDoc, "visio/document.xml")
-	visio.Add("visio/document.xml", "application/vnd.ms-visio.drawing.main+xml", "<x/>")
+	// A package of some other kind: an XPS-like document with an
+	// officeDocument relationship to a part of no known type.
+	other := ooxmltest.NewPackage()
+	other.Rel("", ooxmltest.RelOfficeDoc, "doc/main.xml")
+	other.Add("doc/main.xml", "application/vnd.example.document.main+xml", "<x/>")
 
 	cases := []struct {
 		name string
@@ -272,7 +274,7 @@ func TestExtractErrors(t *testing.T) {
 		{"plain zip", zipOf("readme.txt"), gofastcore.ErrUnsupported, "not an Office Open XML package"},
 		{"opendocument", zipOf("mimetype", "content.xml", "META-INF/manifest.xml"), gofastcore.ErrUnsupported, "not an Office Open XML package: it is application/vnd.oasis.opendocument.text"},
 		{"cut off before the directory", ooxmltest.Docx(ooxmltest.Para("x")).Bytes()[:400], gofastcore.ErrMalformed, "the file is cut short or damaged"},
-		{"other office package", visio.Bytes(), gofastcore.ErrUnsupported, "no Word, Excel or PowerPoint"},
+		{"other office package", other.Bytes(), gofastcore.ErrUnsupported, "no Word, Excel, PowerPoint or Visio"},
 		{"legacy binary", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000), "1Table": make([]byte, 100)}), gofastcore.ErrUnsupported, "legacy binary"},
 		{"password protected", ooxmltest.Encrypt(ooxmltest.Docx("").Bytes(), "a password", ooxmltest.Encryption{}), gofastcore.ErrPasswordRequired, "encrypted"},
 		{"rights managed, binary", ooxmltest.Compound(map[string][]byte{"\x06DataSpaces/DataSpaceMap": make([]byte, 100), "\x09DRMContent": make([]byte, 5000)}), gofastcore.ErrUnsupported, "rights management"},

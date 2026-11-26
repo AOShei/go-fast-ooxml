@@ -22,16 +22,17 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/props"
 	"github.com/AOShei/go-fast-ooxml/internal/sml"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
+	"github.com/AOShei/go-fast-ooxml/internal/vsd"
 	"github.com/AOShei/go-fast-ooxml/internal/wml"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
 )
 
-// File is a Word, Excel or PowerPoint file opened for reading a part at a
-// time: a Word document's one body, a workbook's sheets, a presentation's
-// slides. Opening a file identifies it and reads its properties and what
-// its parts share; the parts are read when they are asked for, so a
-// caller that handles one part and lets it go holds little at a time
-// however large the file is.
+// File is a Word, Excel, PowerPoint or Visio file opened for reading a part
+// at a time: a Word document's one body, a workbook's sheets, a
+// presentation's slides, a drawing's pages. Opening a file identifies it
+// and reads its properties and what its parts share; the parts are read
+// when they are asked for, so a caller that handles one part and lets it
+// go holds little at a time however large the file is.
 //
 // The parts are the same as those in the document that Extract returns,
 // each complete: its warnings are on it, and what the file declares about
@@ -269,6 +270,9 @@ func (f *File) open(first bool) (*session, error) {
 			warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous,
 				fmt.Sprintf("%d archive members are named twice or share a name; programs differ in which they read", n))
 		}
+		if pkg.Untyped() {
+			warn(gofastcore.SeverityInfo, gofastcore.WarnInputRepaired, "the package has no table of content types ([Content_Types].xml); its parts were found by the relationships that lead to them")
+		}
 		if pkg.HasContentType(vbaContentType) {
 			warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "a VBA project (macros); its code is read as text into the stored part, and none of it is run")
 		}
@@ -282,6 +286,10 @@ func (f *File) open(first bool) (*session, error) {
 		sess.src = wml.Open(pkg, main, opts)
 	case opc.Xlsx:
 		sess.src = sml.Open(pkg, main, opts, sml.Config{
+			MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells),
+		})
+	case opc.Vsdx:
+		sess.src = vsd.Open(pkg, main, opts, vsd.Config{
 			MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells),
 		})
 	default:
@@ -301,9 +309,9 @@ func (f *File) Close() error {
 	return f.closer.Close()
 }
 
-// Format returns the kind of file: "docx", "xlsx" or "pptx". A
-// macro-enabled file or a template is the format it is a variant of; a
-// binary workbook (.xlsb) is "xlsx"; a package written as one XML file
+// Format returns the kind of file: "docx", "xlsx", "pptx" or "vsdx". A
+// macro-enabled file or a template is the format it is a variant of, and
+// so is a Visio stencil; a binary workbook (.xlsb) is "xlsx"; a package written as one XML file
 // (Flat OPC) is the format of the package. An Excel 2003 XML spreadsheet
 // is "spreadsheetml", a Word 2003 XML document "wordml".
 func (f *File) Format() string { return f.source.Format }
@@ -317,8 +325,9 @@ func (f *File) Metadata() gofastcore.Metadata { return f.meta }
 
 // NumParts returns the number of parts: 1 for a Word document, the
 // number of sheets of a workbook, the number of slides of a
-// presentation. A workbook or presentation with none has one part, which
-// says so. A document that stores what it shows nowhere (defined names,
+// presentation, the number of pages of a drawing that are parts (its
+// foreground pages, and its background pages behind no page). A workbook,
+// presentation or drawing with none has one part, which says so. A document that stores what it shows nowhere (defined names,
 // macro code) has one more, last, of kind gofastcore.PartStored; it comes
 // with the whole document, not with a range of parts.
 func (f *File) NumParts() int { return f.parts }
@@ -382,6 +391,8 @@ func (f *File) kind() string {
 		return "workbook"
 	case "pptx":
 		return "presentation"
+	case "vsdx":
+		return "drawing"
 	}
 	return "Word document"
 }

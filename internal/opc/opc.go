@@ -41,8 +41,9 @@ var (
 	ErrNotPackage = errors.New("opc: zip archive is not an Office Open XML package")
 	// ErrDamaged: a package whose own structure cannot be read.
 	ErrDamaged = errors.New("opc: damaged package")
-	// ErrNoMainPart: a package with no Word, Excel or PowerPoint main part.
-	ErrNoMainPart = errors.New("opc: package holds no Word, Excel or PowerPoint document")
+	// ErrNoMainPart: a package with no Word, Excel, PowerPoint or Visio
+	// main part.
+	ErrNoMainPart = errors.New("opc: package holds no Word, Excel, PowerPoint or Visio document")
 	// ErrNotFound: the named part is not in the package.
 	ErrNotFound = errors.New("opc: no such part")
 	// ErrBudget: reading went over Limits.MaxDecodedBytes.
@@ -93,6 +94,7 @@ type Package struct {
 	flatParts  map[string]*flatPart // by canonical part name
 	flatDamage *FlatDamage          // where a Flat OPC package breaks off
 	sections   bool                 // the parts are elements of a file with no package (NewSections)
+	untyped    bool                 // a Visio package with no content-types table, known by its relationships
 
 	cutMu    sync.Mutex
 	cut      map[string]int64 // by relationships part: external targets cut to their bound
@@ -211,6 +213,13 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		// relationships that lead to them.
 		return p, nil
 	}
+	if _, ok := p.files[contentTypesName]; !ok && p.visioWithoutTypes() {
+		// Some programs that write Visio drawings leave the table out.
+		// The package's relationships still lead to the drawing, and the
+		// parts are known by the relationships that lead to them.
+		p.untyped = true
+		return p, nil
+	}
 	if _, ok := p.files[contentTypesName]; !ok {
 		// Other formats kept in a zip archive (OpenDocument, EPUB) say
 		// what they are in a member of their own.
@@ -233,6 +242,26 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 	}
 	return p, nil
 }
+
+// visioWithoutTypes reports whether the package's relationships lead to
+// a Visio drawing that is in the archive: what makes a zip archive with
+// no table of content types a Visio package.
+func (p *Package) visioWithoutTypes() bool {
+	rels, err := p.Rels("")
+	if err != nil {
+		return false
+	}
+	for _, r := range rels {
+		if !r.External && r.Type == RelVisioDocument && p.Has(r.Target) {
+			return true
+		}
+	}
+	return false
+}
+
+// Untyped reports whether the package is a Visio package with no table of
+// content types, read by its relationships.
+func (p *Package) Untyped() bool { return p.untyped }
 
 // Trailing returns the bytes that follow the end of the archive (its
 // end-of-directory record and the comment it states), as many as
@@ -703,14 +732,20 @@ func (p *Package) RelsWith(source string, s *xmlscan.Scanner) ([]Rel, error) {
 	}
 }
 
-// Format is one of the three document families.
+// Format is one of the document families.
 type Format string
 
 const (
 	Docx Format = "docx"
 	Xlsx Format = "xlsx"
 	Pptx Format = "pptx"
+	Vsdx Format = "vsdx"
 )
+
+// RelVisioDocument is the type of the relationship from a Visio package to
+// its drawing, in place of the officeDocument relationship of the other
+// formats.
+const RelVisioDocument = "http://schemas.microsoft.com/visio/2010/relationships/document"
 
 type kind struct {
 	format Format
@@ -735,6 +770,12 @@ var mainKinds = map[string]kind{
 	"application/vnd.ms-powerpoint.presentation.macroEnabled.main+xml":                   {Pptx, "application/vnd.ms-powerpoint.presentation.macroEnabled.12"},
 	"application/vnd.ms-powerpoint.slideshow.macroEnabled.main+xml":                      {Pptx, "application/vnd.ms-powerpoint.slideshow.macroEnabled.12"},
 	"application/vnd.ms-powerpoint.template.macroEnabled.main+xml":                       {Pptx, "application/vnd.ms-powerpoint.template.macroEnabled.12"},
+	"application/vnd.ms-visio.drawing.main+xml":                                          {Vsdx, "application/vnd.ms-visio.drawing"},
+	"application/vnd.ms-visio.drawing.macroEnabled.main+xml":                             {Vsdx, "application/vnd.ms-visio.drawing.macroEnabled.12"},
+	"application/vnd.ms-visio.template.main+xml":                                         {Vsdx, "application/vnd.ms-visio.template"},
+	"application/vnd.ms-visio.template.macroEnabled.main+xml":                            {Vsdx, "application/vnd.ms-visio.template.macroEnabled.12"},
+	"application/vnd.ms-visio.stencil.main+xml":                                          {Vsdx, "application/vnd.ms-visio.stencil"},
+	"application/vnd.ms-visio.stencil.macroEnabled.main+xml":                             {Vsdx, "application/vnd.ms-visio.stencil.macroEnabled.12"},
 }
 
 // conventional are the usual locations of the main part, used when a
@@ -747,6 +788,7 @@ var conventional = []struct {
 	{"xl/workbook.xml", mainKinds["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"]},
 	{"xl/workbook.bin", mainKinds["application/vnd.ms-excel.sheet.binary.macroEnabled.main"]},
 	{"ppt/presentation.xml", mainKinds["application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"]},
+	{"visio/document.xml", mainKinds["application/vnd.ms-visio.drawing.main+xml"]},
 }
 
 // Main finds the main part of the package and says what kind of document
@@ -762,7 +804,7 @@ func (p *Package) Main() (part string, format Format, mime string, err error) {
 		return "", "", "", relErr
 	}
 	for _, r := range rels {
-		if r.External || !ns.IsRel(r.Type, ns.RelOfficeDocument) || !p.Has(r.Target) {
+		if r.External || !(ns.IsRel(r.Type, ns.RelOfficeDocument) || r.Type == RelVisioDocument) || !p.Has(r.Target) {
 			continue
 		}
 		if k, ok := mainKinds[p.ContentType(r.Target)]; ok {
