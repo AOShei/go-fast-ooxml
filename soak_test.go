@@ -138,7 +138,7 @@ func refusal(data []byte, err error) string {
 	case errors.Is(err, gofastcore.ErrUnsupported) && (zipped || strings.Contains(err.Error(), "zip archive")):
 		// An archive need not begin with a member: it may have other
 		// bytes in front.
-		return "archive that is not a Word, Excel or PowerPoint package"
+		return "archive that is not a Word, Excel, PowerPoint or Visio package"
 	case zipped:
 		return "damaged package"
 	case len(data) == 0:
@@ -161,7 +161,7 @@ func TestSoak(t *testing.T) {
 	}
 	root := filepath.Join(ooxmltest.Root(t), "testdata", "corpus")
 	extensions := map[string]bool{}
-	for _, e := range []string{"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm", "xml"} {
+	for _, e := range []string{"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm", "vsdx", "vsdm", "vstx", "vstm", "vssx", "vssm", "xml"} {
 		extensions["."+e] = true
 	}
 	var paths []string
