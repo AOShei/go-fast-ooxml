@@ -177,7 +177,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		workers  = flags.Int("workers", 0, "sheets, slides or pages read at a time (0: one for each CPU)")
 		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
 		maxSpin  = flags.Int("max-spin-count", 0, "rounds of hashing an encrypted file may ask for to try a password (0: the default, 1 million; -1: no limit)")
-		maxCells = flags.Int64("max-cells", 0, "cells kept from a workbook or from the tables of a presentation (0: the default, 20 million; -1: no limit)")
+		maxCells = flags.Int64("max-cells", 0, "cells kept from a workbook, from the tables of a presentation, or from the shape data and data recordsets of a drawing (0: the default, 20 million; -1: no limit)")
 		maxBytes = flags.Int64("max-decoded-bytes", 0, "decompressed bytes read from a file (0: the default, 2 GiB; -1: no limit)")
 		maxText  = flags.Int64("max-text-bytes", 0, "bytes of text a document and the files embedded in it may hold (0: the default, 256 MiB; -1: no limit)")
 		quiet    = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
@@ -189,7 +189,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.Var(&keys, "key", "file of a private key (RSA; PEM or DER, PKCS #1 or #8) for a file encrypted for its certificate, and for encrypted files embedded in it; may be given more than once")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "usage: gofastooxml [flags] file-or-directory...")
-		fmt.Fprintln(stderr, "Extracts Word, Excel and PowerPoint files. A directory stands for the Office files in it and below it.")
+		fmt.Fprintln(stderr, "Extracts Word, Excel, PowerPoint and Visio files. A directory stands for the Office files in it and below it.")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

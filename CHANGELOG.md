@@ -22,9 +22,20 @@ minor version may change the API.
   all switched off, `no_ink` for fully transparent text. A Visio package
   with no table of content types is read by its relationships, with
   `input.repaired`. The command reads the six extensions from a directory.
+- Visio shape data: each shape's Shape Data items, its master's first, as
+  a table after its text (`stored` `shape_data`, `name` the shape's
+  name), label and value as saved; a row with no label is named by the
+  row, an item with no value is kept empty, and an invisible item is a
+  hidden row. Data recordsets, the copy a drawing keeps of the outside
+  data it links to, as tables in the stored part (`stored`
+  `linked_data`). A stencil's masters are parts after its pages, each
+  with its prompt first; a master the stencil hides is a hidden part.
+  `Extractor.MaxCells` bounds the cells of both kinds of table.
 
 ### Changed
 
+- go-fast-core v0.1.10 is required, for the stored kinds `shape_data` and
+  `linked_data`.
 - A package that holds no document of a kind this library reads is
   refused with "no Word, Excel, PowerPoint or Visio document" (it said "no
   Word, Excel or PowerPoint document").

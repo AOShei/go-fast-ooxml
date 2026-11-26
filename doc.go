@@ -8,9 +8,11 @@
 // It uses the standard library and go-fast-core only.
 //
 // A Word document is one part; a workbook has a part for each sheet, a
-// presentation one for each slide and a Visio drawing one for each page. What a file stores and shows nowhere
-// (the code of a VBA project, defined names, custom XML) is in one more
-// part, last, of kind gofastcore.PartStored. Headings, list items with their labels,
+// presentation one for each slide and a Visio drawing one for each page
+// (a stencil one for each master too). What a file stores and shows
+// nowhere (the code of a VBA project, defined names, custom XML, a
+// drawing's data recordsets) is in one more part, last, of kind
+// gofastcore.PartStored. Headings, list items with their labels,
 // tables with merged cells, pictures, notes and comments are read as what
 // the file declares them to be. Everything the file holds is extracted;
 // where the file declares text not shown (hidden formatting, a hidden

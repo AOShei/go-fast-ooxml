@@ -45,7 +45,7 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Bytes decompressed, by the document and the files embedded in it together | 2 GiB | `Options.Limits.MaxDecodedBytes` | The part being read is cut off; a file whose own structure needs more is refused; embedded files after that are listed, not read |
 | Text the document holds, with the files embedded in it | 256 MiB | `Options.Limits.MaxTextBytes` | The part being read is cut off; embedded files after that are listed, not read |
 | Members of the archive | 100,000 | `Extractor.MaxArchiveMembers` | Refused |
-| Cells kept from a workbook, or from the tables of a presentation | 20 million | `Extractor.MaxCells` | The sheet or slide is cut off |
+| Cells kept from a workbook, from the tables of a presentation, or from the shape data and data recordsets of a Visio drawing | 20 million | `Extractor.MaxCells` | The sheet or slide is cut off; a page's shape data past it, or the recordsets, are left out |
 | Rounds of hashing to try a password | 1 million | `Extractor.MaxSpinCount` | Refused |
 | Password checks of a document and the files embedded in it, together | 10 times the above | | Further encrypted files are listed, not opened |
 | Decryptions with a private key for one file | 64 | fixed | The keys have not opened the file (`ErrKeyRequired`) |
@@ -75,6 +75,7 @@ for each bound on the part it concerns, with how many were left out
 |---|---|
 | Word | a field code, 64 KiB; fields nested 64 deep (deeper ones are read as part of the field around them); a list label, 64 bytes; 65,536 sections whose note numbering is kept; 16,384 document variables |
 | PowerPoint | 65,536 slides; 16,384 columns of a table; replies nested 64 deep; 65,536 comment authors; 256 placeholders of a layout or master; a comment's author identifier and date, 64 bytes each |
+| Visio | 65,536 pages; 262,144 shapes of a page or master; groups nested 64 deep; 16,384 rows of a section of a shape; 262,144 runs, fields and paragraph marks of a shape's text; 16 background pages behind a page in turn; 1,024 data recordsets, each of 16,384 columns; about a million blocks and rows of shape data taken from masters and background pages, over a drawing |
 | Excel | 65,536 sheets; 1,048,576 rows and 16,384 columns; of a sheet: 262,144 comments, 4,096 comment authors, 262,144 hyperlinks, 16,384 drop-down lists over 262,144 ranges, 262,144 merged ranges, 4,096 declared tables, 1,024 pivot tables, 16 drawing parts, 1,048,576 shared formulas; a formula, 32 KiB; 16,384 defined names; 131,072 cell formats and fonts, 8,192 number formats; 1,024 pivot caches, each of 16,384 fields of 1,048,576 values; 4,096 calculated fields; of a binary workbook: 65,536 links to other workbooks, each of 65,536 sheets and names, 65,536 references to sheets, 65,536 tables of 16,384 columns |
 | Charts | 1,024 series, each of 8 sets of values; points at an index past 1,048,576; about two million points in all; 16 levels of categories; 16 axes and 16 kinds of plot; a title, 4 KiB |
 | SmartArt | 65,536 nodes, 131,072 connections, 64 levels |

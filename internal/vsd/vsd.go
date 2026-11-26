@@ -1,7 +1,9 @@
 // Package vsd reads Visio drawings (Visio 2013 and later: .vsdx, .vsdm,
 // templates and stencils) into the shared document model: one part per
-// page, with what each shape says as paragraphs, list items and pictures,
-// each with the place on the page it was read from.
+// page, and per master of a stencil, with what each shape says as
+// paragraphs, list items, pictures and a table of its data, each with the
+// place on the page it was read from; the drawing's data recordsets are
+// tables of the stored part.
 package vsd
 
 import (
@@ -29,17 +31,22 @@ type Config struct {
 	// MaxCells bounds the table cells kept from a drawing, all pages
 	// together.
 	MaxCells int64
+	// Stencil says the file is a stencil: its masters are parts, after
+	// its pages.
+	Stencil bool
 }
 
 var scanOptions = &xmlscan.Options{Spaces: ns.Spaces}
 
 // The relationships of a Visio package, by the last segment of their type.
 const (
-	relPages    = "pages"
-	relPage     = "page"
-	relMasters  = "masters"
-	relMaster   = "master"
-	relComments = "comments"
+	relPages      = "pages"
+	relPage       = "page"
+	relMasters    = "masters"
+	relMaster     = "master"
+	relComments   = "comments"
+	relRecordsets = "recordsets"
+	relRecordset  = "recordset"
 )
 
 // pageRef is a page as the drawing lists it.
@@ -51,12 +58,18 @@ type pageRef struct {
 	backPage      int64   // the background page behind it; -1 if none
 	width, height float64 // in inches; zero if not said
 	layers        *section
+
+	// A master of a stencil, read as a page.
+	master bool
+	prompt string // what the stencil says of it
+	hidden bool   // the stencil does not show it
 }
 
 // masterRef is a master as the drawing lists it, and what was read of
 // it when a page first needed it.
 type masterRef struct {
 	target string
+	ref    pageRef // as a page, for a stencil
 
 	once sync.Once
 	top  []*shape           // its shapes
@@ -73,6 +86,8 @@ type drawing struct {
 	pages   []pageRef
 	byID    map[int64]int // page ID to its index in pages
 	masters map[int64]*masterRef
+	order   []*masterRef // as the drawing lists them
+	sets    []recordset  // the data recordsets
 	styles  map[int64]*shape
 	comment string // the comments part
 
@@ -200,7 +215,7 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 	rels, err := pkg.Rels(main)
 	d.note(opc.RelsName(main), err)
 	dr.extra = stored.Find(pkg, rels)
-	var pagesPart, mastersPart string
+	var pagesPart, mastersPart, setsPart string
 	for _, rel := range rels {
 		switch {
 		case rel.External:
@@ -213,6 +228,8 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 			mastersPart = rel.Target
 		case ns.IsRel(rel.Type, relComments) && d.comment == "":
 			d.comment = rel.Target
+		case ns.IsRel(rel.Type, relRecordsets) && setsPart == "":
+			setsPart = rel.Target
 		}
 	}
 	d.load(main, d.readStyles)
@@ -223,7 +240,19 @@ func Open(pkg *opc.Package, main string, opts *gofastcore.Options, cfg Config) *
 		d.readPages(pagesPart)
 	}
 
+	if setsPart != "" {
+		d.readRecordsets(setsPart)
+	}
+
 	dr.parts = d.parts()
+	if cfg.Stencil {
+		// A stencil's masters are what it is for: each is a part, after
+		// the pages.
+		for _, m := range d.order {
+			dr.parts = append(dr.parts, len(d.pages))
+			d.pages = append(d.pages, m.ref)
+		}
+	}
 	dr.after = pkg.Budget()
 	return dr
 }
@@ -343,6 +372,7 @@ func (d *drawing) readMasters(name string) {
 		}
 	}
 	d.load(name, func(s *xmlscan.Scanner) {
+		r := reader{s: s, lost: &d.lost}
 		for s.Next() != xmlscan.EOF {
 			if s.Kind() != xmlscan.Start {
 				continue
@@ -351,21 +381,44 @@ func (d *drawing) readMasters(name string) {
 			case s.Depth() == 1:
 			case s.Is(ns.Visio, "Master") && s.Depth() == 2:
 				id := intAttr(s, "ID", -1)
-				m := &masterRef{}
+				m := &masterRef{ref: pageRef{id: -1, backPage: -1, master: true}}
+				if v, ok := s.Attr(xmlscan.NoSpace, "Name"); ok && len(v) > 0 {
+					m.ref.name = string(v)
+				} else if v, ok := s.Attr(xmlscan.NoSpace, "NameU"); ok {
+					m.ref.name = string(v)
+				}
+				if v, ok := s.Attr(xmlscan.NoSpace, "Prompt"); ok {
+					m.ref.prompt = string(v)
+				}
+				if v, ok := s.Attr(xmlscan.NoSpace, "Hidden"); ok {
+					m.ref.hidden = isTrue(v)
+				}
 				d2 := s.Depth()
 				for s.Next() != xmlscan.EOF && s.Depth() >= d2 {
-					if s.Kind() == xmlscan.Start && s.Depth() == d2+1 {
-						if s.Is(ns.Visio, "Rel") {
-							if rid, ok := s.Attr(ns.Rel, "id"); ok {
-								m.target = byRel[string(rid)]
-							}
+					if s.Kind() != xmlscan.Start || s.Depth() != d2+1 {
+						continue
+					}
+					switch {
+					case s.Is(ns.Visio, "PageSheet"):
+						sheet := newShape()
+						r.body(sheet, 0)
+						m.ref.width = inches(sheet.cells.get(cPageWidth))
+						m.ref.height = inches(sheet.cells.get(cPageHeight))
+						m.ref.layers = sheet.sections[sLayer]
+					case s.Is(ns.Visio, "Rel"):
+						if rid, ok := s.Attr(ns.Rel, "id"); ok {
+							m.target = byRel[string(rid)]
 						}
+						s.Skip()
+					default:
 						s.Skip()
 					}
 				}
+				m.ref.target = m.target
 				if id >= 0 && m.target != "" && len(d.masters) < maxShapes {
 					if _, dup := d.masters[id]; !dup {
 						d.masters[id] = m
+						d.order = append(d.order, m)
 					}
 				}
 			default:
@@ -463,10 +516,10 @@ func (dr *Drawing) Len() int {
 }
 
 // Stored returns the index of the stored part, or -1 if the drawing has
-// nothing for one: what it stores and shows on no page is the code of its
-// VBA project and custom XML data.
+// nothing for one: what it stores and shows on no page is its data
+// recordsets, the code of its VBA project and custom XML data.
 func (dr *Drawing) Stored() int {
-	if dr.extra.Empty() {
+	if dr.extra.Empty() && len(dr.d.sets) == 0 {
 		return -1
 	}
 	return max(len(dr.parts), 1)
@@ -490,6 +543,7 @@ func (dr *Drawing) Read(ctx context.Context, index int) *unit.Result {
 	d := dr.d
 	if index == dr.Stored() {
 		p := stored.NewPart(ctx, index+1)
+		d.recordsets(ctx, p)
 		dr.extra.Macros(ctx, d.pkg, p)
 		dr.extra.XML(ctx, d.pkg, p)
 		dr.extra.AfterEnd(d.pkg, p)

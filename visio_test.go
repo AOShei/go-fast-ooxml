@@ -369,6 +369,7 @@ func FuzzVsdx(f *testing.F) {
 		shape(1, 1, 1, 4, 2, `<Cell N="HideText" V="0"/><Cell N="LayerMember" V="0;1"/><Section N="Paragraph"><Row IX="1"><Cell N="Bullet" V="1"/><Cell N="BulletStr" V="*"/></Row></Section>`+
 			`<Section N="Character"><Row IX="1"><Cell N="Style" V="7"/><Cell N="ColorTrans" V="1"/></Row></Section><Section N="Field"><Row IX="0"><Cell N="Value" V="v"/></Row></Section>`+
 			`<Section N="Hyperlink"><Row N="Row_1"><Cell N="Address" V="https://example.com/"/></Row></Section>`+
+			`<Section N="Property"><Row N="A"><Cell N="Value" V="0" F="No Formula"/><Cell N="Label" V=""/><Cell N="Invisible" V="1"/></Row><Row N="Cost" Del="1"/></Section>`+
 			`<Text><pp IX="1"/><cp IX="1"/>item `+"\n"+`<fld IX="0">f</fld></Text>`) +
 		`<Shape ID="2" Type="Group" Master="1"><Cell N="PinX" V="4"/><Cell N="PinY" V="6"/><Shapes><Shape ID="3" MasterShape="6"/><Shape ID="4" MasterShape="7" Del="1"/></Shapes></Shape>` +
 		`<Shape ID="5" Type="Shape"><Cell N="PinX" V="3"/><Cell N="PinY" V="5"/><Cell N="Width" V="6"/><Cell N="Height" V="0"/><Cell N="BeginX" V="1"/><Cell N="BeginY" V="4"/><Cell N="EndX" V="5"/><Cell N="EndY" V="6"/>` + text("line") + `</Shape>` +
@@ -382,14 +383,21 @@ func FuzzVsdx(f *testing.F) {
 		`<Page ID="2" Name="Unused" Background="1"><Rel r:id="rId2"/></Page></Pages>`
 	comments := `<Comments ` + vs + `><AuthorList><AuthorEntry ID="0" Name="Ann"/></AuthorList><CommentList><CommentEntry AuthorID="0" PageID="0" Date="2026">Check.</CommentEntry></CommentList></Comments>`
 	f.Add([]byte(page), []byte(master), []byte(pages), []byte(comments))
+	f.Add([]byte(page), []byte(master), []byte(pages), []byte(ooxmltest.ADORowset([]string{"ID", "c1=Name"}, `ID="1" c1="a"`, `c1="b"`)))
 	f.Add([]byte(page), []byte(master), []byte(pages), []byte(`<VisioDocument `+vs+`><StyleSheets><StyleSheet ID="1" TextStyle="1"><Section N="Paragraph"><Row IX="0"><Cell N="Bullet" V="2"/></Row></Section></StyleSheet></StyleSheets></VisioDocument>`))
 	opts := &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 4 << 20}, Images: gofastcore.ImagesMeta, Workers: 1, Spans: true}
 	e := &gofastooxml.Extractor{MaxCells: 100_000}
 	picture := pngBytes(f, 2, 2)
 	f.Fuzz(func(t *testing.T, page, master, pages, extra []byte) {
 		v := ooxmltest.Visio{
-			Masters: []ooxmltest.VisioMaster{{Name: "M"}},
+			Masters: []ooxmltest.VisioMaster{{Name: "M", Prompt: "p"}},
 			Pages:   []ooxmltest.VisioPage{{Name: "A"}, {Name: "B", Background: true}},
+		}
+		if len(page)%2 == 1 {
+			v.ContentType = ooxmltest.CTVisioStencil // its masters are parts too
+		}
+		if bytes.Contains(extra, []byte("rs:data")) {
+			v.Recordsets = []ooxmltest.VisioRecordset{{Name: "R", Data: string(extra)}}
 		}
 		pkg := v.Package()
 		pkg.AddBytes("visio/pages/page1.xml", ooxmltest.CTVisioPage, page)
@@ -497,4 +505,178 @@ func TestVisioEmbeddedObject(t *testing.T) {
 		t.Fatalf("children %+v", doc.Children)
 	}
 	sameLines(t, "blocks", lines(doc.Parts[0]), []string{"paragraph text"})
+}
+
+// table returns the rows of a table block as "label=value" lines, or the
+// cells joined by "|" for rows of another width.
+func tableRows(b gofastcore.Block) []string {
+	var out []string
+	if b.Table == nil {
+		return nil
+	}
+	for _, r := range b.Table.Rows {
+		if len(r) == 2 {
+			out = append(out, r[0]+"="+r[1])
+		} else {
+			out = append(out, strings.Join(r, "|"))
+		}
+	}
+	return out
+}
+
+// A shape's data is a stored table right after its text, at its place
+// and with its name: a label and a value a row, the master's rows first
+// with the shape's own values over them, then the shape's own rows. A
+// row with no label is known by its name, a value saved as "No Formula"
+// is empty, and a row the file declares invisible is hidden.
+func TestVisioShapeData(t *testing.T) {
+	master := `<Shape ID="5" Type="Shape" Name="Server"><Cell N="PinX" V="1"/><Cell N="PinY" V="1"/><Cell N="Width" V="2"/><Cell N="Height" V="2"/>` +
+		`<Section N="Property">` +
+		`<Row N="Asset"><Cell N="Value" V="0" F="No Formula"/><Cell N="Label" V="Asset Number"/></Row>` +
+		`<Row N="Cost"><Cell N="Value" V="10" U="CY"/><Cell N="Label" V="Cost"/></Row>` +
+		`<Row N="Class"><Cell N="Value" V="Equipment"/><Cell N="Label" V="ShapeClass"/><Cell N="Invisible" V="1"/></Row>` +
+		`<Row N="Gone"><Cell N="Value" V="x"/><Cell N="Label" V="Gone"/></Row>` +
+		`</Section></Shape>`
+	page := `<Shape ID="1" Type="Shape" Master="1" Name="Server.1"><Cell N="PinX" V="2"/><Cell N="PinY" V="9"/><Text>web01</Text>` +
+		`<Section N="Property"><Row N="Cost"><Cell N="Value" V="25" U="CY"/></Row><Row N="Gone" Del="1"/>` +
+		`<Row N="Port_A"><Cell N="Value" V="443"/><Cell N="Label" V=""/></Row>` +
+		`<Row N="Owner"><Cell N="Label" V="Owner"/></Row>` +
+		`<Row N="Secret"><Cell N="Value" V="s"/><Cell N="Label" V="Secret"/><Cell N="Invisible" V="1"/></Row></Section></Shape>` +
+		ooxmltest.VisioShape(2, 1, 1, 2, 1, ooxmltest.VisioText("below"))
+	doc := visio(t, ooxmltest.Visio{
+		Masters: []ooxmltest.VisioMaster{{Name: "Server", Shapes: master}},
+		Pages:   []ooxmltest.VisioPage{{Name: "P", Shapes: page}},
+	}, nil)
+	p := doc.Parts[0]
+	sameLines(t, "blocks", lines(p), []string{"paragraph web01", "table  (hidden)", "paragraph below"})
+	b := p.Blocks[1]
+	sameLines(t, "rows", tableRows(b), []string{"Asset Number=", "Cost=25", "ShapeClass=Equipment", "Port_A=443", "Owner=", "Secret=s"})
+	if b.Attrs[gofastcore.AttrStored] != gofastcore.StoredShapeData || b.Attrs[gofastcore.AttrName] != "Server.1" {
+		t.Errorf("attrs %v", b.Attrs)
+	}
+	want := []gofastcore.DisplayCells{
+		{Row: 2, Col: 0, RowSpan: 1, ColSpan: 2, Display: gofastcore.DisplayHidden},
+		{Row: 5, Col: 0, RowSpan: 1, ColSpan: 2, Display: gofastcore.DisplayHidden},
+	}
+	if fmt.Sprint(b.Table.Display) != fmt.Sprint(want) {
+		t.Errorf("hidden rows %+v", b.Table.Display)
+	}
+	if b.Loc.BBox != p.Blocks[0].Loc.BBox || b.Loc.BBox == (gofastcore.Rect{}) {
+		t.Errorf("table at %+v, text at %+v", b.Loc.BBox, p.Blocks[0].Loc.BBox)
+	}
+	// Markdown and text leave shape data out unless stored data is asked for.
+	var md strings.Builder
+	doc.WriteMarkdown(&md, &gofastcore.RenderOptions{})
+	if strings.Contains(md.String(), "Cost") || !strings.Contains(md.String(), "web01") {
+		t.Errorf("markdown without stored data:\n%s", md.String())
+	}
+	md.Reset()
+	doc.WriteMarkdown(&md, &gofastcore.RenderOptions{StoredKinds: []string{gofastcore.StoredShapeData}})
+	if !strings.Contains(md.String(), "Cost") {
+		t.Errorf("markdown with shape data:\n%s", md.String())
+	}
+}
+
+// Shape data on a background page stays a table on the pages in front
+// of it.
+func TestVisioShapeDataBehind(t *testing.T) {
+	data := `<Section N="Property"><Row N="Rev"><Cell N="Value" V="3"/><Cell N="Label" V="Revision"/></Row></Section>`
+	doc := visio(t, ooxmltest.Visio{Pages: []ooxmltest.VisioPage{
+		{Name: "Front", Back: "1", Shapes: ooxmltest.VisioShape(1, 1, 5, 2, 1, ooxmltest.VisioText("body"))},
+		{Name: "Back", Background: true, Shapes: ooxmltest.VisioShape(1, 1, 10, 2, 0.5, ooxmltest.VisioText("title")+data)},
+	}}, nil)
+	sameLines(t, "front", lines(doc.Parts[0]), []string{"paragraph body", "header title", "table "})
+	sameLines(t, "rows", tableRows(doc.Parts[0].Blocks[2]), []string{"Revision=3"})
+}
+
+// The limit on table cells leaves shape data out, and says so.
+func TestVisioShapeDataCells(t *testing.T) {
+	data := `<Section N="Property"><Row N="A"><Cell N="Value" V="1"/></Row><Row N="B"><Cell N="Value" V="2"/></Row></Section>`
+	v := ooxmltest.Visio{Pages: []ooxmltest.VisioPage{{Name: "P", Shapes: ooxmltest.VisioShape(1, 1, 5, 2, 1, ooxmltest.VisioText("a")+data) +
+		ooxmltest.VisioShape(2, 1, 1, 2, 1, ooxmltest.VisioText("b")+data)}}}
+	data2 := v.Package().Bytes()
+	doc, err := (&gofastooxml.Extractor{MaxCells: 5}).Extract(context.Background(), bytes.NewReader(data2), int64(len(data2)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ooxmltest.CheckDocument(t, doc)
+	p := doc.Parts[0]
+	sameLines(t, "blocks", lines(p), []string{"paragraph a", "table ", "paragraph b"})
+	if !p.Has(gofastcore.WarnLimitExceeded) {
+		t.Errorf("the limit is not said: %+v", p.Warnings)
+	}
+}
+
+// A stencil's masters are parts after its pages, in the order it lists
+// them, named by their names: the master's prompt first, then its
+// shapes' text and data. A master the stencil hides is hidden. The
+// masters of a drawing are not parts.
+func TestVisioStencil(t *testing.T) {
+	shape := ooxmltest.VisioShape
+	text := ooxmltest.VisioText
+	data := `<Section N="Property"><Row N="Cost"><Cell N="Value" V="0" F="No Formula"/><Cell N="Label" V="Cost"/></Row></Section>`
+	v := ooxmltest.Visio{
+		ContentType: ooxmltest.CTVisioStencil,
+		Pages:       []ooxmltest.VisioPage{{Name: "Page-1", Shapes: shape(1, 1, 5, 2, 1, text("on the page"))}},
+		Masters: []ooxmltest.VisioMaster{
+			{Name: "Server", Prompt: "Drag onto the page to add a server.", Width: 2, Height: 2, Shapes: shape(5, 0.5, 0.5, 1, 1, text("Server")+data)},
+			{Name: "Old", Hidden: true, Shapes: shape(5, 0.5, 0.5, 1, 1, text("old shape"))},
+		},
+	}
+	doc := visio(t, v, nil)
+	var names []string
+	for _, p := range doc.Parts {
+		names = append(names, p.Name)
+	}
+	if strings.Join(names, ",") != "Page-1,Server,Old" {
+		t.Fatalf("parts %q", names)
+	}
+	sameLines(t, "Server", lines(doc.Parts[1]), []string{"paragraph Drag onto the page to add a server.", "paragraph Server", "table "})
+	sameLines(t, "Server data", tableRows(doc.Parts[1].Blocks[2]), []string{"Cost="})
+	if p := doc.Parts[1]; p.Kind != gofastcore.PartPage || p.Width != 144 || p.Height != 144 || p.Display != 0 {
+		t.Errorf("Server: %v %v×%v %v", p.Kind, p.Width, p.Height, p.Display)
+	}
+	if b := doc.Parts[1].Blocks[1].Loc.BBox; b != (gofastcore.Rect{X0: 36, Y0: 36, X1: 108, Y1: 108}) {
+		t.Errorf("Server's shape at %+v", b)
+	}
+	if doc.Parts[2].Display != gofastcore.DisplayHidden {
+		t.Errorf("the hidden master is not hidden: %v", doc.Parts[2].Display)
+	}
+	v.ContentType = ""
+	doc = visio(t, v, nil)
+	if len(doc.Parts) != 1 || doc.Parts[0].Name != "Page-1" {
+		t.Errorf("a drawing's masters are parts: %d parts", len(doc.Parts))
+	}
+}
+
+// Each data recordset is a stored table: its columns' names the header
+// row, a row's missing values empty.
+func TestVisioRecordsets(t *testing.T) {
+	v := ooxmltest.Visio{
+		Pages: []ooxmltest.VisioPage{{Name: "P", Shapes: ooxmltest.VisioShape(1, 1, 5, 2, 1, ooxmltest.VisioText("body"))}},
+		Recordsets: []ooxmltest.VisioRecordset{
+			{Name: "Servers", Data: ooxmltest.ADORowset([]string{"ID", "c1=Server Name", "c2=IP"},
+				`ID="1" c1="web01" c2="10.0.0.1"`, `ID="2" c2="10.0.0.2"`)},
+			{Name: "Empty", Data: ooxmltest.ADORowset([]string{"A"})},
+		},
+	}
+	doc := visio(t, v, nil)
+	if len(doc.Parts) != 2 || doc.Parts[1].Kind != gofastcore.PartStored {
+		t.Fatalf("parts %+v", doc.Parts)
+	}
+	st := doc.Parts[1]
+	if len(st.Blocks) != 2 {
+		t.Fatalf("stored blocks %+v", st.Blocks)
+	}
+	b := st.Blocks[0]
+	sameLines(t, "Servers", tableRows(b), []string{"ID|Server Name|IP", "1|web01|10.0.0.1", "2||10.0.0.2"})
+	if b.Table.HeaderRows != 1 || b.Attrs[gofastcore.AttrStored] != gofastcore.StoredLinkedData || b.Attrs[gofastcore.AttrName] != "Servers" {
+		t.Errorf("table %+v attrs %v", b.Table, b.Attrs)
+	}
+	sameLines(t, "Empty", tableRows(st.Blocks[1]), []string{"A"})
+	var md strings.Builder
+	doc.WriteMarkdown(&md, &gofastcore.RenderOptions{})
+	if strings.Contains(md.String(), "web01") {
+		t.Errorf("markdown without stored data has the recordset:\n%s", md.String())
+	}
 }

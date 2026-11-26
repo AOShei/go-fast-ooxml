@@ -27,7 +27,8 @@ type backEntry struct {
 // back returns what the background page with the given index puts on the
 // pages in front of it: its shapes in reading order, their text a header
 // if it starts in the upper half of the background page, a footer if in
-// the lower. Its own background pages are not in it.
+// the lower, and their pictures and shape data as they are. Its own
+// background pages are not in it.
 func (d *drawing) back(index int) *backEntry {
 	ref := &d.pages[index]
 	d.mu.Lock()
@@ -48,6 +49,16 @@ func (d *drawing) back(index int) *backEntry {
 		for i := range e.blocks {
 			b := &e.blocks[i]
 			if b.Kind == gofastcore.KindImage {
+				continue
+			}
+			if b.Table != nil {
+				// Shape data stays a table where it is.
+				e.bytes += gofastcore.BlockCost
+				for _, r := range b.Table.Rows {
+					for _, c := range r {
+						e.bytes += gofastcore.CellCost + len(c)
+					}
+				}
 				continue
 			}
 			b.Kind, b.Marker = gofastcore.KindFooter, ""
@@ -93,6 +104,10 @@ func (pg *page) background(blocks []gofastcore.Block, ref *pageRef, part *gofast
 				if blk.Image != nil {
 					img := *blk.Image
 					blk.Image = &img
+				}
+				if blk.Table != nil {
+					t := *blk.Table
+					blk.Table = &t
 				}
 				blocks = append(blocks, blk)
 			}

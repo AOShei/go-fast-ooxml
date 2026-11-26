@@ -16,7 +16,7 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 |---|---|
 | Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. Word's Horizontal Line, a shape the file marks as one, is a `thematic_break` in the body (not in a table, text box, header or note); a paragraph that only has a border is not one, and section, page and column breaks are layout and give no block. What the file declares about the display of text is kept (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
 | Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. What the file declares about the display of text is kept (see below). Sheets are read in parallel. A binary workbook (`.xlsb`) gives what the same workbook as `.xlsx` gives, its formulas read back from their compiled form |
-| Visio | Every page is a part, with the size of the page. Each shape's text is paragraphs or list items, at its place on the page, in reading order; a shape that is an instance of a master takes its text and its fields' values as Visio shows them. Pictures, comments, links and the text of background pages are read. What the file declares about the display of text is kept (see below). Pages are read in parallel |
+| Visio | Every page is a part, with the size of the page. Each shape's text is paragraphs or list items, at its place on the page, in reading order; a shape that is an instance of a master takes its text and its fields' values as Visio shows them. Pictures, comments, links and the text of background pages are read, and each shape's data is a stored table after its text. A stencil's masters are parts after its pages; the data recordsets a drawing keeps are tables in the stored part. What the file declares about the display of text is kept (see below). Pages are read in parallel |
 | PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. What the file declares about the display of text is kept (see below). Slides are read in parallel |
 
 ## How fast
@@ -760,8 +760,10 @@ drawing with no pages has one part that says so.
 | A shape's link | With `Options.Spans`, a span over the shape's text with its address (its default link, else its first; the place in the target after `#`) |
 | A background page | Its text on every page it is behind, after the page's own: `header` if it starts in the upper half of the background page, `footer` if in the lower; pictures stay `image`. The background page behind that one follows, in turn |
 | A background page behind no page | A part of its own, after the foreground pages, in the order of the drawing: a person can open it in Visio |
+| A shape's data (the Shape Data window) | A `table` after the shape's text, at its place, `stored` `shape_data`, `name` the shape's name: a row for each item, its label then its value (see below) |
 | Comments | `note` blocks of type `comment`, with author and date, after the page's own text |
 | An embedded object | A child, through `Options.Child` |
+| A data recordset (`visio/data`) | A `table` in the stored part, `stored` `linked_data`, `name` the recordset's name (see below) |
 | The VBA project of a `.vsdm` or `.vstm` | The stored part, as for Word, Excel and PowerPoint |
 
 **Masters.** A shape dropped from a stencil is an instance of a master,
@@ -774,6 +776,33 @@ are also taken, after the shape and its master, from the style its text
 takes after. The masters of a drawing or template are not parts: their
 text is on every shape that uses them.
 
+**Shape data.** The items of a shape's Shape Data window are its
+`Property` rows: the master's first, in its order, with the shape's own
+values over them and without the rows the shape deletes, then the
+shape's own. Each is a row of two cells: the label, or the row's name
+(`Port_A`) where the label is empty, and the value exactly as Visio saved
+it (the `Value` cell's `V`: a date as `2026-11-26T00:00:00`, a number as
+it is stored, not as its format shows it). An item with no value is kept
+with an empty value; Visio saves one with the formula `No Formula`, and
+its saved value is not read. A row the file declares invisible
+(`Invisible` 1) is hidden, by a `DisplayCells` region over the row. The
+table is never drawn, so Markdown and text leave it out unless
+`RenderOptions.Stored` or `StoredKinds` asks for it (`-stored`,
+`-stored=shape_data`); JSON always has it.
+
+**Data recordsets.** A drawing linked to outside data (a workbook, a
+database, a list) keeps a copy of the data it last fetched, as Visio's
+External Data window shows it. Each recordset is a table of the stored
+part, its header row the names of the columns, then a row for each
+record, a value it lacks empty. The data is never fetched again.
+
+**Stencils.** In a stencil (`.vssx`, `.vssm`) each master, which the
+Shapes pane shows, is a part of kind `page`, after the stencil's pages,
+in the order of the stencil, named by its name and with the size of its
+page: first the description the Shapes pane shows for it (its prompt),
+then its shapes' text and data, read as on a page. A master the stencil
+hides has the part's `display` `hidden`.
+
 **Reading order.** As for slides: from the top of the page down, and from
 left to right among shapes that start beside each other; a line or
 connector stands at its start; a group is read as one thing, at the place
@@ -781,18 +810,18 @@ of the group, with its shapes in the same order inside it; shapes wholly
 off the page come after those on it, then the background pages' text and
 the comments.
 
-**Limits.** A master's text is on every instance of it, and a background
-page's on every page in front of it, so a small file can ask for much more
-than it holds: at most about a million blocks are taken in this way over a
-drawing, and a page past that says so with `limit.exceeded`. Shapes past
-262,144 on a page or master, groups nested more than 64 deep, rows of a
-section past 16,384 and background pages more than 16 behind a page, or
-that lead back to a page already shown, are left out, each with
-`limit.exceeded`.
+**Limits.** A master's text and data are on every instance of it, and a
+background page's on every page in front of it, so a small file can ask
+for much more than it holds: at most about a million blocks and rows of
+shape data are taken in this way over a drawing, and a page past that
+says so with `limit.exceeded`. `Extractor.MaxCells` bounds the cells of
+shape data and recordsets as it does for workbooks. Shapes past 262,144
+on a page or master, groups nested more than 64 deep, rows of a section
+past 16,384, background pages more than 16 behind a page, or that lead
+back to a page already shown, recordsets past 1,024 and columns of a
+recordset past 16,384 are left out, each with `limit.exceeded`.
 
-**Not read:** the shape data of shapes (the Shape Data window) and the
-data recordsets a drawing links to; the masters of a stencil, which the
-Shapes pane shows; ink. Connections between shapes give no text.
+**Not read:** ink. Connections between shapes give no text.
 
 ## Charts and SmartArt
 
@@ -862,10 +891,12 @@ is not judged.
 
 | `stored` | What |
 |---|---|
-| `macro` | The code of a VBA project, in all three formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes, and decoded from the project's code page: the Windows code pages 874, 932, 936, 949, 950 and 1250 to 1258, Mac Roman, ISO 8859-1 and UTF-8, from Microsoft's tables of them. A character a code page does not define, or text in another code page, is U+FFFD, counted by `text.unmapped_glyphs`. All 246 modules of the corpus and the soak set are the same as olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
-| `custom_xml` | Custom XML data with text, in all three formats: a block for each part, a line for each element with text of its own (`Abstract: …`). Attribute values are not read. Data a content control is bound to is also in the body, where the control shows it |
+| `macro` | The code of a VBA project, in all four formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes, and decoded from the project's code page: the Windows code pages 874, 932, 936, 949, 950 and 1250 to 1258, Mac Roman, ISO 8859-1 and UTF-8, from Microsoft's tables of them. A character a code page does not define, or text in another code page, is U+FFFD, counted by `text.unmapped_glyphs`. All 246 modules of the corpus and the soak set are the same as olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
+| `custom_xml` | Custom XML data with text, in all four formats: a block for each part, a line for each element with text of its own (`Abstract: …`). Attribute values are not read. Data a content control is bound to is also in the body, where the control shows it |
 | `document_variable` | Word's document variables, `name: value` |
 | `defined_name` | Excel's defined names |
+| `shape_data` | The data of a Visio shape, as a table after its text in its page (see Visio drawings) |
+| `linked_data` | A Visio data recordset: a copy the drawing keeps of the outside data it links to, as a table in the stored part |
 | `pivot_cache` | The records of an Excel pivot cache whose source is gone, as a table, and the formulas of calculated fields (`Margin: =Sales*0.1`) |
 | `field_code` | Every code of a Word field: a `note` of type `field` after the paragraph its field ends in (see below) |
 | `after_end` | Data appended after the end of the zip archive, where Office stops reading: its text, if it is text (UTF-8), up to 1 MiB. The stored part also carries `input.trailing_data`, which says how many bytes follow the end, whatever they are |

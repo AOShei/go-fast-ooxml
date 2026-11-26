@@ -132,7 +132,7 @@ const (
 	WarnDecrypted = gofastcore.WarnInputDecrypted
 )
 
-// Extractor extracts Word, Excel and PowerPoint files. The zero value is
+// Extractor extracts Word, Excel, PowerPoint and Visio files. The zero value is
 // ready to use and safe for concurrent use. Its fields are the settings
 // that only this library has; everything else is in gofastcore.Options.
 type Extractor struct {
@@ -140,9 +140,11 @@ type Extractor struct {
 	// Zero means DefaultMaxArchiveMembers; negative means no limit.
 	MaxArchiveMembers int
 	// MaxCells bounds the cells kept from a workbook, over all its
-	// sheets, or from the tables of a presentation, over all its slides.
-	// A sheet or slide that reaches it is cut off there, with a
-	// limit.exceeded warning. Zero means DefaultMaxCells; negative means
+	// sheets, from the tables of a presentation, over all its slides, or
+	// from the shape data and data recordsets of a Visio drawing. A sheet
+	// or slide that reaches it is cut off there, and so is a page's
+	// shape data or the drawing's recordsets, with a limit.exceeded
+	// warning. Zero means DefaultMaxCells; negative means
 	// no limit.
 	MaxCells int64
 	// MaxSpinCount bounds the rounds of hashing a password-protected
