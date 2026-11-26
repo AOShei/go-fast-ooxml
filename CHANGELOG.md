@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-26
+
 ### Added
 
 - Visio drawings: `.vsdx`, `.vsdm`, templates (`.vstx`, `.vstm`) and
@@ -492,7 +494,8 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.6.0
 [0.5.3]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.3
 [0.5.2]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.2
 [0.5.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.1
