@@ -51,6 +51,9 @@ const (
 	AML                                                    // aml: its annotations (revisions, comments, bookmarks)
 	Word10                                                 // w10: Word's VML extensions
 	Visio                                                  // Visio 2013's drawings, pages, masters and comments
+	ADOSchema                                              // s: the columns of an ADO rowset saved as XML (a Visio data recordset)
+	ADORowset                                              // rs: its rows
+	ADORow                                                 // z: a row
 )
 
 // Spaces is the table handed to every scanner.
@@ -109,6 +112,9 @@ var Spaces = map[string]xmlscan.Space{
 	"http://schemas.microsoft.com/aml/2001/core":                                AML,
 	"urn:schemas-microsoft-com:office:word":                                     Word10,
 	"http://schemas.microsoft.com/office/visio/2012/main":                       Visio,
+	"uuid:BDC6E3F0-6DA3-11d1-A2A3-00AA00C14882":                                 ADOSchema,
+	"urn:schemas-microsoft-com:rowset":                                          ADORowset,
+	"#RowsetSchema":                                                             ADORow,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part

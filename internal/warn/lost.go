@@ -37,6 +37,8 @@ const (
 	CapShapeRows
 	CapShapeText
 	CapBackPages
+	CapRecordsets
+	CapRecordColumns
 	// Excel.
 	CapSheets
 	CapSheetRows
@@ -113,12 +115,14 @@ var caps = [numCaps]capInfo{
 	CapCommentAuthors:    {"comment authors past " + itoa(MaxCommentAuthors) + " were not read; their comments have no author", "author", "authors"},
 	CapPlaceholders:      {"placeholders of a layout or master past " + itoa(MaxPlaceholders) + " were not read; slide placeholders that would inherit from them do not", "placeholder", "placeholders"},
 
-	CapPages:      {"pages past " + itoa(MaxSlides) + " were not read", "page", "pages"},
-	CapShapes:     {"shapes of a page or master past " + itoa(MaxShapes) + " were not read", "shape", "shapes"},
-	CapShapeDepth: {"shapes in groups nested more than " + itoa(MaxShapeDepth) + " deep were not read", "shape", "shapes"},
-	CapShapeRows:  {"rows of a section of a shape past " + itoa(MaxShapeRows) + " were not read (formats of text, fields, shape data, links)", "row", "rows"},
-	CapShapeText:  {"text of a shape past " + itoa(MaxShapeText) + " runs, fields and paragraph marks was not read", "shape", "shapes"},
-	CapBackPages:  {"background pages behind a page past " + itoa(MaxBackPages) + " in turn, or that lead back to a page already shown, were not read", "page", "pages"},
+	CapPages:         {"pages past " + itoa(MaxSlides) + " were not read", "page", "pages"},
+	CapShapes:        {"shapes of a page or master past " + itoa(MaxShapes) + " were not read", "shape", "shapes"},
+	CapShapeDepth:    {"shapes in groups nested more than " + itoa(MaxShapeDepth) + " deep were not read", "shape", "shapes"},
+	CapShapeRows:     {"rows of a section of a shape past " + itoa(MaxShapeRows) + " were not read (formats of text, fields, shape data, links)", "row", "rows"},
+	CapShapeText:     {"text of a shape past " + itoa(MaxShapeText) + " runs, fields and paragraph marks was not read", "shape", "shapes"},
+	CapBackPages:     {"background pages behind a page past " + itoa(MaxBackPages) + " in turn, or that lead back to a page already shown, were not read", "page", "pages"},
+	CapRecordsets:    {"data recordsets past " + itoa(MaxRecordsets) + " were not read", "recordset", "recordsets"},
+	CapRecordColumns: {"columns of a data recordset past " + itoa(MaxRecordColumns) + " were not read", "column", "columns"},
 
 	CapSheets:              {"sheets past " + itoa(MaxSheets) + " were not read", "sheet", "sheets"},
 	CapSheetRows:           {"rows past row " + itoa(MaxRows) + " of the sheet were not read", "row", "rows"},
@@ -190,6 +194,8 @@ const (
 	MaxShapeRows           = 1 << 14
 	MaxShapeText           = 1 << 18
 	MaxBackPages           = 16
+	MaxRecordsets          = 1 << 10
+	MaxRecordColumns       = 1 << 14
 	MaxSheets              = 1 << 16
 	MaxRows                = 1 << 20
 	MaxCols                = 1 << 14

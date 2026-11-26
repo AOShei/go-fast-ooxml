@@ -49,6 +49,7 @@ type page struct {
 	removed  int
 	full     bool // the text budget is spent
 	repeat   bool // the bound on text taken from masters left some out
+	cellsOut bool // the limit on table cells left shape data out
 	sawImage bool
 	failure  error
 	damaged  []string
@@ -59,7 +60,7 @@ type page struct {
 func (pg *page) reset(ref *pageRef, room *gofastcore.TextBudget) {
 	pg.ref, pg.room = ref, room
 	pg.blocks, pg.placed, pg.unit = pg.blocks[:0], pg.placed[:0], 0
-	pg.removed, pg.full, pg.repeat, pg.sawImage, pg.failure = 0, false, false, false, nil
+	pg.removed, pg.full, pg.repeat, pg.cellsOut, pg.sawImage, pg.failure = 0, false, false, false, false, nil
 	pg.damaged, pg.unread = nil, nil
 	pg.lost.Reset()
 	pg.width, pg.height = round(ref.width*points), round(ref.height*points)
@@ -81,10 +82,17 @@ func (pg *page) read(ctx context.Context, index int, ref *pageRef) *unit.Result 
 	pg.reset(ref, room)
 	part.Width, part.Height = pg.width, pg.height
 	part.Name = pg.lost.Name(ref.name)
+	if ref.hidden {
+		part.Display = gofastcore.DisplayHidden // a master the stencil does not show
+	}
 
 	switch {
 	case ref.target == "" || !d.pkg.Has(ref.target):
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the drawing lists the page but does not contain it")
+		what := "page"
+		if ref.master {
+			what = "master"
+		}
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the drawing lists the "+what+" but does not contain it")
 	case d.exceeded.Load():
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "nothing was read before the limit")
 		res.Limited = true
@@ -99,8 +107,12 @@ func (pg *page) read(ctx context.Context, index int, ref *pageRef) *unit.Result 
 			}
 		}
 		blocks := pg.arrange()
-		blocks = pg.background(blocks, ref, part, res)
-		blocks = pg.comments(blocks, ref.id)
+		if ref.master {
+			blocks = pg.prompt(blocks, ref)
+		} else {
+			blocks = pg.background(blocks, ref, part, res)
+			blocks = pg.comments(blocks, ref.id)
+		}
 		part.Blocks = blocks
 		pg.blocks = pg.blocks[:0]
 		if err := pg.failure; err != nil {
@@ -124,6 +136,10 @@ func (pg *page) read(ctx context.Context, index int, ref *pageRef) *unit.Result 
 	}
 	if pg.repeat {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "text that shapes of the page take from their masters, or from background pages, is left out: the pages of the drawing repeat more of it than is kept")
+		res.Limited = true
+	}
+	if pg.cellsOut {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the limit on table cells was reached; the data of shapes past it is left out")
 		res.Limited = true
 	}
 	if pg.lost.Say(part) {
@@ -194,6 +210,21 @@ func (pg *page) content(ref *pageRef) []opc.Rel {
 		pg.walk(sh, pg.toPage, nil, 0)
 	}
 	return rels
+}
+
+// prompt puts first what a stencil says of a master: its prompt, the
+// description Visio shows for it in the Shapes pane.
+func (pg *page) prompt(blocks []gofastcore.Block, ref *pageRef) []gofastcore.Block {
+	text, removed := clean.String([]byte(ref.prompt), clean.Prose)
+	pg.removed += removed
+	if text == "" {
+		return blocks
+	}
+	if !pg.room.Take(len(text)) {
+		pg.full = true
+		return blocks
+	}
+	return append([]gofastcore.Block{{Kind: gofastcore.KindParagraph, Text: text}}, blocks...)
 }
 
 // fail records that a part the page needs could not be read.
@@ -314,36 +345,57 @@ func (v view) namedRows(sec secID) []row {
 	if v.base != nil && (own == nil || !own.del) {
 		base = v.base.sections[sec]
 	}
-	var out []row
-	if base != nil {
-		for _, r := range base.rows {
-			if r.del {
-				continue
-			}
-			mine := own.byName(r.name)
-			if mine == nil {
-				out = append(out, r)
-				continue
-			}
-			if mine.del {
-				continue
-			}
-			merged := row{name: r.name, ix: r.ix, cells: make(map[string]string, len(r.cells)+len(mine.cells))}
-			for k, x := range r.cells {
-				merged.cells[k] = x
-			}
-			for k, x := range mine.cells {
-				merged.cells[k] = x
-			}
-			out = append(out, merged)
+	if base == nil || len(base.rows) == 0 {
+		if own == nil {
+			return nil
 		}
+		out := make([]row, 0, len(own.rows))
+		for _, r := range own.rows {
+			if !r.del {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	var mine map[string]int // the shape's own rows by name
+	if own != nil && len(own.rows) > 0 {
+		mine = make(map[string]int, len(own.rows))
+		for i := range own.rows {
+			if _, dup := mine[own.rows[i].name]; !dup {
+				mine[own.rows[i].name] = i
+			}
+		}
+	}
+	inBase := make(map[string]bool, len(base.rows))
+	out := make([]row, 0, len(base.rows))
+	for _, r := range base.rows {
+		inBase[r.name] = true
+		if r.del {
+			continue
+		}
+		i, ok := mine[r.name]
+		if !ok {
+			out = append(out, r)
+			continue
+		}
+		m := &own.rows[i]
+		if m.del {
+			continue
+		}
+		merged := row{name: r.name, ix: r.ix, cells: make(map[string]string, len(r.cells)+len(m.cells))}
+		for k, x := range r.cells {
+			merged.cells[k] = x
+		}
+		for k, x := range m.cells {
+			merged.cells[k] = x
+		}
+		out = append(out, merged)
 	}
 	if own != nil {
 		for _, r := range own.rows {
-			if r.del || (base != nil && base.byName(r.name) != nil) {
-				continue
+			if !r.del && !inBase[r.name] {
+				out = append(out, r)
 			}
-			out = append(out, r)
 		}
 	}
 	return out
@@ -465,6 +517,9 @@ func (pg *page) walk(sh *shape, parent dml.Matrix, master *masterRef, depth int)
 	if !pg.full {
 		pg.picture(v, box, boxed)
 		pg.shapeText(v, box, boxed, pg.hidden(v))
+	}
+	if !pg.full {
+		pg.shapeData(v, box, boxed)
 	}
 	if len(pg.blocks) > first {
 		pg.placed = append(pg.placed, placed{box: at, boxed: atBoxed, first: first, end: len(pg.blocks), unit: pg.unit})

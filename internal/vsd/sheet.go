@@ -89,10 +89,13 @@ var kept = [numSections]map[string]bool{
 	sChar:      {"Style": true, "Pos": true, "Strikethru": true, "DoubleUnderline": true, "ColorTrans": true},
 	sPara:      {"Bullet": true, "BulletStr": true},
 	sField:     {"Value": true},
-	sProperty:  {"Label": true, "Value": true, "Invisible": true, "SortKey": true},
+	sProperty:  {"Label": true, "Value": true, "Invisible": true},
 	sHyperlink: {"Address": true, "SubAddress": true, "Default": true},
 	sLayer:     {"Visible": true, "Name": true},
 }
+
+// noFormula is the formula Visio saves for a cell that holds nothing.
+const noFormula = "No Formula"
 
 // row is a row of a section. A row of a section indexed by number has
 // ix; one of a section indexed by name has name.
@@ -347,6 +350,14 @@ func (r *reader) section(sec *section, id secID) {
 				n, _ := s.Attr(xmlscan.NoSpace, "N")
 				if want[string(n)] {
 					v, _ := s.Attr(xmlscan.NoSpace, "V")
+					if id == sProperty && string(n) == "Value" {
+						// A shape data item with no value: Visio saves
+						// "No Formula" as its formula, and a zero as the
+						// value.
+						if f, _ := s.Attr(xmlscan.NoSpace, "F"); string(f) == noFormula {
+							v = nil
+						}
+					}
 					if rw.cells == nil {
 						rw.cells = map[string]string{}
 					}

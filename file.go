@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -291,6 +292,7 @@ func (f *File) open(first bool) (*session, error) {
 	case opc.Vsdx:
 		sess.src = vsd.Open(pkg, main, opts, vsd.Config{
 			MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells),
+			Stencil:  strings.HasPrefix(mime, "application/vnd.ms-visio.stencil"),
 		})
 	default:
 		sess.src = pml.Open(pkg, main, opts, pml.Config{
@@ -326,10 +328,12 @@ func (f *File) Metadata() gofastcore.Metadata { return f.meta }
 // NumParts returns the number of parts: 1 for a Word document, the
 // number of sheets of a workbook, the number of slides of a
 // presentation, the number of pages of a drawing that are parts (its
-// foreground pages, and its background pages behind no page). A workbook,
-// presentation or drawing with none has one part, which says so. A document that stores what it shows nowhere (defined names,
-// macro code) has one more, last, of kind gofastcore.PartStored; it comes
-// with the whole document, not with a range of parts.
+// foreground pages, its background pages behind no page, and a stencil's
+// masters). A workbook, presentation or drawing with none has one part,
+// which says so. A document that stores what it shows nowhere (defined
+// names, macro code, data recordsets) has one more, last, of kind
+// gofastcore.PartStored; it comes with the whole document, not with a
+// range of parts.
 func (f *File) NumParts() int { return f.parts }
 
 // Sheets lists the sheets of a workbook in order, without reading them.

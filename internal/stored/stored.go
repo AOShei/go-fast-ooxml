@@ -229,6 +229,7 @@ type Part struct {
 
 	room      *gofastcore.TextBudget
 	cut       bool // the limit on text was reached
+	limited   bool // another limit left something out
 	budget    bool // the decompression budget ran out
 	undecoded int  // bytes of macro code not decoded
 	codePages []int
@@ -269,6 +270,18 @@ func (p *Part) Add(b gofastcore.Block) bool {
 // Cut records that the limit on text cut something short.
 func (p *Part) Cut() { p.cut = true }
 
+// Limit records that a limit other than those on text and decompressed
+// size left something out, with the warning that says what.
+func (p *Part) Limit(message string) {
+	if !p.limited {
+		p.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, message)
+	}
+	p.limited = true
+}
+
+// Note records a failure to read the named part of the package.
+func (p *Part) Note(name string, err error) { p.note(name, err) }
+
 // Full reports whether a limit has stopped the reading.
 func (p *Part) Full() bool { return p.cut || p.budget }
 
@@ -307,7 +320,7 @@ func (p *Part) Finish() (limited bool) {
 		p.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")
 	}
 	p.Part.Finish()
-	return p.cut || p.budget || capped
+	return p.cut || p.budget || p.limited || capped
 }
 
 // maxProject bounds the size of a VBA project read.
