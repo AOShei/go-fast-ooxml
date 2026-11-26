@@ -155,10 +155,20 @@ func TestMain(t *testing.T) {
 			p.Rel("", ooxmltest.RelOfficeDoc, "nowhere.xml")
 			return p.Add("ppt/presentation.xml", ooxmltest.CTPresentation, "<x/>")
 		}, "ppt/presentation.xml", Pptx, "application/vnd.openxmlformats-officedocument.presentationml.presentation", nil},
-		{"some other package", func() *ooxmltest.Package {
+		{"visio", func() *ooxmltest.Package {
+			p := ooxmltest.NewPackage()
+			p.Rel("", ooxmltest.RelVisioDocument, "visio/document.xml")
+			return p.Add("visio/document.xml", "application/vnd.ms-visio.drawing.main+xml", "<x/>")
+		}, "visio/document.xml", Vsdx, "application/vnd.ms-visio.drawing", nil},
+		{"visio stencil, related as an office document", func() *ooxmltest.Package {
 			p := ooxmltest.NewPackage()
 			p.Rel("", ooxmltest.RelOfficeDoc, "visio/document.xml")
-			return p.Add("visio/document.xml", "application/vnd.ms-visio.drawing.main+xml", "<x/>")
+			return p.Add("visio/document.xml", "application/vnd.ms-visio.stencil.macroEnabled.main+xml", "<x/>")
+		}, "visio/document.xml", Vsdx, "application/vnd.ms-visio.stencil.macroEnabled.12", nil},
+		{"some other package", func() *ooxmltest.Package {
+			p := ooxmltest.NewPackage()
+			p.Rel("", ooxmltest.RelOfficeDoc, "doc/main.xml")
+			return p.Add("doc/main.xml", "application/vnd.example.document.main+xml", "<x/>")
 		}, "", "", "", ErrNoMainPart},
 		{"theme only", func() *ooxmltest.Package {
 			return ooxmltest.NewPackage().Add("theme/theme1.xml", ooxmltest.CTTheme, "<x/>")

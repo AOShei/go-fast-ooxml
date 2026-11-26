@@ -1,10 +1,10 @@
 # go-fast-ooxml
 
-Extracts Word, Excel and PowerPoint files (`.docx`, `.xlsx`, `.pptx`, their
-macro and template variants, Excel's binary workbooks, `.xlsb`, any of
-these saved as one XML file, Flat OPC, and Office 2003's XML formats,
-WordprocessingML 2003 and SpreadsheetML 2003) into the shared go-fast
-document model,
+Extracts Word, Excel, PowerPoint and Visio files (`.docx`, `.xlsx`, `.pptx`,
+`.vsdx`, their macro and template variants, Visio's stencils, Excel's
+binary workbooks, `.xlsb`, any of these saved as one XML file, Flat OPC,
+and Office 2003's XML formats, WordprocessingML 2003 and SpreadsheetML
+2003) into the shared go-fast document model,
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
@@ -16,6 +16,7 @@ What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 |---|---|
 | Word | Text and structure are extracted: headings, list items with their computed labels, tables with merged cells, footnotes and endnotes with the numbers the document's settings and sections give them, comments, tracked changes, headers and footers, text boxes, pictures, embedded files, the data of charts and the text of SmartArt diagrams. Word's Horizontal Line, a shape the file marks as one, is a `thematic_break` in the body (not in a table, text box, header or note); a paragraph that only has a border is not one, and section, page and column breaks are layout and give no block. What the file declares about the display of text is kept (see below). With `Options.Spans`, bold, italic, underline, strike-through, superscript, subscript and links are reported as spans |
 | Excel | Every sheet is a part; its cells are tables, with what each cell displays: numbers through their number formats, dates in ISO 8601, formulas as their stored results. Declared tables, pivot tables, merged cells, comments, drop-down lists, text in shapes, pictures, charts, chart sheets, SmartArt and embedded files are read. What the file declares about the display of text is kept (see below). Sheets are read in parallel. A binary workbook (`.xlsb`) gives what the same workbook as `.xlsx` gives, its formulas read back from their compiled form |
+| Visio | Every page is a part, with the size of the page. Each shape's text is paragraphs or list items, at its place on the page, in reading order; a shape that is an instance of a master takes its text and its fields' values as Visio shows them. Pictures, comments, links and the text of background pages are read. What the file declares about the display of text is kept (see below). Pages are read in parallel |
 | PowerPoint | Every slide is a part, with the size of the slide. Its title is a heading and the slide's name; body text is list items with their bullets or numbers, or paragraphs; tables keep their merged cells; pictures, charts, SmartArt, speaker's notes and comments are read, and so is the text the layout and master put on every slide. Every block has its place on the slide. What the file declares about the display of text is kept (see below). Slides are read in parallel |
 
 ## How fast
@@ -238,7 +239,8 @@ gofastooxml ./archive > documents.jsonl      # every Office file under a directo
 ```
 
 A directory stands for the Office files in it and below it: those named as
-the formats are (`.docx`, `.xlsx`, `.pptx`, their variants, `.xlsb`), and
+the formats are (`.docx`, `.xlsx`, `.pptx`, `.vsdx`, their variants,
+`.xlsb`), and
 the `.xml` files that are Office files saved as XML, told by their root
 element; other `.xml` files are passed over without a word. A file named
 on the command line is read whatever its name, and refused, with the
@@ -256,14 +258,14 @@ written once the document is read.
 |---|---|
 | `-format json\|markdown\|text` | What to print. JSON is the shared document; with several inputs each document is one line |
 | `-o file` | Write there instead of standard output |
-| `-parts 3`, `-parts 2-5` | Only those parts: sheets or slides by number |
+| `-parts 3`, `-parts 2-5` | Only those parts: sheets, slides or pages by number |
 | `-images meta\|data\|none` | Pictures: a block for each, with its place, size and alternative text (the default); their bytes too; or not at all |
 | `-spans` | Bold, italic and the like, and links, as spans |
 | `-exclude-display`, `-exclude-display=hidden` | In Markdown and text, leave out text the file declares not shown or drawn with no ink: all of it (also `=true`, `=all`), or what has the reasons named (`hidden`, `no_ink`, joined by `,` or `+`); `=false` or `=` leaves nothing out. JSON always has everything |
 | `-furniture`, `-part-markers` | In Markdown and text: include running headers and footers; put a line before each part saying which it is |
 | `-stored`, `-stored=field_code,macro` | In Markdown and text, include what the file stores and shows nowhere: all of it (also `=true`, `=all`), or only the kinds named (joined by `,` or `+`; see [What a file stores](#what-a-file-stores-and-shows-nowhere)); `=false` or `=` leaves it out |
 | `-children` | In Markdown and text, the documents a file embeds, each after a line naming it (`[child 1: book.xlsx]`); on by default, `-children=false` leaves them out |
-| `-workers n` | Sheets or slides read at a time |
+| `-workers n` | Sheets, slides or pages read at a time |
 | `-max-cells n`, `-max-decoded-bytes n`, `-max-text-bytes n` | The limits; `-1` for none |
 | `-password p` | The password of an encrypted file, and of encrypted files embedded in it |
 | `-key file` | A private key (RSA; PEM or DER, PKCS #1 or #8) for a file encrypted for its certificate, and for encrypted files embedded in it; may be given more than once. An encrypted key file is not read |
@@ -727,6 +729,71 @@ the same for any number of workers.
 animations. An action that starts a program or
 runs a macro is reported as `input.active_content` and never run.
 
+## Visio drawings
+
+All six kinds of Visio package (Visio 2013 and later) are read: drawings
+(`.vsdx`), drawings with macros (`.vsdm`), templates (`.vstx`, `.vstm`)
+and stencils (`.vssx`, `.vssm`). `Source.Format` is `vsdx` for all of
+them; `Source.MIME` says which kind the file is
+(`application/vnd.ms-visio.drawing`,
+`application/vnd.ms-visio.drawing.macroEnabled.12`,
+`application/vnd.ms-visio.template`,
+`application/vnd.ms-visio.template.macroEnabled.12`,
+`application/vnd.ms-visio.stencil`,
+`application/vnd.ms-visio.stencil.macroEnabled.12`). A Visio package
+without a table of content types, which some programs write, is read by
+the relationships that lead to its parts, with `input.repaired` (severity
+info) saying so; any other zip archive without one is refused as before.
+
+**One part of kind `page` per foreground page**, in the order of the
+drawing, named by the page's name. `Width` and `Height` are the size of
+the page in points, and every block that comes from a shape has
+`loc.bbox`: the shape's box on the page, measured from its top left
+corner, after the groups it is in have moved, turned and mirrored it. A
+drawing with no pages has one part that says so.
+
+| In the drawing | In the model |
+|---|---|
+| A shape's text | `paragraph` for each paragraph; `list_item` (level 1) where the paragraph's format has a bullet, with the bullet's characters (`BulletStr`) as `Marker`, `•` when it gives none |
+| A field | The value Visio stored for it on that shape (the `Field` row's `Value`) |
+| A picture | `image`, unless `Options.Images` asks for none |
+| A shape's link | With `Options.Spans`, a span over the shape's text with its address (its default link, else its first; the place in the target after `#`) |
+| A background page | Its text on every page it is behind, after the page's own: `header` if it starts in the upper half of the background page, `footer` if in the lower; pictures stay `image`. The background page behind that one follows, in turn |
+| A background page behind no page | A part of its own, after the foreground pages, in the order of the drawing: a person can open it in Visio |
+| Comments | `note` blocks of type `comment`, with author and date, after the page's own text |
+| An embedded object | A child, through `Options.Child` |
+| The VBA project of a `.vsdm` or `.vstm` | The stored part, as for Word, Excel and PowerPoint |
+
+**Masters.** A shape dropped from a stencil is an instance of a master,
+and says only what differs from it: its place, often its field values,
+rarely its text. Whatever an instance does not set (a cell, a row of a
+section, its text) is the master's, and is read from there, as Visio
+shows it. A shape that has text of its own, even empty, does not show the
+master's. The text's formats (bullets, bold and the like, transparency)
+are also taken, after the shape and its master, from the style its text
+takes after. The masters of a drawing or template are not parts: their
+text is on every shape that uses them.
+
+**Reading order.** As for slides: from the top of the page down, and from
+left to right among shapes that start beside each other; a line or
+connector stands at its start; a group is read as one thing, at the place
+of the group, with its shapes in the same order inside it; shapes wholly
+off the page come after those on it, then the background pages' text and
+the comments.
+
+**Limits.** A master's text is on every instance of it, and a background
+page's on every page in front of it, so a small file can ask for much more
+than it holds: at most about a million blocks are taken in this way over a
+drawing, and a page past that says so with `limit.exceeded`. Shapes past
+262,144 on a page or master, groups nested more than 64 deep, rows of a
+section past 16,384 and background pages more than 16 behind a page, or
+that lead back to a page already shown, are left out, each with
+`limit.exceeded`.
+
+**Not read:** the shape data of shapes (the Shape Data window) and the
+data recordsets a drawing links to; the masters of a stencil, which the
+Shapes pane shows; ink. Connections between shapes give no text.
+
 ## Charts and SmartArt
 
 The same in all three formats.
@@ -854,6 +921,7 @@ What is reported, by format:
 |---|---|---|
 | Word | Hidden text (`w:vanish`, `w:specVanish`), on the run or through its character style, its paragraph's style or the document defaults; hidden text and a hidden paragraph style cancel, as in Word. A footnote, text box or picture anchored in hidden text. A drawing whose `wp:docPr` is `hidden`, a legacy shape whose style says `visibility:hidden`. A header or footer the document's own settings switch off: a first-page one where no section has a different first page, an even-page one where the document does not have different odd and even pages. (A header or footer part that no section names is used by nothing, and has no reason.) | A Word 2010 text fill (`w14:textFill`) of nothing, or fully transparent |
 | Excel | A hidden or very hidden sheet: the part and all its blocks. Hidden rows and columns, filtered rows among them. A value its number format displays as nothing (`;;;`), other than zero. A shape or picture marked hidden; the hidden stand-in Excel writes for a form control kept in the legacy drawing is not one. A drop-down list whose arrow is hidden or whose cells are all hidden. The series a chart's filter leaves out | Shape text with no fill, or a fill of zero opacity |
+| Visio | A shape's text it hides (`HideText`), its own or its master's. A shape on layers that are all switched off (`Visible` 0); a shape also on a layer that is shown is shown, and a layer that is only not printed says nothing | Text fully transparent (`ColorTrans` 1) |
 | PowerPoint | A hidden slide (`show="0"`): the part and all its blocks, its notes included. A shape or group marked hidden. Text in a table cell that a merged cell covers. A notes or handout header or footer the master switches off (`p:hf`). The series a chart's filter leaves out | Text with no fill and no outline, or a fill of zero opacity, through the run, its level, the placeholders it takes after, the master's styles and the presentation's defaults |
 
 Where only part of a paragraph has a reason, a span over that part carries

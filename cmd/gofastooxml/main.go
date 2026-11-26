@@ -1,11 +1,11 @@
-// Command gofastooxml extracts Word, Excel and PowerPoint files into the
+// Command gofastooxml extracts Word, Excel, PowerPoint and Visio files into the
 // shared document model of the go-fast libraries and prints them as JSON,
 // Markdown or plain text.
 //
 //	gofastooxml [flags] file-or-directory...
 //
 // A directory stands for the Office files in it and below it: those named
-// as the formats are (.docx, .xlsx, .pptx and their variants, .xlsb), and
+// as the formats are (.docx, .xlsx, .pptx, .vsdx and their variants, .xlsb), and
 // the .xml files that are Office files saved as XML (Flat OPC,
 // WordprocessingML 2003, SpreadsheetML 2003), told by their root element;
 // other .xml files are passed over without a word. A file named on the
@@ -57,6 +57,7 @@ var extensions = map[string]bool{
 	".docx": true, ".docm": true, ".dotx": true, ".dotm": true,
 	".xlsx": true, ".xlsm": true, ".xltx": true, ".xltm": true, ".xlsb": true,
 	".pptx": true, ".pptm": true, ".ppsx": true, ".ppsm": true, ".potx": true, ".potm": true,
+	".vsdx": true, ".vsdm": true, ".vstx": true, ".vstm": true, ".vssx": true, ".vssm": true,
 }
 
 // officeXML reports whether the .xml file at path is an Office file saved
@@ -170,10 +171,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var (
 		format   = flags.String("format", "json", "what to print: json, markdown or text")
 		output   = flags.String("o", "", "write to this file instead of standard output")
-		parts    = flags.String("parts", "", "parts to read, by number: 3, or 2-5 (the body of a Word document is part 1; sheets and slides count from 1)")
+		parts    = flags.String("parts", "", "parts to read, by number: 3, or 2-5 (the body of a Word document is part 1; sheets, slides and pages count from 1)")
 		images   = flags.String("images", "meta", "pictures: meta (a block for each, with its place, size and alternative text), data (their bytes too) or none")
 		spans    = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
-		workers  = flags.Int("workers", 0, "sheets or slides read at a time (0: one for each CPU)")
+		workers  = flags.Int("workers", 0, "sheets, slides or pages read at a time (0: one for each CPU)")
 		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
 		maxSpin  = flags.Int("max-spin-count", 0, "rounds of hashing an encrypted file may ask for to try a password (0: the default, 1 million; -1: no limit)")
 		maxCells = flags.Int64("max-cells", 0, "cells kept from a workbook or from the tables of a presentation (0: the default, 20 million; -1: no limit)")

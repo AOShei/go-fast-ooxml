@@ -156,13 +156,14 @@ var _ gofastcore.Extractor = (*Extractor)(nil)
 
 // Formats lists the formats this library extracts, as they appear in
 // gofastcore.Source.Format. Macro-enabled files and templates are reported
-// as the format they are a variant of, and a binary workbook (.xlsb) as
-// "xlsx".
+// as the format they are a variant of, a binary workbook (.xlsb) as
+// "xlsx", and every kind of Visio package (drawings, templates and
+// stencils, with macros or without) as "vsdx".
 func (e *Extractor) Formats() []string {
-	return []string{"docx", "xlsx", "pptx", formatSpreadsheetML, formatWordML}
+	return []string{"docx", "xlsx", "pptx", "vsdx", formatSpreadsheetML, formatWordML}
 }
 
-// Extract reads a Word, Excel or PowerPoint file with default settings. It
+// Extract reads a Word, Excel, PowerPoint or Visio file with default settings. It
 // is (&Extractor{}).Extract.
 func Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error) {
 	return (&Extractor{}).Extract(ctx, r, size, opts)

@@ -50,6 +50,7 @@ const (
 	WordAux                                                // wx: its auxiliary hints
 	AML                                                    // aml: its annotations (revisions, comments, bookmarks)
 	Word10                                                 // w10: Word's VML extensions
+	Visio                                                  // Visio 2013's drawings, pages, masters and comments
 )
 
 // Spaces is the table handed to every scanner.
@@ -107,6 +108,7 @@ var Spaces = map[string]xmlscan.Space{
 	"http://schemas.microsoft.com/office/word/2003/auxHint":                     WordAux,
 	"http://schemas.microsoft.com/aml/2001/core":                                AML,
 	"urn:schemas-microsoft-com:office:word":                                     Word10,
+	"http://schemas.microsoft.com/office/visio/2012/main":                       Visio,
 }
 
 // Relationship kinds: the last segment of a relationship type URI. The part
