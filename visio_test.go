@@ -24,9 +24,7 @@ func visio(t *testing.T, v ooxmltest.Visio, opts *gofastcore.Options) *gofastcor
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.Validate(); err != nil {
-		t.Fatal(err)
-	}
+	ooxmltest.CheckDocument(t, doc)
 	return doc
 }
 
@@ -480,4 +478,23 @@ func TestVisioCorpus(t *testing.T) {
 	if read == 0 {
 		t.Skip("no Visio files in the shared corpus")
 	}
+}
+
+// An object embedded in a page is a child of the drawing.
+func TestVisioEmbeddedObject(t *testing.T) {
+	inner := ooxmltest.Xlsx(ooxmltest.Sheet{Name: "Inner", Data: xlRow(1, xlStr("A1", "inside the embedded workbook"))}).Bytes()
+	v := ooxmltest.Visio{Pages: []ooxmltest.VisioPage{{Name: "P", Shapes: `<Shape ID="1" Type="Foreign"><Cell N="PinX" V="2"/><Cell N="PinY" V="2"/><Cell N="Width" V="2"/><Cell N="Height" V="2"/><ForeignData ForeignType="Object"><Rel r:id="obj1"/></ForeignData></Shape>` +
+		ooxmltest.VisioShape(2, 1, 8, 2, 1, ooxmltest.VisioText("text"))}}}
+	pkg := v.Package()
+	pkg.RelID("visio/pages/page1.xml", "obj1", ooxmltest.RelPackage, "../embeddings/book.xlsx")
+	pkg.AddBytes("visio/embeddings/book.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", inner)
+	doc, err := extract(t, pkg.Bytes(), &gofastcore.Options{Child: childExtractor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ooxmltest.CheckDocument(t, doc)
+	if len(doc.Children) != 1 || !strings.Contains(doc.Children[0].Text(), "inside the embedded workbook") {
+		t.Fatalf("children %+v", doc.Children)
+	}
+	sameLines(t, "blocks", lines(doc.Parts[0]), []string{"paragraph text"})
 }
