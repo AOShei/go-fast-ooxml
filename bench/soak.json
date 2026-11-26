@@ -1,17 +1,18 @@
 {
- "files": 6640,
- "bytes": 358232044,
- "read": 6589,
+ "files": 6703,
+ "bytes": 360430061,
+ "read": 6652,
  "formats": {
   "docx": 3331,
   "pptx": 1273,
   "spreadsheetml": 37,
+  "vsdx": 63,
   "wordml": 2,
   "xlsx": 1946
  },
  "refused": {
   "archive cut off before its directory": 4,
-  "archive that is not a Word, Excel or PowerPoint package": 6,
+  "archive that is not a Word, Excel, PowerPoint or Visio package": 6,
   "archive with a damaged directory": 2,
   "damaged package": 3,
   "empty file": 1,
@@ -21,18 +22,18 @@
   "not an archive, malformed": 8
  },
  "documents_with_warning": {
-  "input.active_content": 63,
+  "input.active_content": 65,
   "input.ambiguous": 6,
   "input.decrypted": 5,
   "input.external_reference": 194,
-  "input.repaired": 35,
-  "input.stream_damaged": 34,
+  "input.repaired": 45,
+  "input.stream_damaged": 40,
   "input.trailing_data": 5,
   "input.unread_content": 26,
   "limit.exceeded": 5,
-  "part.failed": 39,
+  "part.failed": 47,
   "part.image_only": 244,
-  "part.no_text": 967,
+  "part.no_text": 978,
   "structure.heading_level_clamped": 18,
   "table.formula_no_value": 28,
   "text.control_characters_removed": 7,
@@ -40,7 +41,7 @@
   "text.unmapped_glyphs": 3
  },
  "documents_with_display": {
-  "hidden": 274,
+  "hidden": 288,
   "no_ink": 6
  },
  "embedded_documents": 839,

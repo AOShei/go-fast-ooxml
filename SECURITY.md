@@ -186,8 +186,8 @@ that feeds a model decides what to do with each.
   request. Before the release, all nineteen targets ran
   for five to forty-five minutes each. The five findings, none a crash, a
   hang or a way past a limit, are fixed and kept as seeds.
-- A soak run over 6,640 files: the corpus and the Office files in the test
-  suites of LibreOffice, Apache Tika, pandoc and ten other projects,
+- A soak run over 6,703 files: the corpus and the Office files in the test
+  suites of LibreOffice, Apache Tika, pandoc and twelve other projects,
   among them their collections of crash cases and fuzzer findings. Every
   file gives a valid document or a shared error, the same for any number
   of workers and a part at a time (`bench/soak.json`).

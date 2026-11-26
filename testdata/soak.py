@@ -22,11 +22,13 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEST = os.path.join(ROOT, "corpus", "soak")
 
-EXTENSIONS = ("docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm")
+VISIO = ("vsdx", "vsdm", "vstx", "vstm", "vssx", "vssm")
+EXTENSIONS = ("docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xltx", "xltm", "xlsb", "pptx", "pptm", "ppsx", "ppsm", "potx", "potm") + VISIO
 
 # (directory, repository, commit, licence[, extensions]). A source with
 # extensions of its own gives only files with those: Apache POI's other
-# Office files are in the corpus already (fetch.py), its .xlsb files not.
+# Office files are in the corpus already (fetch.py), its .xlsb and Visio
+# files not.
 SOURCES = [
     ("libreoffice", "https://github.com/LibreOffice/core.git", "970e4f2194616485e9585b370f965cb61a34e096", "MPL-2.0"),
     ("pandoc", "https://github.com/jgm/pandoc.git", "f5d266050e4e149c7c9a699cfbe45aff64bb9f7c", "GPL-2.0-or-later"),
@@ -40,7 +42,9 @@ SOURCES = [
     ("closedxml", "https://github.com/ClosedXML/ClosedXML.git", "057f5976c788d97e8eac86d1a528bd5411d9386e", "MIT"),
     ("open-xml-sdk", "https://github.com/OfficeDev/Open-XML-SDK.git", "431ab05cf160248cc3885a4a766026d4f8243792", "MIT"),
     ("shapecrawler", "https://github.com/ShapeCrawler/ShapeCrawler.git", "2ab474918ac89e7bbb8d7c649aca708d298171e2", "MIT"),
-    ("poi", "https://github.com/apache/poi.git", "f66927954a29cf1f5b86614fdf1816e6321c8aea", "Apache-2.0", ("xlsb",)),
+    ("poi", "https://github.com/apache/poi.git", "f66927954a29cf1f5b86614fdf1816e6321c8aea", "Apache-2.0", ("xlsb",) + VISIO),
+    ("libvisio", "https://github.com/LibreOffice/libvisio.git", "8d4598bff2160aff3f0c85e9d9ea2672e5f4b190", "MPL-2.0", VISIO),
+    ("vsdx", "https://github.com/dave-howard/vsdx.git", "6703e6c2c906bea4051f43525ec9af9dcf735c13", "BSD-3-Clause", VISIO),
 ]
 
 

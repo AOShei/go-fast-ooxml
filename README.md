@@ -66,7 +66,7 @@ On the 788 real files of the corpus, which include damaged, encrypted and
 hostile ones, this library reads 773 and refuses 15 with a reason: seven
 need a password, four are archives too damaged to read, and the rest are
 other formats, a legacy `.xls`, a document type declaration and a cipher
-other than AES. None makes it crash or hang. The same holds for 5,852 more
+other than AES. None makes it crash or hang. The same holds for 5,915 more
 from other projects' test suites ([`bench/README.md`](bench/README.md)).
 
 ### A batch of files in one process
@@ -1009,7 +1009,7 @@ and shapes; attribute values of custom XML data.
 | `testdata/fuzz` | The seed inputs of the fuzz tests |
 | `testdata/api.txt` | The exported declarations of the package; a test fails when they change |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 788 real files from Apache POI's test suite and data.gov.uk, and the script that downloads them. The files are not in the repository |
-| `testdata/soak.py` | Fetches the soak set: 5,810 Office files from the test suites of thirteen other projects, at pinned commits. Not in the repository |
+| `testdata/soak.py` | Fetches the soak set: 5,915 Office files, 42 of them saved as XML, from the test suites of fifteen other projects, at pinned commits. Not in the repository |
 | `bench` | Measurements: the comparison with the tools in use today, the soak run, the benchmarks; see `bench/README.md` |
 | `SECURITY.md`, `CHANGELOG.md` | What is promised about untrusted files, and how to report a problem; what changes between versions |
 

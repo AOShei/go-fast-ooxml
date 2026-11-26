@@ -34,7 +34,7 @@ test whose tool is missing skips itself.
 | File | Produced by | Content |
 |---|---|---|
 | `comparison.json`, `comparison.md` | `python bench/compare.py` | This library against the tools in use today, on the large files and the corpus, each measured as a process. The table in the top-level README is written by the same run |
-| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,640 files: how many were read, what the rest were, which warnings and display reasons occur |
+| `soak.json` | `go test -run TestSoak -soak-record .` | What became of each of 6,703 files: how many were read, what the rest were, which warnings and display reasons occur |
 | `accuracy.json` | `go test -run TestBaselineAccuracy -update .` | How well each tool recovers the known text of each fixture: precision, recall, F1 and word order, scored by the same code that scores this library |
 | `baseline.json`, `baseline.md` | `python bench/run_baseline.py` | Speed and peak memory of each tool on the large generated files and on the corpus, and how many corpus files each could not read |
 | `word.txt` | `go test -run '^$' -bench 'Extract/large.docx/single' -count 3 .` | Word extraction on the large generated file, single-threaded |
@@ -122,12 +122,13 @@ of its own, which is most of its 65.
 
 ## Soak run
 
-`TestSoak` reads every file of the corpus and of the soak set: 6,640
-files, 358 MB. The soak set (`testdata/soak.py`) is the Office files in the
+`TestSoak` reads every file of the corpus and of the soak set: 6,703
+files, 360 MB. The soak set (`testdata/soak.py`) is the Office files in the
 test suites of LibreOffice, Apache Tika, pandoc, PhpSpreadsheet, PHPWord,
-ClosedXML, Excelize, mammoth.js, python-docx, python-pptx, the Open XML SDK
-and ShapeCrawler, and Apache POI's binary workbooks (its other files are
-in the corpus), at pinned commits: 5,852 files that those projects keep
+ClosedXML, Excelize, mammoth.js, python-docx, python-pptx, the Open XML SDK,
+ShapeCrawler, libvisio and the Python library vsdx, and Apache POI's binary
+workbooks and Visio files (its other files are in the corpus), at pinned
+commits: 5,915 files that those projects keep
 because something once went wrong with them, among them LibreOffice's
 collections of crash cases and fuzzer findings. 42 of them are Office
 files saved as XML (Flat OPC, WordprocessingML 2003, SpreadsheetML 2003),
@@ -151,7 +152,7 @@ it: two files of the set are made to produce that much.
 
 | | Files |
 |---|---|
-| Read | 6,589 (3,331 Word, 3 of them Flat OPC; 1,946 Excel; 1,273 PowerPoint; 37 SpreadsheetML 2003; 2 WordprocessingML 2003) |
+| Read | 6,652 (3,331 Word, 3 of them Flat OPC; 1,946 Excel; 1,273 PowerPoint; 63 Visio; 37 SpreadsheetML 2003; 2 WordprocessingML 2003) |
 | Refused, each with a reason | 51 |
 | Crashes, hangs, invalid documents | 0 |
 
@@ -164,10 +165,10 @@ it: two files of the set are made to produce that much.
 | A package whose own structure is damaged | 3 |
 | Legacy binary format; encryption with a cipher other than AES | 2 |
 
-40 files are archives whose directory cannot be read: cut off before it
-(19) or damaged there (21). Most are fuzzer and crash cases; four are
+48 files are archives whose directory cannot be read: cut off before it
+(20) or damaged there (28). Most are fuzzer and crash cases; four are
 test files made by cutting a file short, and none is among the files
-published on data.gov.uk. 34 of the 40 are read by their members' own
+published on data.gov.uk. 42 of the 48 are read by their members' own
 headers and carry `input.repaired`; before recovery was added all of them
 were refused. `Divino_Revelado.pptx`, a presentation cut at 524 KB, gives 12
 slides. The count is small, and says little about how often it happens:
