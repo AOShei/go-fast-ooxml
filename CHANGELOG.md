@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-27
+
 ### Changed
 
 - go-fast-core v0.1.13 is required. The readers this library shared with
@@ -531,7 +533,8 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.7.0
 [0.6.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.6.0
 [0.5.3]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.3
 [0.5.2]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.2
