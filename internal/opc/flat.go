@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
+	"github.com/AOShei/go-fast-core/opc"
 	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlindex"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
@@ -35,21 +37,9 @@ import (
 
 // flatPart is a part of a Flat OPC package: its bytes in the file.
 type flatPart struct {
-	src     io.ReaderAt
-	off, n  int64
-	base64  bool  // binaryData: base64, decoded as it is read
-	decoded int64 // binaryData: the bytes it decodes to
-	// xmlData: namespaces declared around the part, on the package
-	// element (shared by every part) and on the part and data elements.
-	outer, own []xmlscan.Binding
-}
-
-// size is the part's size as read: for base64, what it decodes to.
-func (m *flatPart) size() int64 {
-	if m.base64 {
-		return m.decoded
-	}
-	return m.n
+	src    io.ReaderAt
+	off, n int64
+	base64 bool // binaryData: base64, decoded as it is read
 }
 
 func (m *flatPart) open() io.ReadCloser {
@@ -113,30 +103,24 @@ type Section struct {
 // src, read as an archive's are, within the budget of lim. It has no
 // relationships unless a section is named as a relationships part.
 func NewSections(src io.ReaderAt, lim Limits, sections []Section) *Package {
-	p := &Package{
-		flatParts: map[string]*flatPart{},
-		defaults:  map[string]string{},
-		overrides: map[string]string{},
-		flat:      true,
-		sections:  true,
-	}
-	p.budget.Store(lim.MaxDecodedBytes)
+	parts := make([]opc.Part, 0, len(sections))
+	seen := make(map[string]bool, len(sections))
 	for _, s := range sections {
-		name := Canonical(s.Name)
-		if _, dup := p.flatParts[name]; dup {
+		// Sections are named by the translation, not by the file: one
+		// named twice is not a file's ambiguity, and the first is kept.
+		if name := opc.Canonical(s.Name); seen[name] {
 			continue
+		} else {
+			seen[name] = true
 		}
-		part := &flatPart{src: src, off: s.Off, n: s.N, outer: s.Bindings}
+		m := &flatPart{src: src, off: s.Off, n: s.N}
+		bindings := s.Bindings
 		if s.Data != nil {
-			part.src, part.off, part.n, part.outer = bytes.NewReader(s.Data), 0, int64(len(s.Data)), nil
+			m.src, m.off, m.n, bindings = bytes.NewReader(s.Data), 0, int64(len(s.Data)), nil
 		}
-		p.flatParts[name] = part
-		p.names = append(p.names, name)
-		if s.ContentType != "" {
-			p.overrides[name] = s.ContentType
-		}
+		parts = append(parts, opc.Part{Name: s.Name, ContentType: s.ContentType, Size: m.n, Open: m.open, Bindings: bindings})
 	}
-	return p
+	return &Package{Package: opc.FromParts(parts, lim), flat: true, sections: true}
 }
 
 // FlatDamage returns where a Flat OPC package breaks off; nil for one read
@@ -200,13 +184,6 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 	if !x.Root.Is(xmlroot.PackageNS, "package") {
 		return nil, fmt.Errorf("%w: XML whose root is %s", ErrNotPackage, x.Root.Name)
 	}
-	p := &Package{
-		flatParts: map[string]*flatPart{},
-		defaults:  map[string]string{},
-		overrides: map[string]string{},
-		flat:      true,
-	}
-	p.budget.Store(lim.MaxDecodedBytes)
 	attr := func(e *xmlindex.Element, local string) string {
 		if v, ok := e.Attr(xmlroot.PackageNS, local); ok {
 			return v
@@ -214,7 +191,9 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		v, _ := e.Attr("", local)
 		return v
 	}
-	parts := 0
+	var parts []opc.Part
+	var written map[string]string
+	seen := map[string]bool{}
 	for _, part := range x.Root.Children {
 		if part.End == 0 || !part.Is(xmlroot.PackageNS, "part") {
 			continue // a part the file breaks off in is no part
@@ -231,38 +210,39 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 			continue // a part with no data, or no name, is no part
 		}
 		m := &flatPart{src: x.Src, off: data.ContentStart, n: data.ContentEnd - data.ContentStart, base64: data.Local == "binaryData"}
+		size, bindings := m.n, []xmlscan.Binding(nil)
 		if m.base64 {
+			size = 0
 			if c := counts[data]; c != nil {
-				m.decoded = max(c.chars/4*3-c.pad, 0)
+				size = max(c.chars/4*3-c.pad, 0)
 			}
-		} else {
-			m.outer, m.own = data.Outer, data.Own
+		} else if len(data.Outer)+len(data.Own) > 0 {
+			bindings = slices.Concat(data.Outer, data.Own)
 		}
-		canon := Canonical(name)
-		if _, dup := p.flatParts[canon]; dup {
-			p.ambiguous++
-			continue
-		}
-		if parts++; lim.MaxMembers > 0 && parts > lim.MaxMembers {
-			return nil, fmt.Errorf("%w: more than %d", ErrTooManyParts, lim.MaxMembers)
-		}
-		p.flatParts[canon] = m
-		p.names = append(p.names, canon)
-		if shown := strings.TrimLeft(strings.ReplaceAll(name, "\\", "/"), "/"); shown != canon {
-			if p.written == nil {
-				p.written = map[string]string{}
+		// A second part of one name is counted by FromParts (Ambiguous);
+		// only the first is a part, and counts against MaxMembers.
+		canon := opc.Canonical(name)
+		if !seen[canon] {
+			seen[canon] = true
+			if lim.MaxMembers > 0 && len(seen) > lim.MaxMembers {
+				return nil, fmt.Errorf("%w: more than %d", ErrTooManyParts, lim.MaxMembers)
 			}
-			p.written[canon] = shown
+			if shown := strings.TrimLeft(strings.ReplaceAll(name, "\\", "/"), "/"); shown != canon {
+				if written == nil {
+					written = map[string]string{}
+				}
+				written[canon] = shown
+			}
 		}
-		if ct := attr(part, "contentType"); ct != "" {
-			p.overrides[canon] = ct
-		}
+		parts = append(parts, opc.Part{Name: name, ContentType: attr(part, "contentType"), Size: size, Open: m.open, Bindings: bindings})
 	}
+	p := &Package{Package: opc.FromParts(parts, lim), flat: true, written: written}
+	n := len(seen)
 	if x.Damage != nil {
-		if parts == 0 {
+		if n == 0 {
 			return nil, fmt.Errorf("%w: %v", ErrDamaged, x.Damage)
 		}
-		p.flatDamage = &FlatDamage{At: x.At, Parts: parts, Err: x.Damage}
+		p.flatDamage = &FlatDamage{At: x.At, Parts: n, Err: x.Damage}
 	}
 	return p, nil
 }
