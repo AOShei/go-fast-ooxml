@@ -134,6 +134,11 @@ with warnings that say what could not.
   its style or the cell, and for bullets. A code Unicode has no character
   for (the Windows logo) is U+FFFD, and the part says how many with
   `text.unmapped_glyphs`.
+- **A character reference to no character** XML allows (`&#0;`, a
+  surrogate, a number past U+10FFFF) is read as U+FFFD, in every format,
+  and the document says how many with `text.unmapped_glyphs`. Every
+  reference in the XML read is counted, also one in markup whose text
+  does not reach the output; a part read twice is counted once.
 - **A file cut short** has lost the directory at the end of its archive.
   Its members are then found by their own headers, as far as they go: a
   file that lost only its directory gives the whole document, one cut

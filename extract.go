@@ -68,7 +68,9 @@ const (
 //	                          document does not have; what was read is used
 //	text.unmapped_glyphs      characters of a symbol font, or of macro code
 //	                          in a code page, with no character in Unicode
-//	                          appear as U+FFFD
+//	                          appear as U+FFFD; character references to no
+//	                          character XML allows (&#0;, a surrogate, a
+//	                          number past U+10FFFF) are read as U+FFFD
 //	table.formula_no_value    cells hold formulas with no stored result
 //	table.region_split        an area of a sheet too thinly filled to be a
 //	                          table was written a row at a time
