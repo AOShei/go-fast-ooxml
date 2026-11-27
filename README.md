@@ -8,7 +8,7 @@ and Office 2003's XML formats, WordprocessingML 2003 and SpreadsheetML
 [`gofastcore.Document`](https://github.com/AOShei/go-fast-core). Standard
 library and go-fast modules only.
 
-**Status: released as v0.7.1.** What changed in each release is in
+**Status: released as v0.7.2.** What changed in each release is in
 [`CHANGELOG.md`](CHANGELOG.md).
 What it promises about files from strangers is in [`SECURITY.md`](SECURITY.md).
 
