@@ -7,6 +7,15 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Added
+
+- A byte of XML in UTF-8 that is not part of a character, read as
+  U+FFFD, is counted: the document carries a `text.unmapped_glyphs`
+  warning, "N byte sequences are not valid UTF-8 and are read as
+  U+FFFD", beside the one for character references. The bytes counted
+  are those of the text and attribute values read. Before, nothing said
+  so. No file of the test corpora has such a byte where it is counted.
+
 ### Changed
 
 - go-fast-core v0.1.17 is required.
