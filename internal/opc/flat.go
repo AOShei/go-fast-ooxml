@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 
 	"github.com/AOShei/go-fast-core/opc"
 	"github.com/AOShei/go-fast-core/xmlscan"
@@ -192,7 +191,6 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		return v
 	}
 	var parts []opc.Part
-	var written map[string]string
 	seen := map[string]bool{}
 	for _, part := range x.Root.Children {
 		if part.End == 0 || !part.Is(xmlroot.PackageNS, "part") {
@@ -227,16 +225,10 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 			if lim.MaxMembers > 0 && len(seen) > lim.MaxMembers {
 				return nil, fmt.Errorf("%w: more than %d", ErrTooManyParts, lim.MaxMembers)
 			}
-			if shown := strings.TrimLeft(strings.ReplaceAll(name, "\\", "/"), "/"); shown != canon {
-				if written == nil {
-					written = map[string]string{}
-				}
-				written[canon] = shown
-			}
 		}
 		parts = append(parts, opc.Part{Name: name, ContentType: attr(part, "contentType"), Size: size, Open: m.open, Bindings: bindings})
 	}
-	p := &Package{Package: opc.FromParts(parts, lim), flat: true, written: written}
+	p := &Package{Package: opc.FromParts(parts, lim), flat: true}
 	n := len(seen)
 	if x.Damage != nil {
 		if n == 0 {

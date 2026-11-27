@@ -71,10 +71,6 @@ type Package struct {
 	sections   bool        // the parts are elements of a file with no package (NewSections)
 	flatDamage *FlatDamage // where a Flat OPC package breaks off
 	untyped    bool        // a Visio package with no content-types table, known by its relationships
-	// written holds the names of a Flat OPC package's parts as the file
-	// writes them, where they differ from the canonical name: core's
-	// FromParts does not keep them.
-	written map[string]string
 }
 
 // Open reads the archive's directory and the content-types table.
@@ -124,18 +120,6 @@ func (p *Package) visioWithoutTypes() bool {
 // Untyped reports whether the package is a Visio package with no table of
 // content types, read by its relationships.
 func (p *Package) Untyped() bool { return p.untyped }
-
-// Written returns a part's name as the file writes it, with its own
-// capitals (go-fast-core's Written, and a Flat OPC part's name as the
-// file gives it).
-func (p *Package) Written(name string) string {
-	if p.written != nil {
-		if shown, ok := p.written[opc.Canonical(name)]; ok {
-			return shown
-		}
-	}
-	return p.Package.Written(name)
-}
 
 // Format is one of the document families.
 type Format string
