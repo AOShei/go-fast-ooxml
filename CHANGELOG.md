@@ -7,6 +7,11 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- go-fast-core v0.1.14 is required. Its XML scanner takes fewer
+  instructions in the reading this library uses.
+
 ## [0.7.0] - 2026-11-27
 
 ### Changed
