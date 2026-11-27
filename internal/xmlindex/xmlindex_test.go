@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"github.com/AOShei/go-fast-core/xmlscan"
 )
 
 func read(t *testing.T, xml string, opts Options) *Index {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/dml"
 	"github.com/AOShei/go-fast-ooxml/internal/media"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
@@ -24,7 +25,6 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // Config holds the limits that are this format's own.

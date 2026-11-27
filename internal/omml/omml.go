@@ -15,8 +15,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // Linear appends the linear form of the math element whose start tag is

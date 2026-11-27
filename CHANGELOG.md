@@ -18,6 +18,16 @@ minor version may change the API.
   bytes), the bound all the go-fast libraries share; the `limit.exceeded`
   messages say so. A cut never splits a character, so it no longer leaves
   U+FFFD at the end of a name.
+- The XML scanner is go-fast-core's `xmlscan`, which decodes through
+  go-fast-core's `charset`. XML may declare any encoding of the WHATWG
+  Encoding Standard (was: UTF-8, UTF-16, ISO 8859-1 and 8859-15, the
+  Windows code pages, Shift JIS, GBK, EUC-KR, Big5 and Mac Roman), and
+  decodes as that standard does: ISO 8859-1 is Windows-1252, a byte a
+  Windows code page leaves undefined is the C1 control of the same value,
+  Mac Roman is Apple's table, and a broken double-byte pair keeps its
+  second byte if that is ASCII. A document type declaration that declares
+  nothing (no internal subset) is passed over; any other is refused as
+  before.
 
 ## [0.6.0] - 2026-11-26
 

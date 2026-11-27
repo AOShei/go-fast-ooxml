@@ -3,8 +3,8 @@ package dml
 import (
 	"math"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // EMU is the number of English Metric Units, in which drawings are

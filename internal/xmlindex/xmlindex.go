@@ -28,7 +28,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"github.com/AOShei/go-fast-core/xmlscan"
 )
 
 // Bounds.

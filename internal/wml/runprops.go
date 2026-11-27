@@ -3,8 +3,8 @@ package wml
 import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/symbol"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // What the file declares about the display of a run of text is in its

@@ -11,10 +11,10 @@ import (
 	"github.com/AOShei/go-fast-core/hidden"
 	"github.com/AOShei/go-fast-core/label"
 	"github.com/AOShei/go-fast-core/symbol"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // RunProps is the formatting of a run of text, as far as this library

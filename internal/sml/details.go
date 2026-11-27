@@ -7,10 +7,10 @@ import (
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/formula"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // What a cell holds besides what it shows (gofastcore.CellDetail): with

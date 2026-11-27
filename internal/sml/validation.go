@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // choiceList is a drop-down list a sheet declares for some of its cells: a

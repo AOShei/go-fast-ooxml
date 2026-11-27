@@ -53,7 +53,7 @@ jobs:
       # lasts until the next token. With the xmlscanpoison tag the bytes
       # of every token passed are overwritten, so a reader that keeps a
       # view too long reads '#' and its test fails, however the input
-      # arrived. See internal/xmlscan/poison.go.
+      # arrived. See poison.go in go-fast-core's xmlscan.
       - name: Test, scanner views overwritten
         if: matrix.os == 'ubuntu-latest'
         run: go test -short -tags xmlscanpoison ./...
@@ -86,7 +86,6 @@ jobs:
           }
           fuzz FuzzOpen 30s .
           fuzz FuzzDocx 30s .
-          fuzz FuzzXML 30s ./internal/xmlscan
           fuzz FuzzXlsx 30s .
           fuzz FuzzXlsb 30s .
           fuzz FuzzXlsbLinksTablesPivots 30s .

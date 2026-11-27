@@ -12,7 +12,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"github.com/AOShei/go-fast-core/xmlscan"
 )
 
 // Kind is what an input is.
