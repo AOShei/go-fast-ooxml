@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-ooxml"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
@@ -275,21 +276,21 @@ func TestExtractErrors(t *testing.T) {
 		{"opendocument", zipOf("mimetype", "content.xml", "META-INF/manifest.xml"), gofastcore.ErrUnsupported, "not an Office Open XML package: it is application/vnd.oasis.opendocument.text"},
 		{"cut off before the directory", ooxmltest.Docx(ooxmltest.Para("x")).Bytes()[:400], gofastcore.ErrMalformed, "the file is cut short or damaged"},
 		{"other office package", other.Bytes(), gofastcore.ErrUnsupported, "no Word, Excel, PowerPoint or Visio"},
-		{"legacy binary", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000), "1Table": make([]byte, 100)}), gofastcore.ErrUnsupported, "legacy binary"},
+		{"legacy binary", cfbtest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000), "1Table": make([]byte, 100)}), gofastcore.ErrUnsupported, "legacy binary"},
 		{"password protected", ooxmltest.Encrypt(ooxmltest.Docx("").Bytes(), "a password", ooxmltest.Encryption{}), gofastcore.ErrPasswordRequired, "encrypted"},
-		{"rights managed, binary", ooxmltest.Compound(map[string][]byte{"\x06DataSpaces/DataSpaceMap": make([]byte, 100), "\x09DRMContent": make([]byte, 5000)}), gofastcore.ErrUnsupported, "rights management"},
+		{"rights managed, binary", cfbtest.Compound(map[string][]byte{"\x06DataSpaces/DataSpaceMap": make([]byte, 100), "\x09DRMContent": make([]byte, 5000)}), gofastcore.ErrUnsupported, "rights management"},
 		// As Office writes a rights-managed .docx: the package encrypted,
 		// the licence in the data spaces, no encryption information.
-		{"rights managed", ooxmltest.Compound(map[string][]byte{
+		{"rights managed", cfbtest.Compound(map[string][]byte{
 			"\x06DataSpaces/DataSpaceMap":                                        make([]byte, 100),
 			"\x06DataSpaces/DataSpaceInfo/\x09DRMEncryptedDataSpace":             make([]byte, 64),
 			"\x06DataSpaces/TransformInfo/\x09DRMEncryptedTransform/\x06Primary": make([]byte, 2000),
 			"EncryptedPackage": make([]byte, 5000),
 		}), gofastcore.ErrUnsupported, "rights-management server issues to the people the document names, and this library contacts no server"},
 		// Encrypted, and neither a password nor rights management is said.
-		{"encrypted, how not said", ooxmltest.Compound(map[string][]byte{"EncryptedPackage": make([]byte, 5000)}), gofastcore.ErrUnsupported, "whose encryption is not stated"},
-		{"compound header only", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)})[:40], gofastcore.ErrMalformed, "compound file"},
-		{"compound file cut short", ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)})[:700], gofastcore.ErrMalformed, "compound file"},
+		{"encrypted, how not said", cfbtest.Compound(map[string][]byte{"EncryptedPackage": make([]byte, 5000)}), gofastcore.ErrUnsupported, "whose encryption is not stated"},
+		{"compound header only", cfbtest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)})[:40], gofastcore.ErrMalformed, "compound file"},
+		{"compound file cut short", cfbtest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)})[:700], gofastcore.ErrMalformed, "compound file"},
 	}
 	for _, c := range cases {
 		doc, err := extract(t, c.data, nil)

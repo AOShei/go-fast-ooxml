@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb"
 	"github.com/AOShei/go-fast-core/clean"
-	"github.com/AOShei/go-fast-ooxml/internal/cfb"
 	"github.com/AOShei/go-fast-ooxml/internal/crypt"
 )
 
@@ -94,7 +94,7 @@ func (f *File) unlock(ctx context.Context) error {
 	}
 	const legacy = "compound file: a legacy binary Office format (.doc, .xls, .ppt), which this library does not read"
 	cf, err := cfb.Open(f.r, f.size)
-	if errors.Is(err, cfb.ErrTooLarge) {
+	if errors.Is(err, cfb.ErrLimit) {
 		return fmt.Errorf("gofastooxml: a compound file, the container of legacy binary and of encrypted Office files, with %s: %w", clean.Label(err.Error()), gofastcore.ErrLimitExceeded)
 	}
 	if err != nil {
@@ -188,6 +188,11 @@ func (f *File) unlock(ctx context.Context) error {
 		return fail(err)
 	}
 	f.body, f.bodySize, f.decrypted = pkg, pkg.Size(), true
+	if cf.Damaged != "" {
+		// The compound file was read on past damage to its structure.
+		f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputRepaired, Severity: gofastcore.SeverityWarning,
+			Message: "the compound file is damaged, and was read as far as it could be: " + clean.Label(cf.Damaged)})
+	}
 	f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputDecrypted, Severity: gofastcore.SeverityInfo,
 		Message: fmt.Sprintf("encrypted (%s); decrypted with %s", describe(info), with)})
 	intact, checked, err := info.Intact(ctx, encrypted, encrypted.Size(), key)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-ooxml"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
@@ -22,7 +23,7 @@ func FuzzOpen(f *testing.F) {
 	// Encrypted files, which are compound files: the fuzzer changes the
 	// container, the encryption information and the package.
 	f.Add(ooxmltest.Encrypt(ooxmltest.Docx(ooxmltest.Para("x")).Bytes(), "VelvetSweatshop", ooxmltest.Encryption{SpinCount: 2}))
-	f.Add(ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 600)}))
+	f.Add(cfbtest.Compound(map[string][]byte{"WordDocument": make([]byte, 600)}))
 	f.Add([]byte("PK\x03\x04"))
 	// Files cut short: without their directory, and inside a member.
 	// They are read by the members' own headers.

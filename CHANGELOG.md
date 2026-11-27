@@ -33,6 +33,16 @@ minor version may change the API.
   types) stays here, on top of it. A part stored as interleaved pieces
   (`part/[0].piece` to `part/[n].last.piece`, ECMA-376 Part 2) is read as
   one part.
+- Compound files (the container of an encrypted package, and of a VBA
+  project) are read by go-fast-core's `cfb`, and VBA projects by its
+  `vba`. A compound file damaged in a way that can be read past (a wrong
+  byte-order mark, a directory chain that breaks, a damaged short-stream
+  container) is read, with an `input.repaired` warning: on the document
+  for an encrypted file, on the stored part for a VBA project. A compound
+  file may have 262,144 entries (was 65,536). The source of a VBA project
+  is decoded as the WHATWG Encoding Standard decodes its code page: a byte
+  a Windows code page leaves undefined is the C1 control of the same value
+  (was U+FFFD), Mac Roman is Apple's table, and more code pages are known.
 
 ## [0.6.0] - 2026-11-26
 

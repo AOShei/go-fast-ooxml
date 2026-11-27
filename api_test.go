@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-ooxml"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
@@ -317,7 +318,7 @@ func TestFileErrors(t *testing.T) {
 	}{
 		"not a zip":          {[]byte("plain text, not an archive"), gofastcore.ErrMalformed},
 		"too short":          {[]byte("PK"), gofastcore.ErrMalformed},
-		"a legacy .doc":      {ooxmltest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)}), gofastcore.ErrUnsupported},
+		"a legacy .doc":      {cfbtest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)}), gofastcore.ErrUnsupported},
 		"an encrypted file":  {ooxmltest.Encrypt(data, "p", ooxmltest.Encryption{SpinCount: 10}), gofastcore.ErrPasswordRequired},
 		"a zip of something": {ooxmltest.NewPackage().Add("readme.txt", "text/plain", "hello").Bytes(), gofastcore.ErrUnsupported},
 	} {
