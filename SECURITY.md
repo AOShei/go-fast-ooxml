@@ -79,7 +79,7 @@ for each bound on the part it concerns, with how many were left out
 | Excel | 65,536 sheets; 1,048,576 rows and 16,384 columns; of a sheet: 262,144 comments, 4,096 comment authors, 262,144 hyperlinks, 16,384 drop-down lists over 262,144 ranges, 262,144 merged ranges, 4,096 declared tables, 1,024 pivot tables, 16 drawing parts, 1,048,576 shared formulas; a formula, 32 KiB; 16,384 defined names; 131,072 cell formats and fonts, 8,192 number formats; 1,024 pivot caches, each of 16,384 fields of 1,048,576 values; 4,096 calculated fields; of a binary workbook: 65,536 links to other workbooks, each of 65,536 sheets and names, 65,536 references to sheets, 65,536 tables of 16,384 columns |
 | Charts | 1,024 series, each of 8 sets of values; points at an index past 1,048,576; about two million points in all; 16 levels of categories; 16 axes and 16 kinds of plot; a title, 4 KiB |
 | SmartArt | 65,536 nodes, 131,072 connections, 64 levels |
-| Stored data | 1,024 custom XML parts; 16 VBA projects found by their content type; a VBA project, 256 MiB, of 65,536 entries and 4,096 modules; the name of a defined name or document variable, 4 KiB |
+| Stored data | 1,024 custom XML parts; 16 VBA projects found by their content type; a VBA project, 256 MiB (and each of its streams), of 262,144 entries and 4,096 modules; the name of a defined name or document variable, 4 KiB |
 | Properties | a value, 64 KiB; 256 custom properties; a custom property's name, 4 KiB |
 | All | a link's address, 8 KiB; a name or label put in the output (an author, the name of a sheet, shape, table, picture or embedded file, a module, a defined name, a cell's stored value), 4 KiB; a paragraph identifier, 32 bytes; data after the end of the archive, 1 MiB |
 
@@ -90,7 +90,7 @@ parts that do not appear in the document, style names used for
 matching) are held to their bounds without a warning; so is text the
 library writes into its own warnings (part names, certificate
 subjects). A compound file (an encrypted file's container) with more
-than 65,536 entries is refused with `ErrLimitExceeded`.
+than 262,144 entries is refused with `ErrLimitExceeded`.
 
 A document can embed thousands of files. The limits on decompressed
 bytes, on text and on password checks are therefore the document's and
@@ -177,14 +177,15 @@ that feeds a model decides what to do with each.
 
 ## How this is tested
 
-- Fuzz targets for the XML reader, the archive and the recovery of one
-  cut short, each format's main part, the records and formulas of binary
-  workbooks and the parts their formulas and pivot tables name (links to
-  other workbooks, tables, pivot caches), number formats, the
-  compound-file container and the encryption information, the Office
-  formats saved as XML (Flat OPC, WordprocessingML and SpreadsheetML
-  2003) and formulas in R1C1 notation; all run in CI on every pull
-  request. Before the release, all nineteen targets ran
+- Fuzz targets for the archive and the recovery of one cut short, each
+  format's main part, the records and formulas of binary workbooks and
+  the parts their formulas and pivot tables name (links to other
+  workbooks, tables, pivot caches), number formats, the encryption
+  information, the Office formats saved as XML (Flat OPC,
+  WordprocessingML and SpreadsheetML 2003) and formulas in R1C1 notation;
+  all run in CI on every pull request. The XML reader and the
+  compound-file container are go-fast-core's now, and fuzzed there.
+  Before the first release, all nineteen targets ran
   for five to forty-five minutes each. The five findings, none a crash, a
   hang or a way past a limit, are fixed and kept as seeds.
 - A soak run over 6,703 files: the corpus and the Office files in the test

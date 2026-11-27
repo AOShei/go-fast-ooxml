@@ -23,12 +23,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb"
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/vba"
 	"github.com/AOShei/go-fast-core/xmlscan"
-	"github.com/AOShei/go-fast-ooxml/internal/cfb"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/vba"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 )
 
@@ -129,7 +129,17 @@ func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
 			p.note(name, err)
 			continue
 		}
-		project, err := vba.Read(data, p.room.Left())
+		f, err := cfb.Open(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			p.note(name, err)
+			continue
+		}
+		project, err := vba.Read(f, nil, p.room.Left())
+		if f.Damaged != "" {
+			// The compound file was read on past damage to its structure.
+			p.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired,
+				"the compound file of the VBA project "+pkg.Label(pkg.Written(name))+" is damaged, and was read as far as it could be: "+clean.Label(f.Damaged))
+		}
 		if err != nil {
 			p.note(name, err)
 			continue
@@ -291,7 +301,7 @@ func (p *Part) note(name string, err error) {
 	case err == nil:
 	case errors.Is(err, opc.ErrBudget):
 		p.budget = true
-	case errors.Is(err, errTooLarge), errors.Is(err, cfb.ErrTooLarge):
+	case errors.Is(err, errTooLarge), errors.Is(err, cfb.ErrLimit), errors.Is(err, vba.ErrTooLarge):
 		p.Lost.Add(warn.CapProjectSize, 1)
 	default:
 		p.Damaged = append(p.Damaged, name)

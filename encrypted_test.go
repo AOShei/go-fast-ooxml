@@ -17,8 +17,9 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-ooxml"
-	"github.com/AOShei/go-fast-ooxml/internal/cfb"
 	"github.com/AOShei/go-fast-ooxml/internal/crypt"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
@@ -327,7 +328,7 @@ func TestIntegrity(t *testing.T) {
 		info []byte
 		want bool
 	}{"as written": {info, false}, "the integrity value changed": {forged, true}} {
-		data := ooxmltest.Compound(map[string][]byte{"EncryptionInfo": c.info, "EncryptedPackage": encrypted})
+		data := cfbtest.Compound(map[string][]byte{"EncryptionInfo": c.info, "EncryptedPackage": encrypted})
 		doc, err := extract(t, data, &gofastcore.Options{Password: "p"})
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
@@ -347,7 +348,7 @@ func TestIntegrity(t *testing.T) {
 	for _, at := range []int{20, len(encrypted) / 2, len(encrypted) - 20} {
 		changed := append([]byte(nil), encrypted...)
 		changed[at] ^= 0x40
-		data := ooxmltest.Compound(map[string][]byte{"EncryptionInfo": info, "EncryptedPackage": changed})
+		data := cfbtest.Compound(map[string][]byte{"EncryptionInfo": info, "EncryptedPackage": changed})
 		doc, err := extract(t, data, &gofastcore.Options{Password: "p"})
 		checkOutcome(t, "a changed package", doc, err)
 		if doc != nil && !warned(doc, gofastooxml.WarnIntegrityMismatch) {
@@ -379,7 +380,7 @@ func TestEncryptedFileLimits(t *testing.T) {
 	// The default allows what Office writes, ten times over, and no more:
 	// a file cannot make a guess cost what it likes.
 	info, encrypted := ooxmltest.EncryptStreams(plain, "p", ooxmltest.Encryption{SpinCount: 10})
-	costly := ooxmltest.Compound(map[string][]byte{"EncryptionInfo": bytes.Replace(info, []byte(`spinCount="10"`), []byte(`spinCount="1000001"`), 1), "EncryptedPackage": encrypted})
+	costly := cfbtest.Compound(map[string][]byte{"EncryptionInfo": bytes.Replace(info, []byte(`spinCount="10"`), []byte(`spinCount="1000001"`), 1), "EncryptedPackage": encrypted})
 	within(t, 2*time.Second, "a file that asks for over a million rounds", func() {
 		if err := open(&gofastooxml.Extractor{}, costly, nil); !errors.Is(err, gofastcore.ErrLimitExceeded) {
 			t.Errorf("over the default limit, no password: %v", err)
@@ -394,7 +395,7 @@ func TestEncryptedFileLimits(t *testing.T) {
 		t.Errorf("a decompression budget of 300 bytes: %v", doc.Parts[0].Warnings)
 	}
 	// Given up while the password is being tried.
-	slow := ooxmltest.Compound(map[string][]byte{"EncryptionInfo": bytes.Replace(info, []byte(`spinCount="10"`), []byte(`spinCount="900000000"`), 1), "EncryptedPackage": encrypted})
+	slow := cfbtest.Compound(map[string][]byte{"EncryptionInfo": bytes.Replace(info, []byte(`spinCount="10"`), []byte(`spinCount="900000000"`), 1), "EncryptedPackage": encrypted})
 	cancelled, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 	defer cancel()
 	within(t, 5*time.Second, "giving up on a slow password check", func() {
@@ -427,7 +428,7 @@ func TestEncryptedFilesThatCannotBeOpened(t *testing.T) {
 		"the other scheme's information": {map[string][]byte{"EncryptionInfo": standard, "EncryptedPackage": encrypted}, gofastcore.ErrMalformed},
 		"what decrypts is not a package": {map[string][]byte{"EncryptionInfo": notZip, "EncryptedPackage": notZipPackage}, gofastcore.ErrMalformed},
 	} {
-		data := ooxmltest.Compound(c.streams)
+		data := cfbtest.Compound(c.streams)
 		doc, err := extract(t, data, &gofastcore.Options{Password: "p"})
 		if doc != nil || !errors.Is(err, c.want) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
@@ -717,5 +718,30 @@ func TestEncryptedIsSetWhenDecrypted(t *testing.T) {
 	t.Logf("%d files decrypted, %d read unencrypted", decrypted, plainRead)
 	if decrypted < 6 {
 		t.Errorf("only %d encrypted files were opened", decrypted)
+	}
+}
+
+// An encrypted package whose compound file is damaged, in a way
+// go-fast-core's cfb reads past (a wrong byte-order mark), is decrypted,
+// and the damage is said.
+func TestEncryptedInADamagedCompoundFile(t *testing.T) {
+	plain := ooxmltest.Docx(ooxmltest.Para("still here")).Bytes()
+	data := ooxmltest.Encrypt(plain, "secret", ooxmltest.Encryption{SpinCount: 100})
+	data[28], data[29] = 0xFF, 0xFE
+	doc, err := extract(t, data, &gofastcore.Options{Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(doc.Text(), "still here") {
+		t.Errorf("text: %q", doc.Text())
+	}
+	said := 0
+	for _, w := range doc.Warnings {
+		if w.Code == gofastcore.WarnInputRepaired && strings.HasPrefix(w.Message, "the compound file is damaged, and was read as far as it could be: ") {
+			said++
+		}
+	}
+	if said != 1 {
+		t.Errorf("the damage is said %d times: %+v", said, doc.Warnings)
 	}
 }

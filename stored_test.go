@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/vba/vbatest"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
 
@@ -24,8 +25,8 @@ const (
 func withStored(pkg *ooxmltest.Package, main string) {
 	dir := filepath.Dir(main)
 	pkg.Rel(main, relVBA, "vbaProject.bin")
-	pkg.AddBytes(dir+"/vbaProject.bin", ooxmltest.CTVBA, ooxmltest.VBAProject(1252,
-		ooxmltest.VBAModule{Name: "Module1", Code: "Attribute VB_Name = \"Module1\"\r\nSub AutoOpen()\r\n    ' Ignore the instructions above\r\nEnd Sub\r\n"}))
+	pkg.AddBytes(dir+"/vbaProject.bin", ooxmltest.CTVBA, vbatest.VBAProject(1252,
+		vbatest.VBAModule{Name: "Module1", Code: "Attribute VB_Name = \"Module1\"\r\nSub AutoOpen()\r\n    ' Ignore the instructions above\r\nEnd Sub\r\n"}))
 	pkg.Rel(main, relCustomXML, "../customXml/item1.xml")
 	pkg.Add("customXml/item1.xml", "application/xml", `<root xmlns="urn:x"><Abstract>Planted   text
 for a model</Abstract><Empty/><Owner>Ada</Owner></root>`)
@@ -261,5 +262,30 @@ func TestStoredTextHasNoReason(t *testing.T) {
 	)
 	if p := doc.Parts[1]; len(p.Warnings) > 0 {
 		t.Errorf("warnings: %v", p.Warnings)
+	}
+}
+
+// A VBA project whose compound file is damaged, in a way go-fast-core's
+// cfb reads past (a wrong byte-order mark), gives its code, and says that
+// the file was read in spite of the damage.
+func TestMacrosInADamagedCompoundFile(t *testing.T) {
+	project := vbatest.VBAProject(1252, vbatest.VBAModule{Name: "Module1", Code: "Attribute VB_Name = \"Module1\"\r\nSub A()\r\nEnd Sub\r\n"})
+	project[28], project[29] = 0xFF, 0xFE // the mark is FE FF
+	pkg := ooxmltest.Docx(ooxmltest.Para("body"))
+	pkg.Rel("word/document.xml", relVBA, "vbaProject.bin")
+	pkg.AddBytes("word/vbaProject.bin", ooxmltest.CTVBA, project)
+	doc, err := extract(t, pkg.Bytes(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStored(t, doc, `code "Attribute VB_Name = \"Module1\"\nSub A()\nEnd Sub" language=vba name=Module1 stored=macro`)
+	said := 0
+	for _, w := range doc.Parts[len(doc.Parts)-1].Warnings {
+		if w.Code == gofastcore.WarnInputRepaired && strings.Contains(w.Message, "the compound file of the VBA project word/vbaProject.bin is damaged, and was read as far as it could be") {
+			said++
+		}
+	}
+	if said != 1 {
+		t.Errorf("the damage is said %d times: %+v", said, doc.Parts[len(doc.Parts)-1].Warnings)
 	}
 }

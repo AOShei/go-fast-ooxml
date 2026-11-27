@@ -892,7 +892,7 @@ is not judged.
 
 | `stored` | What |
 |---|---|
-| `macro` | The code of a VBA project, in all four formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes, and decoded from the project's code page: the Windows code pages 874, 932, 936, 949, 950 and 1250 to 1258, Mac Roman, ISO 8859-1 and UTF-8, from Microsoft's tables of them. A character a code page does not define, or text in another code page, is U+FFFD, counted by `text.unmapped_glyphs`. All 246 modules of the corpus and the soak set are the same as olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
+| `macro` | The code of a VBA project, in all four formats: a `code` block for each module, `language` `vba`, `name` the module's. Decompressed as [MS-OVBA] describes, and decoded from the project's code page by go-fast-core's `charset`: the Windows code pages 874, 932, 936, 949, 950 and 1250 to 1258, Mac Roman and the other code pages it knows (ISO 8859, KOI8, EUC-JP, GB 18030, UTF-8 and more), as the WHATWG Encoding Standard decodes them. A character a code page does not define, or text in a code page not known, is U+FFFD, counted by `text.unmapped_glyphs`. A project whose compound file is damaged in a way that can be read past is read, with an `input.repaired` warning. All 246 modules of the corpus and the soak set are the same as olevba's (`TestMacrosAsOlevba`, `GOFAST_MACROS_SOAK=1` for the soak set). In Excel also the formulas of Excel 4 macro sheets, `language` `excel4` |
 | `custom_xml` | Custom XML data with text, in all four formats: a block for each part, a line for each element with text of its own (`Abstract: …`). Attribute values are not read. Data a content control is bound to is also in the body, where the control shows it |
 | `document_variable` | Word's document variables, `name: value` |
 | `defined_name` | Excel's defined names |
@@ -985,23 +985,22 @@ and shapes; attribute values of custom XML data.
 |---|---|
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for reading a part at a time |
 | `cmd/gofastooxml` | The command |
+| go-fast-core | The readers the go-fast libraries share: `xmlscan` (the XML scanner), `charset`, `opc` (the package container), `ziprecover`, `inflate`, `cfb` (compound files), `vba`, `clean`, `symbol` (symbol fonts translated to Unicode), `label` (bullets and numerals), `hidden` (placing display reasons on blocks and spans) and `numfmt` |
 | `internal/opc` | What is Office's own about a package, on go-fast-core's `opc` (the zip archive, content types, relationships, decompression budget; an archive that has lost its directory is read through `ziprecover`): which part is the document, a Visio package without content types, and a package written as XML (Flat OPC) or made of an Office 2003 file's elements, read by the same interface |
 | `internal/wordml` | WordprocessingML 2003 translated into the parts of a `.docx` |
 | `internal/xmlroot`, `internal/xmlindex` | Telling the Office formats saved as XML by their root element; finding where the elements of such a file are, without reading those not gone into |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |
 | `internal/sml` | The Excel reader: workbook, shared strings, cell styles, the streaming sheet reader, finding tables on a sheet, comments, shapes; the records of a binary workbook, and the elements of a SpreadsheetML 2003 workbook, read into the same |
 | `internal/xlsb` | The records of a binary workbook (`.xlsb`): splitting a part into records, reading their fields, and turning a compiled formula back into its text |
-| `internal/cfb` | Compound files, the container of an encrypted package (and of the legacy formats): sectors, allocation tables, directory, streams |
 | `internal/crypt` | The two encryption schemes of Office: reading the encryption information, verifying a password or a private key for a certificate, decrypting the package as it is read |
 | `internal/pml` | The PowerPoint reader: presentation, layouts and masters, the shape tree of a slide, placeholders and what they inherit, tables, reading order, notes and comments |
 | `internal/dml` | DrawingML, which all three formats use for what is drawn: colours and fills, where a shape lies, and the text of shapes with its list styles |
 | `internal/chart`, `internal/diagram` | Charts, of both kinds, as tables of their data; SmartArt diagrams, from their data model and the drawing Office made of them. Shared by the three readers |
-| `internal/theme`, `internal/media`, `internal/hidden`, `internal/label`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours, pictures and embedded files, placing display reasons on blocks and spans, bullets and numerals, warning codes, what reading one part gives |
+| `internal/theme`, `internal/media`, `internal/warn`, `internal/unit` | Shared by the readers: theme colours, pictures and embedded files, warning codes, what reading one part gives |
 | `internal/omml` | Equations (Office Math) of Word and PowerPoint, written in UnicodeMath |
 | `internal/formula` | Moving the references of a shared formula to each cell of its range; formulas in R1C1 notation read into A1 |
-| `internal/symbol` | The characters of symbol fonts (Symbol, Wingdings, Webdings and the like) translated to Unicode |
-| `internal/stored`, `internal/vba`, `internal/codepage` | What a package of any format keeps and shows nowhere (the code of its VBA project, its custom XML), for the stored part; reading a VBA project's source ([MS-OVBA]); the code pages that source is kept in |
-| `internal/props`, `internal/clean`, `internal/ns` | Document properties; text conventions of the shared model; namespace and relationship names |
+| `internal/stored` | What a package of any format keeps and shows nowhere (the code of its VBA project, read by go-fast-core's `vba`; its custom XML), for the stored part |
+| `internal/props`, `internal/ns` | Document properties; namespace and relationship names |
 | `internal/ooxmltest` | Test harness: in-memory package builder, scorers, oracle wrappers, manifest loader, the checks every extracted document must pass |
 | `testdata/fixtures`, `testdata/expect`, `testdata/fixtures.json` | Small generated files with exactly known content, the expected result of each in the shared model's JSON form, and their manifest |
 | `testdata/gen` | The fixture generator and the adapters for the comparison tools |

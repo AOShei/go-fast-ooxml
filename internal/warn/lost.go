@@ -166,7 +166,7 @@ var caps = [numCaps]capInfo{
 	CapDiagramDepth:  {"SmartArt nodes deeper than " + itoa(MaxDiagramDepth) + " levels were not read", "node", "nodes"},
 	CapCustomXML:     {"custom XML parts past " + itoa(MaxCustomXML) + " were not read", "part", "parts"},
 	CapProjects:      {"VBA projects past " + itoa(MaxProjects) + " were not read", "project", "projects"},
-	CapProjectSize:   {"VBA projects larger than " + itoa(MaxProjectSize) + " bytes, or with more than 65536 entries in their compound file, were not read", "project", "projects"},
+	CapProjectSize:   {"VBA projects larger than " + itoa(MaxProjectSize) + " bytes, or with more than 262144 entries in their compound file or a stream over 268435456 bytes, were not read", "project", "projects"},
 	CapTrailing:      {"data after the end of the archive past its first " + itoa(MaxTrailing) + " bytes was not read", "byte", "bytes"},
 	CapModules:       {"VBA modules past " + itoa(MaxModules) + " were not read", "module", "modules"},
 	CapPropertyName:  {"custom property names longer than " + itoa(MaxPropertyName) + " bytes were cut there", "name", "names"},
