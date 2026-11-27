@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-27
+
 ### Added
 
 - A character reference to no character XML allows (`&#0;`, a surrogate,
@@ -546,7 +548,8 @@ result: `ooxml.formula_no_value` no longer counts it.
 - The legacy binary formats (`.doc`, `.xls`, `.ppt`).
 - Files protected by rights management.
 
-[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/AOShei/go-fast-ooxml/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.7.1
 [0.7.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.7.0
 [0.6.0]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.6.0
 [0.5.3]: https://github.com/AOShei/go-fast-ooxml/releases/tag/v0.5.3
