@@ -33,6 +33,15 @@ func Unmapped(n int) string {
 	return strconv.Itoa(n) + " characters of a symbol font that have no character in Unicode appear as U+FFFD"
 }
 
+// CharRefs is the message of gofastcore.WarnTextUnmappedGlyphs for n
+// character references to no character XML allows, each read as U+FFFD.
+func CharRefs(n int) string {
+	if n == 1 {
+		return "1 character reference names no character (&#0;, a surrogate or a number past U+10FFFF) and is read as U+FFFD"
+	}
+	return strconv.Itoa(n) + " character references name no character (&#0;, a surrogate or a number past U+10FFFF) and are read as U+FFFD"
+}
+
 // FitRows returns how many of rows rows of cols cells a table block can
 // have and stay within what budget has left, taking
 // gofastcore.BlockCost for the block and gofastcore.CellCost for each

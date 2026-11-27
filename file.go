@@ -24,6 +24,7 @@ import (
 	"github.com/AOShei/go-fast-ooxml/internal/sml"
 	"github.com/AOShei/go-fast-ooxml/internal/unit"
 	"github.com/AOShei/go-fast-ooxml/internal/vsd"
+	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/wml"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
 )
@@ -65,6 +66,7 @@ type File struct {
 	sess    *session            // the reading in use
 	clean   bool                // no limit has cut it short, so it can be used again
 	tallies map[int]*unit.Tally // what the parts read so far found out, by index
+	refs    opc.Refs            // character references to no character, in the parts read so far
 	took    int64               // the text the latest reading of parts took, which their embedded files cannot have
 }
 
@@ -227,6 +229,7 @@ func (f *File) open(first bool) (*session, error) {
 	if err != nil {
 		return nil, wrap(err)
 	}
+	pkg.CountRefs(&f.refs)
 	main, format, mime, err := pkg.Main()
 	if err != nil {
 		switch d := pkg.FlatDamage(); {
@@ -672,6 +675,7 @@ func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
 	}
 	doc.Children = f.embedded(ctx, sess, tallies)
 	warnAll(doc, sess.src.Summary(tallies))
+	warnAll(doc, f.refsWarning())
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -830,7 +834,18 @@ func (f *File) Warnings() []gofastcore.Warning {
 	}
 	sess, _, tallies := f.known()
 	warnAll(&doc, sess.src.Summary(tallies))
+	warnAll(&doc, f.refsWarning())
 	return doc.Warnings
+}
+
+// refsWarning is the warning of the character references to no character
+// in the parts read so far, if there were any.
+func (f *File) refsWarning() []gofastcore.Warning {
+	n := f.refs.Total()
+	if n == 0 {
+		return nil
+	}
+	return []gofastcore.Warning{{Code: gofastcore.WarnTextUnmappedGlyphs, Severity: gofastcore.SeverityWarning, Message: warn.CharRefs(n)}}
 }
 
 // warnAll adds ws to doc through Document.Warn, which bounds how many a

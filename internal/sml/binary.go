@@ -1006,6 +1006,7 @@ func (sh *sheet) readOwn(chunks bool) (opened bool, err error) {
 	} else {
 		sh.read()
 	}
+	pkg.CountScanned(sh.name, &sh.s)
 	return true, sh.s.Err()
 }
 

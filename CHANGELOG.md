@@ -7,6 +7,14 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Added
+
+- A character reference to no character XML allows (`&#0;`, a surrogate,
+  a number past U+10FFFF), read as U+FFFD, is counted: the document
+  carries a `text.unmapped_glyphs` warning, "N character references name
+  no character (&#0;, a surrogate or a number past U+10FFFF) and are read
+  as U+FFFD". Before, nothing said so.
+
 ### Changed
 
 - go-fast-core v0.1.14 is required. Its XML scanner takes fewer

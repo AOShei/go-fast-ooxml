@@ -71,6 +71,10 @@ type Result struct {
 	// Err is why the body could not be read to its end, if it could
 	// not; what was read before is in the translation.
 	Err error
+	// CharRefs counts the character references to no character XML
+	// allows (&#0;, a surrogate, a number past U+10FFFF) in what was
+	// translated, each read as U+FFFD (xmlscan's Stats.CharRefsReplaced).
+	CharRefs int
 }
 
 // scanOptions maps the namespaces the translation tells apart.
@@ -131,6 +135,7 @@ func Translate(x *xmlindex.Index, budget int64) (*Result, error) {
 		if err := s.Err(); err != nil {
 			res.Err = err
 		}
+		t.refs += s.Stats.CharRefsReplaced
 		s.Release()
 	}
 	doc.closeAll()
@@ -146,6 +151,7 @@ func Translate(x *xmlindex.Index, budget int64) (*Result, error) {
 	if t.over {
 		return nil, ErrBudget
 	}
+	res.CharRefs = t.refs
 	for _, p := range t.parts {
 		p.closeAll()
 		res.Sections = append(res.Sections, opc.Section{Name: p.name, ContentType: p.contentType, Data: p.buf.Bytes()})
@@ -172,6 +178,7 @@ type translator struct {
 
 	media  []media
 	byName map[string]string // a binData's wordml name -> its part, from the part's directory
+	refs   int               // character references to no character, as Result.CharRefs
 }
 
 type media struct {
@@ -188,6 +195,7 @@ func (t *translator) section(e *xmlindex.Element, read func(*xmlscan.Scanner)) {
 	if s.Next() == xmlscan.Start {
 		read(&s)
 	}
+	t.refs += s.Stats.CharRefsReplaced
 }
 
 // part is a part being written.
