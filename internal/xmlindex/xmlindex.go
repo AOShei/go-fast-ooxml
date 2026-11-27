@@ -184,6 +184,9 @@ type lexer struct {
 	name []byte
 	open []byte
 	ends []int
+	// started: the root element has begun. doctyped: a document type
+	// declaration has been passed over.
+	started, doctyped bool
 }
 
 func (x *lexer) readByte() (byte, error) {
@@ -199,6 +202,37 @@ func (x *lexer) readByte() (byte, error) {
 // skipPast consumes input up to and including end, of at most 3 bytes.
 // The bytes read last are compared with it, so that "]]]>" ends a CDATA
 // section as "]]>" does.
+// doctype consumes a document type declaration after its "<!", if it
+// declares nothing; see markup.
+func (x *lexer) doctype() error {
+	if x.started || x.doctyped {
+		return fmt.Errorf("%w (at byte %d)", xmlscan.ErrDTD, x.off-2)
+	}
+	start := x.off - 2
+	var quote byte
+	for {
+		c, err := x.readByte()
+		if err != nil {
+			return err
+		}
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '[':
+			return fmt.Errorf("%w (at byte %d)", xmlscan.ErrDTD, start)
+		case c == '<':
+			return errors.New("an unterminated document type declaration")
+		case c == '>':
+			x.doctyped = true
+			return nil
+		}
+	}
+}
+
 func (x *lexer) skipPast(end string) error {
 	var last [3]byte
 	for n := 1; ; n++ {
@@ -241,8 +275,11 @@ func (x *lexer) text(count func([]byte)) error {
 
 // markup consumes what follows a "<" up to the end of that markup, and
 // says what it was. For a tag, x.tag holds what is between "<" and ">"
-// when keep is set, which is for the package's own elements: there, and
-// only there, a document type declaration is refused.
+// when keep is set, which is for the package's own elements. There, and
+// only there, a document type declaration is judged as go-fast-core's
+// xmlscan judges it: one that declares nothing (before the root element,
+// the only one, with no internal subset) is passed over, and any other is
+// xmlscan.ErrDTD.
 func (x *lexer) markup(keep bool) (kind byte, err error) {
 	c, err := x.readByte()
 	if err != nil {
@@ -259,7 +296,7 @@ func (x *lexer) markup(keep bool) (kind byte, err error) {
 		case bytes.HasPrefix(peek, []byte("[CDATA[")):
 			return '!', x.skipPast("]]>")
 		case keep && bytes.HasPrefix(peek, []byte("DOCTYPE")):
-			return 0, xmlscan.ErrDTD
+			return '!', x.doctype()
 		}
 		return '!', x.skipPast(">")
 	}
@@ -638,6 +675,7 @@ func (x *Index) read(opts Options) error {
 			open[parent-1].Children = append(open[parent-1].Children, e)
 		} else {
 			x.Root = e
+			lx.started = true
 		}
 		switch {
 		case selfClosing:
