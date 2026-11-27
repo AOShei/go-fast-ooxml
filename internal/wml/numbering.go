@@ -2,11 +2,11 @@ package wml
 
 import (
 	"bytes"
-	"github.com/AOShei/go-fast-ooxml/internal/label"
+	"github.com/AOShei/go-fast-core/label"
 	"strconv"
 	"strings"
 
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"

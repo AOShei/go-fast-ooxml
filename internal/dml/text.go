@@ -7,12 +7,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
-	"github.com/AOShei/go-fast-ooxml/internal/hidden"
-	"github.com/AOShei/go-fast-ooxml/internal/label"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/hidden"
+	"github.com/AOShei/go-fast-core/label"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
-	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )

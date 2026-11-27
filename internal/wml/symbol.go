@@ -3,7 +3,7 @@ package wml
 import (
 	"unicode/utf8"
 
-	"github.com/AOShei/go-fast-ooxml/internal/symbol"
+	"github.com/AOShei/go-fast-core/symbol"
 )
 
 // symbolRune returns the character a reader sees for w:sym, a character

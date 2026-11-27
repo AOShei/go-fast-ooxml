@@ -2,8 +2,8 @@ package pml
 
 import (
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/chart"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/diagram"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
