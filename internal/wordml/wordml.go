@@ -75,6 +75,10 @@ type Result struct {
 	// allows (&#0;, a surrogate, a number past U+10FFFF) in what was
 	// translated, each read as U+FFFD (xmlscan's Stats.CharRefsReplaced).
 	CharRefs int
+	// InvalidUTF8 counts the bytes of the text and attribute values
+	// translated that are not part of a UTF-8 character, each read as
+	// U+FFFD (xmlscan's Stats.InvalidUTF8).
+	InvalidUTF8 int
 }
 
 // scanOptions maps the namespaces the translation tells apart.
@@ -136,6 +140,7 @@ func Translate(x *xmlindex.Index, budget int64) (*Result, error) {
 			res.Err = err
 		}
 		t.refs += s.Stats.CharRefsReplaced
+		t.invalid += s.Stats.InvalidUTF8
 		s.Release()
 	}
 	doc.closeAll()
@@ -151,7 +156,7 @@ func Translate(x *xmlindex.Index, budget int64) (*Result, error) {
 	if t.over {
 		return nil, ErrBudget
 	}
-	res.CharRefs = t.refs
+	res.CharRefs, res.InvalidUTF8 = t.refs, t.invalid
 	for _, p := range t.parts {
 		p.closeAll()
 		res.Sections = append(res.Sections, opc.Section{Name: p.name, ContentType: p.contentType, Data: p.buf.Bytes()})
@@ -176,9 +181,10 @@ type translator struct {
 	notes                         int // note ids given
 	headers, footers              int
 
-	media  []media
-	byName map[string]string // a binData's wordml name -> its part, from the part's directory
-	refs   int               // character references to no character, as Result.CharRefs
+	media   []media
+	byName  map[string]string // a binData's wordml name -> its part, from the part's directory
+	refs    int               // character references to no character, as Result.CharRefs
+	invalid int               // bytes that are not UTF-8, as Result.InvalidUTF8
 }
 
 type media struct {
@@ -196,6 +202,7 @@ func (t *translator) section(e *xmlindex.Element, read func(*xmlscan.Scanner)) {
 		read(&s)
 	}
 	t.refs += s.Stats.CharRefsReplaced
+	t.invalid += s.Stats.InvalidUTF8
 }
 
 // part is a part being written.

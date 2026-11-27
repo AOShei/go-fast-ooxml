@@ -71,7 +71,7 @@ type Package struct {
 	sections   bool        // the parts are elements of a file with no package (NewSections)
 	flatDamage *FlatDamage // where a Flat OPC package breaks off
 	untyped    bool        // a Visio package with no content-types table, known by its relationships
-	refs       *Refs       // where the parts' references to no character are counted
+	replaced   *Replaced   // where what the parts' scanners read as U+FFFD is counted
 }
 
 // Open reads the archive's directory and the content-types table.

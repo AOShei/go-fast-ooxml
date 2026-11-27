@@ -42,6 +42,16 @@ func CharRefs(n int) string {
 	return strconv.Itoa(n) + " character references name no character (&#0;, a surrogate or a number past U+10FFFF) and are read as U+FFFD"
 }
 
+// InvalidUTF8 is the message of gofastcore.WarnTextUnmappedGlyphs for n
+// bytes of UTF-8 input that are not part of a character, each read as
+// U+FFFD.
+func InvalidUTF8(n int) string {
+	if n == 1 {
+		return "1 byte sequence is not valid UTF-8 and is read as U+FFFD"
+	}
+	return strconv.Itoa(n) + " byte sequences are not valid UTF-8 and are read as U+FFFD"
+}
+
 // FitRows returns how many of rows rows of cols cells a table block can
 // have and stay within what budget has left, taking
 // gofastcore.BlockCost for the block and gofastcore.CellCost for each
