@@ -1,10 +1,10 @@
 package wml
 
 import (
-	"bytes"
 	"github.com/AOShei/go-fast-core/label"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/xmlscan"
@@ -197,11 +197,15 @@ func readLevel(s *xmlscan.Scanner, l *level) (cut int) {
 		case s.Is(ns.Word, "lvlText"):
 			// A label is a few characters. It is repeated on every item
 			// of the list, so a long one is bounded here.
-			// It becomes part of the output, so it is made valid text:
-			// an attribute's bytes are whatever the file holds.
+			// The cut does not split a character: the value is valid
+			// UTF-8 from the scanner, and stays so.
 			v, _ := s.Attr(ns.Word, "val")
 			if len(v) > maxLabelText {
-				v = bytes.ToValidUTF8(v[:maxLabelText], nil)
+				n := maxLabelText
+				for n > 0 && !utf8.RuneStart(v[n]) {
+					n-- // do not cut a character in two
+				}
+				v = v[:n]
 				cut = 1
 			}
 			l.text, _ = clean.String(v, clean.Ligatures)

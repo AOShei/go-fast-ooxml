@@ -287,6 +287,15 @@ func TestExtractErrors(t *testing.T) {
 			"\x06DataSpaces/TransformInfo/\x09DRMEncryptedTransform/\x06Primary": make([]byte, 2000),
 			"EncryptedPackage": make([]byte, 5000),
 		}), gofastcore.ErrUnsupported, "rights-management server issues to the people the document names, and this library contacts no server"},
+		// As the .NET packaging classes write it: the transform named as
+		// they like, each user's licence beside it in an EUL- stream.
+		{"rights managed, licence by user", cfbtest.Compound(map[string][]byte{
+			"\x06DataSpaces/DataSpaceMap":                    make([]byte, 100),
+			"\x06DataSpaces/TransformInfo/Transform/Primary": make([]byte, 200),
+			"\x06DataSpaces/TransformInfo/Transform/EUL-1":   make([]byte, 2000),
+			"EncryptionInfo":   make([]byte, 200),
+			"EncryptedPackage": make([]byte, 5000),
+		}), gofastcore.ErrUnsupported, "rights-management server issues to the people the document names, and this library contacts no server"},
 		// Encrypted, and neither a password nor rights management is said.
 		{"encrypted, how not said", cfbtest.Compound(map[string][]byte{"EncryptedPackage": make([]byte, 5000)}), gofastcore.ErrUnsupported, "whose encryption is not stated"},
 		{"compound header only", cfbtest.Compound(map[string][]byte{"WordDocument": make([]byte, 5000)})[:40], gofastcore.ErrMalformed, "compound file"},

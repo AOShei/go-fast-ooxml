@@ -300,3 +300,21 @@ func TestPropertyCutsAreLimits(t *testing.T) {
 		t.Error("the deprecated code is raised")
 	}
 }
+
+// A list label cut at 64 bytes is cut where a character starts: the
+// character the limit falls in is not made U+FFFD.
+func TestListLabelCapKeepsCharacters(t *testing.T) {
+	num := `<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="` +
+		strings.Repeat("L", 63) + "\u00e9" + `%1."/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>`
+	doc := capsExtract(t, ooxmltest.Docx(ooxmltest.ListPara(1, 0, "item")).WithNumbering(num).Bytes())
+	saysOnce(t, doc, 0, "list labels longer than 64 bytes were cut there", "(1 label)")
+	var markers []string
+	for _, b := range doc.AllBlocks() {
+		if b.Marker != "" {
+			markers = append(markers, b.Marker)
+		}
+	}
+	if want := strings.Repeat("L", 63); len(markers) != 1 || markers[0] != want {
+		t.Errorf("markers %q, want %q", markers, want)
+	}
+}

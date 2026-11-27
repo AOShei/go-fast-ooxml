@@ -155,12 +155,16 @@ func readParaProps(s *xmlscan.Scanner, pp *ParaProps) {
 func short(v []byte, was string) string {
 	const limit = 32
 	if len(v) > limit {
-		v = v[:limit]
+		n := limit
+		for n > 0 && !utf8.RuneStart(v[n]) {
+			n-- // do not cut a character in two
+		}
+		v = v[:n]
 	}
 	if string(v) == was {
 		return was
 	}
-	return strings.ToValidUTF8(string(v), "�")
+	return string(v)
 }
 
 // link is what a run's properties say it links to.
