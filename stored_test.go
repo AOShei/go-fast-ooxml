@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-core/vba/vbatest"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
 )
@@ -287,5 +288,25 @@ func TestMacrosInADamagedCompoundFile(t *testing.T) {
 	}
 	if said != 1 {
 		t.Errorf("the damage is said %d times: %+v", said, doc.Parts[len(doc.Parts)-1].Warnings)
+	}
+
+	// A damaged compound file that holds no project: the damage is said
+	// all the same, beside the failure to read the project.
+	empty := cfbtest.Compound(map[string][]byte{"Other": []byte("x")})
+	empty[28], empty[29] = 0xFF, 0xFE
+	pkg = ooxmltest.Docx(ooxmltest.Para("body"))
+	pkg.Rel("word/document.xml", relVBA, "vbaProject.bin")
+	pkg.AddBytes("word/vbaProject.bin", ooxmltest.CTVBA, empty)
+	if doc, err = extract(t, pkg.Bytes(), nil); err != nil {
+		t.Fatal(err)
+	}
+	said = 0
+	for _, w := range doc.Parts[len(doc.Parts)-1].Warnings {
+		if w.Code == gofastcore.WarnInputRepaired && strings.Contains(w.Message, "the compound file of the VBA project word/vbaProject.bin is damaged, and was read as far as it could be") {
+			said++
+		}
+	}
+	if said != 1 {
+		t.Errorf("no project: the damage is said %d times: %+v", said, doc.Parts[len(doc.Parts)-1].Warnings)
 	}
 }
