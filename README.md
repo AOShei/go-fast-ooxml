@@ -985,7 +985,7 @@ and shapes; attribute values of custom XML data.
 |---|---|
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for reading a part at a time |
 | `cmd/gofastooxml` | The command |
-| `internal/opc` | The package container: zip archive, content types, relationships, decompression budget. An archive that has lost its directory is read through go-fast-core's `ziprecover`. A package written as XML (Flat OPC) is read by the same interface |
+| `internal/opc` | What is Office's own about a package, on go-fast-core's `opc` (the zip archive, content types, relationships, decompression budget; an archive that has lost its directory is read through `ziprecover`): which part is the document, a Visio package without content types, and a package written as XML (Flat OPC) or made of an Office 2003 file's elements, read by the same interface |
 | `internal/wordml` | WordprocessingML 2003 translated into the parts of a `.docx` |
 | `internal/xmlroot`, `internal/xmlindex` | Telling the Office formats saved as XML by their root element; finding where the elements of such a file are, without reading those not gone into |
 | `internal/wml` | The Word reader: styles, numbering, body, tables, notes, character formatting, headers and footers, fields |

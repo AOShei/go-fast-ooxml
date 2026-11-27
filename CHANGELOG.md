@@ -28,6 +28,11 @@ minor version may change the API.
   second byte if that is ASCII. A document type declaration that declares
   nothing (no internal subset) is passed over; any other is refused as
   before.
+- The package container is go-fast-core's `opc`; what is Office's own
+  (which part is the document, Flat OPC, a Visio package without content
+  types) stays here, on top of it. A part stored as interleaved pieces
+  (`part/[0].piece` to `part/[n].last.piece`, ECMA-376 Part 2) is read as
+  one part.
 
 ## [0.6.0] - 2026-11-26
 

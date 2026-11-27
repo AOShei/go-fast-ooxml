@@ -7,6 +7,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/opc"
 )
 
 // Cap is a fixed bound of this library that can leave content out. Each
@@ -235,7 +236,7 @@ const (
 	MaxCustomXML           = 1 << 10
 	MaxProjects            = 16
 	MaxProjectSize         = 1 << 28
-	MaxTrailing            = 1 << 20
+	MaxTrailing            = opc.MaxTrailing
 	MaxModules             = 1 << 12
 	MaxPropertyName        = clean.MaxLabel
 	MaxPropertyValue       = 64 << 10

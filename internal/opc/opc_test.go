@@ -24,52 +24,6 @@ func open(t *testing.T, data []byte, lim Limits) *Package {
 	return p
 }
 
-func TestCanonical(t *testing.T) {
-	for in, want := range map[string]string{
-		"word/document.xml":     "word/document.xml",
-		"/word/document.xml":    "word/document.xml",
-		"Word/Document.XML":     "word/document.xml",
-		`word\media\image1.png`: "word/media/image1.png",
-		"word/my%20file.xml":    "word/my file.xml",
-		"word/100%.xml":         "word/100%.xml",
-		"word/caf%C3%A9.xml":    "word/café.xml",
-		"[Content_Types].xml":   "[content_types].xml",
-		"":                      "",
-		"//word/x.xml":          "word/x.xml",
-		"word/été.xml":          "word/été.xml",
-	} {
-		if got := Canonical(in); got != want {
-			t.Errorf("Canonical(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestResolve(t *testing.T) {
-	for _, c := range []struct{ source, target, want string }{
-		{"", "word/document.xml", "word/document.xml"},
-		{"", "/word/document.xml", "word/document.xml"},
-		{"word/document.xml", "styles.xml", "word/styles.xml"},
-		{"word/document.xml", "media/image1.png", "word/media/image1.png"},
-		{"word/document.xml", "../customXml/item1.xml", "customxml/item1.xml"},
-		{"word/document.xml", "/word/numbering.xml", "word/numbering.xml"},
-		{"ppt/slides/slide1.xml", "../slideLayouts/slideLayout1.xml", "ppt/slidelayouts/slidelayout1.xml"},
-		{"ppt/slides/slide1.xml", "../media/image1.png#frag", "ppt/media/image1.png"},
-		{"xl/workbook.xml", `worksheets\sheet1.xml`, "xl/worksheets/sheet1.xml"},
-		{"xl/workbook.xml", "./worksheets/./sheet1.xml", "xl/worksheets/sheet1.xml"},
-		// A target cannot leave the package.
-		{"word/document.xml", "../../../etc/passwd", "etc/passwd"},
-		{"", "../x.xml", "x.xml"},
-		{"word/document.xml", "..", ""},
-	} {
-		if got := Resolve(c.source, c.target); got != c.want {
-			t.Errorf("Resolve(%q, %q) = %q, want %q", c.source, c.target, got, c.want)
-		}
-	}
-	if RelsName("") != "_rels/.rels" || RelsName("word/document.xml") != "word/_rels/document.xml.rels" {
-		t.Error("RelsName is wrong")
-	}
-}
-
 func TestContentTypesAndRels(t *testing.T) {
 	b := ooxmltest.Docx(ooxmltest.Para("x")).WithStyles("")
 	b.AddBytes("word/media/image1.png", "image/png", []byte("png"))
