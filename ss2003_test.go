@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -521,4 +522,18 @@ func FuzzSpreadsheetML(f *testing.F) {
 		doc, err := gofastooxml.Extract(context.Background(), bytes.NewReader(data), int64(len(data)), opts)
 		checkOutcome(t, "fuzz input", doc, err)
 	})
+}
+
+// A document type declaration that declares nothing is passed over, as
+// go-fast-core's xmlscan passes over it; one with an internal subset is
+// refused.
+func TestSpreadsheetMLDoctype(t *testing.T) {
+	body := `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="S"><Table><Row><Cell><Data ss:Type="String">hello</Data></Cell></Row></Table></Worksheet></Workbook>`
+	doc, err := extract(t, []byte("<?xml version=\"1.0\"?>\n<!DOCTYPE Workbook>\n"+body), nil)
+	if err != nil || !strings.Contains(doc.Text(), "hello") {
+		t.Errorf("a declaration of nothing: %v", err)
+	}
+	if _, err := extract(t, []byte(`<!DOCTYPE Workbook [<!ENTITY e "x">]>`+body), nil); !errors.Is(err, gofastcore.ErrUnsupported) {
+		t.Errorf("an internal subset: %v", err)
+	}
 }
