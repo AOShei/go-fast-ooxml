@@ -44,7 +44,7 @@ import (
 	"sync"
 	"unicode/utf16"
 
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"github.com/AOShei/go-fast-core/xmlscan"
 )
 
 // Errors, each wrapped with what was wrong.

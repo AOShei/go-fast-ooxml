@@ -4,7 +4,7 @@ import (
 	"io"
 	"runtime"
 
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"github.com/AOShei/go-fast-core/xmlscan"
 )
 
 // Sizes for reading a part in chunks: the chunk, and how many chunks a

@@ -3,8 +3,8 @@ package wml
 import (
 	"strings"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // role is what a paragraph style says about the paragraphs that use it,

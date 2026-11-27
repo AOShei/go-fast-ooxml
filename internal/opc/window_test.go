@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ooxmltest"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // A part read whole is given a window that holds the size it declares,

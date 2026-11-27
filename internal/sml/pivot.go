@@ -6,10 +6,10 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // A pivot table is drawn from a cache: the records of its source, kept in

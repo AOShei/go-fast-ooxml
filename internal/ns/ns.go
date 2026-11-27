@@ -6,7 +6,7 @@ package ns
 import (
 	"strings"
 
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"github.com/AOShei/go-fast-core/xmlscan"
 )
 
 // Namespaces. A Transitional URI and its Strict counterpart share a number,

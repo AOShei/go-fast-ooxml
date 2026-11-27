@@ -3,9 +3,9 @@ package vsd
 import (
 	"strconv"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // A Visio drawing describes every shape by a sheet of cells, as a

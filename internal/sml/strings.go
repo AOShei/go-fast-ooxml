@@ -6,8 +6,8 @@ import (
 
 	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/symbol"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // stringTable is a workbook's shared strings: text that cells refer to by

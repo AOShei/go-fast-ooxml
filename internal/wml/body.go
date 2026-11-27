@@ -11,11 +11,11 @@ import (
 	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/hidden"
 	"github.com/AOShei/go-fast-core/symbol"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // parser reads the block-level content of one part: the document body, a

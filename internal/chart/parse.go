@@ -4,9 +4,9 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // axis is what is known of one axis of a chart.

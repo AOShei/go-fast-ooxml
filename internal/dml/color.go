@@ -6,9 +6,9 @@ package dml
 import (
 	"math"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/theme"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // A drawing names a theme colour in one of two ways: by what it is for

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
+	"github.com/AOShei/go-fast-core/xmlscan"
 )
 
 func read(t *testing.T, xml string, opts Options) *Index {
@@ -77,12 +77,22 @@ func TestDamageAndRefusals(t *testing.T) {
 		"empty":     {"", ErrNoRoot},
 		"no root":   {`<?xml version="1.0"?><!-- c -->`, ErrNoRoot},
 		"DTD":       {`<!DOCTYPE r [<!ENTITY e "x">]><r/>`, xmlscan.ErrDTD},
+		"two DTDs":  {`<!DOCTYPE r><!DOCTYPE r><r/>`, xmlscan.ErrDTD},
+		"late DTD":  {`<r><!DOCTYPE r></r>`, xmlscan.ErrDTD},
 		"too many":  {`<r><a/><a/><a/></r>`, ErrTooMany},
 		"too large": {"\xff\xfe<\x00r\x00r\x00r\x00/\x00>\x00", ErrTooLarge},
 	} {
 		_, err := Read(strings.NewReader(c.xml), int64(len(c.xml)), Options{MaxElements: 3, MaxCopy: 4})
 		if !errors.Is(err, c.err) {
 			t.Errorf("%s: %v, want %v", name, err, c.err)
+		}
+	}
+	// A document type declaration that declares nothing is passed over,
+	// as go-fast-core's xmlscan passes over it.
+	for _, xml := range []string{`<!DOCTYPE r><r><a/></r>`, `<?xml version="1.0"?>
+<!DOCTYPE r SYSTEM "r.dtd"><r><a/></r>`, `<!DOCTYPE r PUBLIC "-//X//[y]" '>'><r><a/></r>`} {
+		if x := read(t, xml, Options{}); x.Damage != nil || x.Root == nil || len(x.Root.Children) != 1 {
+			t.Errorf("%s: damage %v", xml, x.Damage)
 		}
 	}
 	// A DTD inside an element not gone into is that element's to refuse.

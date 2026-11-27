@@ -8,9 +8,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlindex"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlroot"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // A Flat OPC package is a package written as one XML document instead of

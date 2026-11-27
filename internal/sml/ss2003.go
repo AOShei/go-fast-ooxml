@@ -12,12 +12,12 @@ import (
 	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/numfmt"
 	"github.com/AOShei/go-fast-core/symbol"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/formula"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlindex"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 // SpreadsheetML 2003 is the XML spreadsheet of Excel 2002 and 2003 ("XML

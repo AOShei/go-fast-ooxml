@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/omml"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 const head = `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`

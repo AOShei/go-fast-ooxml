@@ -114,7 +114,7 @@ and of this library now, which inflates with go-fast-core's decompressor:
 | | Word, 0.3.0 | Word, now | Excel, 0.3.0 | Excel, now |
 |---|---|---|---|---|
 | Inflating the parts and checking their CRC | 2.91 s (32%) | 1.61 s (21%) | 3.03 s (24%) | 1.51 s (13%) |
-| Scanning the XML (`internal/xmlscan`, without the inflating it calls) | 3.10 s (35%) | 2.99 s (40%) | 4.20 s (33%) | 4.13 s (37%) |
+| Scanning the XML (the scanner, then `internal/xmlscan`, without the inflating it calls) | 3.10 s (35%) | 2.99 s (40%) | 4.20 s (33%) | 4.13 s (37%) |
 | All | 8.97 s | 7.56 s | 12.78 s | 11.30 s |
 
 **Inflating.** This library depends only on the standard library and the
@@ -148,7 +148,7 @@ rises with the parts read at once: by 6% on the mixed batch with one
 worker, 12% with 24. The tables above were made with 0.3.0 and are kept as
 they were, as the other tools were measured in the same minutes.
 
-**Scanning.** `BenchmarkReal` in `internal/xmlscan` scans the XML parts of
+**Scanning.** `BenchmarkReal` in go-fast-core's `xmlscan` scans the XML parts of
 the batch, with the file of parts named by `XMLSCAN_PARTS` (4-byte length,
 then the part, for each). It skips itself without one.
 

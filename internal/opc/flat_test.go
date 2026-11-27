@@ -8,8 +8,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 
 const pkgNS = `xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage"`

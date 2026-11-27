@@ -304,7 +304,8 @@ fails as that part, as in an archive. A file cut short is read up to the
 last complete part, with an `input.repaired` warning saying where it
 breaks off. A file in UTF-16 or a single-byte encoding is converted to
 UTF-8 in memory first (Office writes UTF-8). A document type declaration
-is refused, as everywhere.
+is refused, as everywhere, unless it declares nothing (no internal
+subset), which is passed over.
 
 ### SpreadsheetML 2003
 
@@ -362,10 +363,10 @@ warning. Document properties come from `o:DocumentProperties` and
 `o:CustomDocumentProperties`, under the keys the `.xlsx` properties use.
 
 Files of this format written by programs other than Office declare many
-encodings: besides UTF-8, UTF-16, ISO 8859-1 and Windows-1252, the scanner
-reads ISO 8859-15, the other Windows code pages (1250 to 1258, 874) and
-the double-byte ones (Shift JIS, GBK, EUC-KR as code page 949, Big5), in
-every format.
+encodings. The scanner, go-fast-core's `xmlscan`, reads every encoding of
+the WHATWG Encoding Standard but `replacement`, by any of its names, and the code page names
+`cp874`, `cp932`, `cp936`, `cp949`, `cp950` and `cp10000`, in every
+format; as in that standard, ISO 8859-1 is read as Windows-1252.
 
 ### WordprocessingML 2003
 
@@ -984,7 +985,6 @@ and shapes; attribute values of custom XML data.
 |---|---|
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for reading a part at a time |
 | `cmd/gofastooxml` | The command |
-| `internal/xmlscan` | Pull tokenizer for XML: no allocation per token, bounded memory, namespace-aware, refuses DTDs |
 | `internal/opc` | The package container: zip archive, content types, relationships, decompression budget. An archive that has lost its directory is read through go-fast-core's `ziprecover`. A package written as XML (Flat OPC) is read by the same interface |
 | `internal/wordml` | WordprocessingML 2003 translated into the parts of a `.docx` |
 | `internal/xmlroot`, `internal/xmlindex` | Telling the Office formats saved as XML by their root element; finding where the elements of such a file are, without reading those not gone into |
