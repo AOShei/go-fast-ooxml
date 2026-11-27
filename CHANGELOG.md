@@ -7,6 +7,18 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- go-fast-core v0.1.13 is required. The readers this library shared with
+  others now live in go-fast-core once (its README, "Shared readers"),
+  and this library uses them: `clean`, `symbol`, `label` and `hidden`.
+- Names and labels that reach the output (authors, names of sheets,
+  shapes, tables and files, defined names, document variables, custom
+  property names, a cell's stored value) are kept to 4 KiB (was 1,024
+  bytes), the bound all the go-fast libraries share; the `limit.exceeded`
+  messages say so. A cut never splits a character, so it no longer leaves
+  U+FFFD at the end of a name.
+
 ## [0.6.0] - 2026-11-26
 
 ### Added

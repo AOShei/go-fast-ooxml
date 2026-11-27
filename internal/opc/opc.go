@@ -18,8 +18,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/ziprecover"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
@@ -712,7 +712,7 @@ func (p *Package) RelsWith(source string, s *xmlscan.Scanner) ([]Rel, error) {
 			mode, _ := s.Attr(xmlscan.NoSpace, "TargetMode")
 			r := Rel{ID: string(id), Type: string(typ), External: string(mode) == "External"}
 			if r.External {
-				if clean.AddressCut(string(target)) {
+				if _, long := clean.AddressCut(string(target)); long {
 					cut++
 				}
 				r.Target = clean.Address(string(target))

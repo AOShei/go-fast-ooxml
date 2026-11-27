@@ -2,8 +2,8 @@ package wml
 
 import (
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )
 

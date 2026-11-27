@@ -79,9 +79,9 @@ for each bound on the part it concerns, with how many were left out
 | Excel | 65,536 sheets; 1,048,576 rows and 16,384 columns; of a sheet: 262,144 comments, 4,096 comment authors, 262,144 hyperlinks, 16,384 drop-down lists over 262,144 ranges, 262,144 merged ranges, 4,096 declared tables, 1,024 pivot tables, 16 drawing parts, 1,048,576 shared formulas; a formula, 32 KiB; 16,384 defined names; 131,072 cell formats and fonts, 8,192 number formats; 1,024 pivot caches, each of 16,384 fields of 1,048,576 values; 4,096 calculated fields; of a binary workbook: 65,536 links to other workbooks, each of 65,536 sheets and names, 65,536 references to sheets, 65,536 tables of 16,384 columns |
 | Charts | 1,024 series, each of 8 sets of values; points at an index past 1,048,576; about two million points in all; 16 levels of categories; 16 axes and 16 kinds of plot; a title, 4 KiB |
 | SmartArt | 65,536 nodes, 131,072 connections, 64 levels |
-| Stored data | 1,024 custom XML parts; 16 VBA projects found by their content type; a VBA project, 256 MiB, of 65,536 entries and 4,096 modules; the name of a defined name or document variable, 1,024 bytes |
-| Properties | a value, 64 KiB; 256 custom properties; a custom property's name, 1,024 bytes |
-| All | a link's address, 8 KiB; a name or label put in the output (an author, the name of a sheet, shape, table, picture or embedded file, a module, a defined name, a cell's stored value), 1,024 bytes; a paragraph identifier, 32 bytes; data after the end of the archive, 1 MiB |
+| Stored data | 1,024 custom XML parts; 16 VBA projects found by their content type; a VBA project, 256 MiB, of 65,536 entries and 4,096 modules; the name of a defined name or document variable, 4 KiB |
+| Properties | a value, 64 KiB; 256 custom properties; a custom property's name, 4 KiB |
+| All | a link's address, 8 KiB; a name or label put in the output (an author, the name of a sheet, shape, table, picture or embedded file, a module, a defined name, a cell's stored value), 4 KiB; a paragraph identifier, 32 bytes; data after the end of the archive, 1 MiB |
 
 What the bounds cut is said whenever the cut string reaches the output,
 and only with `limit.exceeded`: no other code means something was cut.
@@ -124,7 +124,8 @@ strangers they allow more than most services want to spend:
   not: a picture placed ten thousand times, or a grid of empty cells, is
   small in the file and large in the result. Every
   other string that comes from the file (a name, a list label, an author)
-  is held to a fixed length, 1,024 bytes or less, and a cut is said. The
+  is held to a fixed length (4 KiB for a name or label, 8 KiB for a
+  link's address), and a cut is said. The
   default of 256 MiB is some ten times the text of a workbook of two
   million cells; a service that expects documents of a few megabytes can
   set it far lower and lose nothing.

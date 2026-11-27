@@ -9,10 +9,10 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/opc"
-	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xlsb"
 )

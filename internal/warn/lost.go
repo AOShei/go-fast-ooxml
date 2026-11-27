@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
 )
 
 // Cap is a fixed bound of this library that can leave content out. Each
@@ -327,8 +327,9 @@ func (l *Lost) Merge(o *Lost) {
 
 // Name is clean.Name, counting a name it cuts.
 func (l *Lost) Name(s string) string {
-	l.cut(s, MaxName, CapName)
-	return clean.Name(s)
+	v, cut := clean.NameCut(s)
+	l.cut(s, cut, MaxName, CapName)
+	return v
 }
 
 // Over returns how many bytes a name is longer than Name keeps; 0 if it
@@ -347,19 +348,23 @@ func (l *Lost) NameOver(over int64) {
 
 // Label is clean.Label, counting a label it cuts.
 func (l *Lost) Label(s string) string {
-	l.cut(s, MaxName, CapName)
-	return clean.Label(s)
+	v, cut := clean.LabelCut(s)
+	l.cut(s, cut, MaxName, CapName)
+	return v
 }
 
 // Address is clean.Address, counting an address it cuts.
 func (l *Lost) Address(s string) string {
-	l.cut(s, MaxAddress, CapAddress)
-	return clean.Address(s)
+	v, cut := clean.AddressCut(s)
+	l.cut(s, cut, MaxAddress, CapAddress)
+	return v
 }
 
-func (l *Lost) cut(s string, limit int, c Cap) {
-	if n := len(strings.TrimSpace(s)); n > limit {
-		l.AddCut(c, 1, int64(n-limit))
+// cut counts s, which the bound cut where clean says it did, as about the
+// bytes it is longer than the bound.
+func (l *Lost) cut(s string, cut bool, limit int, c Cap) {
+	if cut {
+		l.AddCut(c, 1, int64(max(len(strings.TrimSpace(s))-limit, 1)))
 	}
 }
 

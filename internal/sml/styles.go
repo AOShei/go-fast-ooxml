@@ -1,10 +1,10 @@
 package sml
 
 import (
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/numfmt"
-	"github.com/AOShei/go-fast-ooxml/internal/clean"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
-	"github.com/AOShei/go-fast-ooxml/internal/symbol"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
 	"github.com/AOShei/go-fast-ooxml/internal/xmlscan"
 )

@@ -164,7 +164,7 @@ with warnings that say what could not.
   with how many: "table cells past column 16384 were not read (3 cells)",
   and for text cut short, how many bytes: "(2 names, 90 bytes left out)".
   Names and labels that reach the output (authors, names of sheets and
-  shapes, a cell's stored value) are kept to 1,024 bytes and said the same
+  shapes, a cell's stored value) are kept to 4 KiB and said the same
   way. What belongs to no part (sheets past the 65,536th, links to other
   workbooks, document properties) is said on the document.
   `limit.exceeded` is the only code for a cut, so its absence means
