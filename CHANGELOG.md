@@ -7,6 +7,12 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- go-fast-core v0.1.15 is required. VBA projects are read with its
+  `vba.ReadBytes`, which now says when the compound file was damaged
+  even if the project then cannot be read; the output is unchanged.
+
 ## [0.7.1] - 2026-11-27
 
 ### Added

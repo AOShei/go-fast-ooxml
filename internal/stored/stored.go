@@ -129,16 +129,12 @@ func (s Source) Macros(ctx context.Context, pkg *opc.Package, p *Part) {
 			p.note(name, err)
 			continue
 		}
-		f, err := cfb.Open(bytes.NewReader(data), int64(len(data)))
-		if err != nil {
-			p.note(name, err)
-			continue
-		}
-		project, err := vba.Read(f, nil, p.room.Left())
-		if f.Damaged != "" {
-			// The compound file was read on past damage to its structure.
+		project, err := vba.ReadBytes(data, p.room.Left())
+		if project != nil && project.FileDamaged != "" {
+			// The compound file was read on past damage to its structure,
+			// whether or not its project could then be read.
 			p.Warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired,
-				"the compound file of the VBA project "+pkg.Label(pkg.Written(name))+" is damaged, and was read as far as it could be: "+clean.Label(f.Damaged))
+				"the compound file of the VBA project "+pkg.Label(pkg.Written(name))+" is damaged, and was read as far as it could be: "+clean.Label(project.FileDamaged))
 		}
 		if err != nil {
 			p.note(name, err)
