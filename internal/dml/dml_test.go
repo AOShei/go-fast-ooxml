@@ -308,3 +308,16 @@ func TestTextAllocations(t *testing.T) {
 		t.Errorf("%d paragraphs", len(txt.Paras))
 	}
 }
+
+// short cuts a long value where a character starts, so that a character
+// split at the limit is not made U+FFFD.
+func TestShortDoesNotSplitACharacter(t *testing.T) {
+	v := []byte(strings.Repeat("x", 31) + "\u00e9" + "tail")
+	if got, want := short(v, ""), strings.Repeat("x", 31); got != want {
+		t.Errorf("short = %q, want %q", got, want)
+	}
+	v = []byte(strings.Repeat("x", 30) + "\u00e9" + "tail")
+	if got, want := short(v, ""), strings.Repeat("x", 30)+"\u00e9"; got != want {
+		t.Errorf("short = %q, want %q", got, want)
+	}
+}

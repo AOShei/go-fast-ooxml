@@ -7,6 +7,23 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- go-fast-core v0.1.17 is required.
+  - What protects an encrypted file is read by its `envelope` package. A
+    file under rights management that shows it only by a licence stream
+    named `EUL-...` beside its transform, as the .NET packaging classes
+    write it, is now refused as one under rights management; before, it
+    was refused as encrypted in a way not stated, or tried as one
+    protected with a password.
+  - Its XML scanner hands on text and attribute values as valid UTF-8,
+    with each byte that is not part of a character read as U+FFFD, and
+    this library's own checks on them are gone. In formula text, a run of
+    such bytes is now one U+FFFD for each byte, where it was one for the
+    run; in a list label longer than 64 bytes, such bytes are U+FFFD,
+    where they were dropped. No file of the test corpora has such bytes
+    where this shows: their output is unchanged.
+
 ## [0.7.2] - 2026-11-27
 
 ### Changed

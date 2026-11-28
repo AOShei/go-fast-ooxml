@@ -223,7 +223,6 @@ func readCustom(s *xmlscan.Scanner, res *Result) {
 		}
 		name, removed := clean.String(raw, clean.Trim)
 		res.Removed += removed
-		name = strings.ToValidUTF8(name, "")
 		v := value(s, res)
 		if name == "" {
 			continue
@@ -355,7 +354,6 @@ func readCustom2003(s *xmlscan.Scanner, res *Result) {
 		}
 		name, removed := clean.String(raw, clean.Trim)
 		res.Removed += removed
-		name = strings.ToValidUTF8(name, "")
 		v := value(s, res)
 		if name == "" {
 			continue

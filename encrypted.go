@@ -13,6 +13,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/cfb"
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/envelope"
 	"github.com/AOShei/go-fast-ooxml/internal/crypt"
 )
 
@@ -101,19 +102,14 @@ func (f *File) unlock(ctx context.Context) error {
 		// Too damaged to say what it holds.
 		return fmt.Errorf("gofastooxml: a compound file, the container of legacy binary and of encrypted Office files, that cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
 	}
-	// Rights management ([MS-OFFCRYPTO] 2.2.11, 2.6): the content is
-	// encrypted with a key held in a licence that a rights-management
-	// server issues to the people the document names.
-	rights := cf.Has("\x06DataSpaces", "DataSpaceInfo", "\x09DRMEncryptedDataSpace") ||
-		cf.Has("\x06DataSpaces", "TransformInfo", "\x09DRMEncryptedTransform") || cf.Has("\x09DRMContent")
-	switch {
-	case rights:
-		return fmt.Errorf("gofastooxml: %s: %w", rightsManaged, gofastcore.ErrUnsupported)
-	case cf.Has("EncryptionInfo") && cf.Has("EncryptedPackage"):
-	case cf.Has("\x06DataSpaces") || cf.Has("EncryptedPackage"):
-		return fmt.Errorf("gofastooxml: encrypted Office document that is not protected with a password, and whose encryption is not stated: %w", gofastcore.ErrUnsupported)
-	default:
+	// What protects the package: go on only for a password (or a
+	// certificate's private key), which this library can use.
+	switch p := envelope.Detect(cf); p {
+	case envelope.Password:
+	case envelope.None:
 		return fmt.Errorf("gofastooxml: %s: %w", legacy, gofastcore.ErrUnsupported)
+	default:
+		return fmt.Errorf("gofastooxml: %s: %w", envelope.Message(p, "Office document"), gofastcore.ErrUnsupported)
 	}
 	fail := func(err error) error {
 		shared := gofastcore.ErrMalformed
@@ -274,8 +270,3 @@ func refused(info *crypt.Info, password bool, keys int) error {
 	verbs := strings.TrimSuffix(strings.Repeat("%w; ", len(errs)), "; ")
 	return fmt.Errorf("gofastooxml: encrypted Office document (%s): %s: "+verbs, append([]any{describe(info), strings.Join(why, "; ")}, errs...)...)
 }
-
-// rightsManaged says what a rights-managed file is, as the error about it.
-const rightsManaged = "encrypted Office document protected by rights management (Information Rights Management): " +
-	"its key is in a licence that a rights-management server issues to the people the document names, " +
-	"and this library contacts no server"
