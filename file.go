@@ -62,12 +62,12 @@ type File struct {
 	noun      string
 	sheets    []Sheet
 
-	mu      sync.Mutex
-	sess    *session            // the reading in use
-	clean   bool                // no limit has cut it short, so it can be used again
-	tallies map[int]*unit.Tally // what the parts read so far found out, by index
-	refs    opc.Refs            // character references to no character, in the parts read so far
-	took    int64               // the text the latest reading of parts took, which their embedded files cannot have
+	mu       sync.Mutex
+	sess     *session            // the reading in use
+	clean    bool                // no limit has cut it short, so it can be used again
+	tallies  map[int]*unit.Tally // what the parts read so far found out, by index
+	replaced opc.Replaced        // what the scanners read as U+FFFD, in the parts read so far
+	took     int64               // the text the latest reading of parts took, which their embedded files cannot have
 }
 
 // session is one opening of the package: its archive, with its
@@ -229,7 +229,7 @@ func (f *File) open(first bool) (*session, error) {
 	if err != nil {
 		return nil, wrap(err)
 	}
-	pkg.CountRefs(&f.refs)
+	pkg.CountReplaced(&f.replaced)
 	main, format, mime, err := pkg.Main()
 	if err != nil {
 		switch d := pkg.FlatDamage(); {
@@ -675,7 +675,7 @@ func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
 	}
 	doc.Children = f.embedded(ctx, sess, tallies)
 	warnAll(doc, sess.src.Summary(tallies))
-	warnAll(doc, f.refsWarning())
+	warnAll(doc, f.replacedWarnings())
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -834,18 +834,23 @@ func (f *File) Warnings() []gofastcore.Warning {
 	}
 	sess, _, tallies := f.known()
 	warnAll(&doc, sess.src.Summary(tallies))
-	warnAll(&doc, f.refsWarning())
+	warnAll(&doc, f.replacedWarnings())
 	return doc.Warnings
 }
 
-// refsWarning is the warning of the character references to no character
-// in the parts read so far, if there were any.
-func (f *File) refsWarning() []gofastcore.Warning {
-	n := f.refs.Total()
-	if n == 0 {
-		return nil
+// replacedWarnings are the warnings of what the scanners read as U+FFFD
+// in the parts read so far: character references to no character, and
+// bytes that are not UTF-8.
+func (f *File) replacedWarnings() []gofastcore.Warning {
+	n := f.replaced.Total()
+	var w []gofastcore.Warning
+	if n.CharRefs > 0 {
+		w = append(w, gofastcore.Warning{Code: gofastcore.WarnTextUnmappedGlyphs, Severity: gofastcore.SeverityWarning, Message: warn.CharRefs(n.CharRefs)})
 	}
-	return []gofastcore.Warning{{Code: gofastcore.WarnTextUnmappedGlyphs, Severity: gofastcore.SeverityWarning, Message: warn.CharRefs(n)}}
+	if n.InvalidUTF8 > 0 {
+		w = append(w, gofastcore.Warning{Code: gofastcore.WarnTextUnmappedGlyphs, Severity: gofastcore.SeverityWarning, Message: warn.InvalidUTF8(n.InvalidUTF8)})
+	}
+	return w
 }
 
 // warnAll adds ws to doc through Document.Warn, which bounds how many a

@@ -74,7 +74,7 @@ func (f *File) openSpreadsheetML(first bool, lim opc.Limits) (*session, error) {
 	}
 	layout := sml.SSIndex(x)
 	pkg := opc.NewSections(x.Src, lim, layout.Sections)
-	pkg.CountRefs(&f.refs)
+	pkg.CountReplaced(&f.replaced)
 	meta, err := props.Read2003(pkg, sml.SSProps, sml.SSCustom)
 	if first {
 		f.source = gofastcore.Source{Format: formatSpreadsheetML, MIME: mimeSpreadsheetML, Name: f.opts.Name, Size: f.size}
@@ -138,9 +138,9 @@ func (f *File) openWordML(first bool, lim opc.Limits) (*session, error) {
 		return nil, fmt.Errorf("gofastooxml: a WordprocessingML 2003 document: %s: %w", clean.Label(err.Error()), gofastcore.ErrLimitExceeded)
 	}
 	pkg := opc.NewSections(x.Src, lim, tr.Sections)
-	pkg.CountRefs(&f.refs)
+	pkg.CountReplaced(&f.replaced)
 	// What was translated counts as one section, in no part's name.
-	f.refs.Add("", tr.CharRefs)
+	f.replaced.Add("", opc.Counts{CharRefs: tr.CharRefs, InvalidUTF8: tr.InvalidUTF8})
 	meta, err := props.Read2003(pkg, wordml.Props, wordml.Custom)
 	if first {
 		f.source = gofastcore.Source{Format: formatWordML, MIME: mimeWordML, Name: f.opts.Name, Size: f.size}

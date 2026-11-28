@@ -139,6 +139,12 @@ with warnings that say what could not.
   and the document says how many with `text.unmapped_glyphs`. Every
   reference in the XML read is counted, also one in markup whose text
   does not reach the output; a part read twice is counted once.
+- **A byte that is not part of a UTF-8 character,** in XML in UTF-8, is
+  read as U+FFFD, one for each byte, in every format, and the document
+  says how many with `text.unmapped_glyphs`: "N byte sequences are not
+  valid UTF-8 and are read as U+FFFD". The bytes counted are those of the
+  text and of the attribute values read; a part read twice is counted
+  once.
 - **A file cut short** has lost the directory at the end of its archive.
   Its members are then found by their own headers, as far as they go: a
   file that lost only its directory gives the whole document, one cut
