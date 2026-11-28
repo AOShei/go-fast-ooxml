@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/charset"
 	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/hidden"
 	"github.com/AOShei/go-fast-core/label"
@@ -154,13 +155,7 @@ func readParaProps(s *xmlscan.Scanner, pp *ParaProps) {
 // the same: the same few names recur in every paragraph.
 func short(v []byte, was string) string {
 	const limit = 32
-	if len(v) > limit {
-		n := limit
-		for n > 0 && !utf8.RuneStart(v[n]) {
-			n-- // do not cut a character in two
-		}
-		v = v[:n]
-	}
+	v = charset.CutUTF8(v, limit) // no character is cut in two
 	if string(v) == was {
 		return was
 	}

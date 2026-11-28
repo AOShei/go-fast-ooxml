@@ -7,6 +7,20 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- go-fast-core v0.1.18 is required.
+  - Its XML scanner hands on names as valid UTF-8 too, those of
+    elements, attributes and processing instructions, with each byte
+    that is not part of a character read as U+FFFD. These bytes are
+    counted in the `text.unmapped_glyphs` warning of bytes that are not
+    valid UTF-8, an element's name once, at its start tag, wherever the
+    markup is read, also markup whose text does not reach the output.
+    Where such a name reaches the output, as an Office 2003 custom
+    property's, it reads as before, each such byte U+FFFD. No file of
+    the test corpora has such a byte in a name: their output is
+    unchanged.
+
 ## [0.7.3] - 2026-11-28
 
 ### Added

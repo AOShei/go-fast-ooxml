@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/charset"
 	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
@@ -114,13 +115,10 @@ func value(s *xmlscan.Scanner, res *Result) string {
 	var buf [256]byte
 	text := s.AppendText(buf[:0])
 	if len(text) > maxValueBytes {
-		n := maxValueBytes
-		for n > 0 && !utf8.RuneStart(text[n]) {
-			n-- // do not cut a character in two
-		}
+		cut := charset.CutUTF8(text, maxValueBytes) // no character is cut in two
 		res.ValuesCut++
-		res.ValueBytes += int64(len(text) - n)
-		text = text[:n]
+		res.ValueBytes += int64(len(text) - len(cut))
+		text = cut
 	}
 	// Property values are text to be read: ligatures are written as
 	// their letters here as everywhere.
@@ -213,13 +211,10 @@ func readCustom(s *xmlscan.Scanner, res *Result) {
 		}
 		raw, _ := s.Attr(xmlscan.NoSpace, "name")
 		if len(raw) > maxCustomName {
-			n := maxCustomName
-			for n > 0 && !utf8.RuneStart(raw[n]) {
-				n-- // do not cut a character in two
-			}
+			cut := charset.CutUTF8(raw, maxCustomName)
 			res.NamesCut++
-			res.NameBytes += int64(len(raw) - n)
-			raw = raw[:n]
+			res.NameBytes += int64(len(raw) - len(cut))
+			raw = cut
 		}
 		name, removed := clean.String(raw, clean.Trim)
 		res.Removed += removed
@@ -344,13 +339,10 @@ func readCustom2003(s *xmlscan.Scanner, res *Result) {
 		}
 		raw := unescapeName(s.Local())
 		if len(raw) > maxCustomName {
-			k := maxCustomName
-			for k > 0 && !utf8.RuneStart(raw[k]) {
-				k--
-			}
+			cut := charset.CutUTF8(raw, maxCustomName)
 			res.NamesCut++
-			res.NameBytes += int64(len(raw) - k)
-			raw = raw[:k]
+			res.NameBytes += int64(len(raw) - len(cut))
+			raw = cut
 		}
 		name, removed := clean.String(raw, clean.Trim)
 		res.Removed += removed
