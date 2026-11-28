@@ -1,12 +1,12 @@
 package wml
 
 import (
-	"github.com/AOShei/go-fast-core/label"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/AOShei/go-fast-core/charset"
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/label"
 	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-ooxml/internal/ns"
 	"github.com/AOShei/go-fast-ooxml/internal/warn"
@@ -201,11 +201,7 @@ func readLevel(s *xmlscan.Scanner, l *level) (cut int) {
 			// UTF-8 from the scanner, and stays so.
 			v, _ := s.Attr(ns.Word, "val")
 			if len(v) > maxLabelText {
-				n := maxLabelText
-				for n > 0 && !utf8.RuneStart(v[n]) {
-					n-- // do not cut a character in two
-				}
-				v = v[:n]
+				v = charset.CutUTF8(v, maxLabelText)
 				cut = 1
 			}
 			l.text, _ = clean.String(v, clean.Ligatures)

@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/charset"
 	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/hidden"
 	"github.com/AOShei/go-fast-core/symbol"
@@ -160,11 +161,7 @@ func cutCode(f *field) {
 	if len(f.code) <= maxFieldCode {
 		return
 	}
-	n := maxFieldCode
-	for n > 0 && !utf8.RuneStart(f.code[n]) {
-		n--
-	}
-	f.code, f.cut = f.code[:n], true
+	f.code, f.cut = charset.CutUTF8(f.code, maxFieldCode), true
 }
 
 // fieldNote keeps the code of a field as a note after the paragraph: every

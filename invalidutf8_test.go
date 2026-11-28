@@ -118,3 +118,42 @@ func TestInvalidUTF8CountedOnce(t *testing.T) {
 		t.Errorf("the File's warnings: %q", got)
 	}
 }
+
+// A name is valid UTF-8 too: a byte that is not part of a character is
+// U+FFFD and counted once, an element's at its start tag, not again at its
+// end tag, which still closes it; in markup ooxml skips as in markup it
+// reads.
+func TestInvalidUTF8InNames(t *testing.T) {
+	// An element's name: an Office 2003 custom property is named by its
+	// element.
+	ss := ssBook(`<CustomDocumentProperties xmlns="urn:schemas-microsoft-com:office:office"><Ab` + "\xFF" + `c>v</Ab` + "\xFF" + `c></CustomDocumentProperties>` +
+		`<Worksheet ss:Name="S"><Table><Row><Cell><Data ss:Type="String">cell</Data></Cell></Row></Table></Worksheet>`)
+	doc, err := extract(t, ss, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := invalidUTF8(doc.Warnings); len(got) != 1 || got[0] != oneBad {
+		t.Errorf("element name: warnings %q, want %q", got, oneBad)
+	}
+	if got := doc.Metadata.Extra["custom.ab\uFFFDc"]; got != "v" {
+		t.Errorf("element name: property %q, extra %q", got, doc.Metadata.Extra)
+	}
+	for _, c := range []struct {
+		name, body, want string
+	}{
+		{"attribute name", `<w:p><w:r w:x` + "\xFE\xFF" + `="1"><w:t>ab</w:t></w:r></w:p>`, twoBad},
+		{"skipped element", `<w:p><w:r><w:t>ab</w:t></w:r><foo` + "\xFF" + `>x</foo` + "\xFF" + `></w:p>`, oneBad},
+	} {
+		doc, err := extract(t, ooxmltest.Docx(c.body+ooxmltest.Para("after")).Bytes(), nil)
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		if got := invalidUTF8(doc.Warnings); len(got) != 1 || got[0] != c.want {
+			t.Errorf("%s: warnings %q, want %q", c.name, got, c.want)
+		}
+		if text := doc.Text(); !strings.Contains(text, "ab") || !strings.Contains(text, "after") {
+			t.Errorf("%s: text %q", c.name, text)
+		}
+	}
+}

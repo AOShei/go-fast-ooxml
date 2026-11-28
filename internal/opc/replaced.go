@@ -13,8 +13,9 @@ type Counts struct {
 	// a surrogate, a number past U+10FFFF), xmlscan's
 	// Stats.CharRefsReplaced.
 	CharRefs int
-	// InvalidUTF8: bytes of the text and attribute values read that are
-	// not part of a UTF-8 character, xmlscan's Stats.InvalidUTF8.
+	// InvalidUTF8: bytes of the text, attribute values and names read
+	// that are not part of a UTF-8 character, xmlscan's
+	// Stats.InvalidUTF8.
 	InvalidUTF8 int
 }
 

@@ -318,3 +318,26 @@ func TestListLabelCapKeepsCharacters(t *testing.T) {
 		t.Errorf("markers %q, want %q", markers, want)
 	}
 }
+
+// Property values and names, and field codes, cut at their bounds are cut
+// where a character starts: the character the bound falls in is left out
+// whole, not made U+FFFD.
+func TestCutsKeepCharacters(t *testing.T) {
+	const e = "\u00e9" // two bytes, across the bound
+	pkg := ooxmltest.Docx(para(field(instr(strings.Repeat("a", 1<<16-1)+e), "shown"))).
+		WithCore(`<dc:title>` + strings.Repeat("t", 64<<10-1) + e + `</dc:title>`).
+		WithCustom(`<property fmtid="x" pid="2" name="` + strings.Repeat("n", 4095) + e + `"><vt:lpwstr>v</vt:lpwstr></property>`)
+	doc := capsExtract(t, pkg.Bytes())
+	saysOnce(t, doc, -1, "document property values longer than 65536 bytes were cut there", "(1 value, 2 bytes left out)")
+	saysOnce(t, doc, -1, "custom property names longer than 4096 bytes were cut there", "(1 name, 2 bytes left out)")
+	saysOnce(t, doc, 0, "field codes longer than 65536 bytes were cut there", "(1 field)")
+	if want := strings.Repeat("t", 64<<10-1); doc.Metadata.Title != want {
+		t.Errorf("title of %d bytes, ends %q", len(doc.Metadata.Title), doc.Metadata.Title[max(0, len(doc.Metadata.Title)-4):])
+	}
+	if got := doc.Metadata.Extra["custom."+strings.Repeat("n", 4095)]; got != "v" {
+		t.Errorf("custom property %q", got)
+	}
+	if contains(doc, "\uFFFD") {
+		t.Error("a character cut in two is U+FFFD")
+	}
+}
